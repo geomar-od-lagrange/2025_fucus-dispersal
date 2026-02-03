@@ -1,0 +1,8 @@
+*.ipynb_checkpoints
+output/*
+*.sif
+*.nc
+notebooks_executed/*
+*.out
+*startup.sh
+*.pdf
