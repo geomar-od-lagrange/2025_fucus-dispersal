@@ -3,6 +3,7 @@ output/*
 *.sif
 *.nc
 notebooks_executed/*
+!notebooks_executed/.gitkeep
 *.out
 *startup.sh
 *.pdf
