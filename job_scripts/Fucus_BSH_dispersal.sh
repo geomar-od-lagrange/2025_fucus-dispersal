@@ -14,7 +14,7 @@ module load singularity/3.11.5
 # to get the image (need to be on a partition which has internet access --> data), run
 # $ singularity pull --disable-cache --dir "${PWD}" docker://quay.io/willirath/parcels-container:2024.10.07-7af7fd0
 
-base_path=/gxfs_work/geomar/smomw597/2025_Fucus
+base_path=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
 release_year=2019
 first_release_month=1
 first_release_day=1
