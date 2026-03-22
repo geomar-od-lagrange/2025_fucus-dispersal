@@ -7,3 +7,6 @@ notebooks_executed/*
 *.out
 *startup.sh
 *.pdf
+plans/
+.claude/
+tmp_papermill_test/
