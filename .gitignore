@@ -10,3 +10,4 @@ notebooks_executed/*
 plans/
 .claude/
 tmp_papermill_test/
+min_data/
