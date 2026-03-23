@@ -15,35 +15,24 @@ module load singularity/3.11.5
 # $ singularity pull --disable-cache --dir "${PWD}" docker://quay.io/willirath/parcels-container:2024.10.07-7af7fd0
 
 base_path=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
-release_year=2019
-first_release_month=1
-first_release_day=1
-last_release_month=6
-last_release_day=30
+start_date=2019-01-01
 release_depth=0
 relative_particle_speed=0.87
 # make sure the output dir exists
-mkdir -p notebooks_executed/TrajectoryCalc/${release_year}/
+mkdir -p notebooks_executed/TrajectoryCalc/
 srun --ntasks=1 --exclusive singularity run -B /sfs -B /gxfs_work -B $PWD:/work --pwd /work parcels-container_2024.10.07-7af7fd0.sif bash -c \
 ". /opt/conda/etc/profile.d/conda.sh && conda activate base \
 && papermill --cwd notebooks/ \
     notebooks/010_FucusDispersal.ipynb \
-    notebooks_executed/TrajectoryCalc/${release_year}/Fucus_y${release_year}_m${first_release_month}-${last_release_month}_d${release_depth}_relspeed${relative_particle_speed}.ipynb \
-    -p release_year ${release_year} \
-    -p first_release_month ${first_release_month} \
-    -p first_release_day ${first_release_day} \
-    -p last_release_month ${last_release_month} \
-    -p last_release_day ${last_release_day} \
+    notebooks_executed/TrajectoryCalc/Fucus_${start_date}_d${release_depth}_s${relative_particle_speed}.ipynb \
+    -p start_date ${start_date} \
     -p max_age_days 220 \
-    -p calc_dt_mins 15 \
+    -p calc_dt_mins 5 \
     -p output_dt_mins 60 \
     -p relative_release_depth ${release_depth} \
     -p particles_per_cell 10 \
-    -p repeated_release True \
-    -p repeated_release_dt_days 7 \
     -p relative_particle_speed ${relative_particle_speed} \
     -p base_path ${base_path} \
-    -p is_papermill True \
     -k python"
 
 # print resource infos
