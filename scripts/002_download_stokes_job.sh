@@ -8,8 +8,7 @@
 #SBATCH --output=slurm-stokes-download-%j.out
 
 base_path=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
-stokes_dir=${base_path}/data/stokes
-
+stokes_dir=/gxfs_work/geomar/smomw122/cmems_mod_bal_wav
 # Set up temporary pixi env
 pixi init --format pixi /tmp/stokes_env_$$
 cd /tmp/stokes_env_$$
