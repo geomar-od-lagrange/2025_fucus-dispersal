@@ -121,38 +121,51 @@ def main():
     args.output_dir.mkdir(parents=True, exist_ok=True)
     stem = args.c_file.stem
 
+    out_surf = args.output_dir / f"{stem}_surface.nc"
+    out_bot = args.output_dir / f"{stem}_bottom.nc"
+    out_stokes = args.output_dir / f"{stem}_surface_stokes.nc"
+
+    # Skip if all outputs exist
+    if out_surf.exists() and out_bot.exists() and out_stokes.exists():
+        print(f"Skipping {args.c_file.name} (all outputs exist)")
+        return
+
     print(f"Processing {args.c_file.name}")
     ds = xr.open_dataset(args.c_file)
     land_mask = land_mask_from_surface(ds)
 
     # Surface
-    u_surf, v_surf = load_surface(ds)
-    u_surf, v_surf = apply_land_mask_at_edges(u_surf, v_surf, land_mask)
-    out_surf = args.output_dir / f"{stem}_surface.nc"
-    write_2d(u_surf, v_surf, out_surf)
-    print(f"  surface: {out_surf}  U=[{float(u_surf.min()):.3f}, {float(u_surf.max()):.3f}]")
+    if not out_surf.exists():
+        u_surf, v_surf = load_surface(ds)
+        u_surf, v_surf = apply_land_mask_at_edges(u_surf, v_surf, land_mask)
+        write_2d(u_surf, v_surf, out_surf)
+        print(f"  surface: {out_surf}  U=[{float(u_surf.min()):.3f}, {float(u_surf.max()):.3f}]")
+    else:
+        # Still need surface for stokes sum
+        u_surf, v_surf = load_surface(ds)
+        u_surf, v_surf = apply_land_mask_at_edges(u_surf, v_surf, land_mask)
 
     # Bottom
-    u_bot, v_bot = load_bottom(ds)
-    u_bot, v_bot = apply_land_mask_at_edges(u_bot, v_bot, land_mask)
-    out_bot = args.output_dir / f"{stem}_bottom.nc"
-    write_2d(u_bot, v_bot, out_bot)
-    print(f"  bottom:  {out_bot}  U=[{float(u_bot.min()):.3f}, {float(u_bot.max()):.3f}]")
+    if not out_bot.exists():
+        u_bot, v_bot = load_bottom(ds)
+        u_bot, v_bot = apply_land_mask_at_edges(u_bot, v_bot, land_mask)
+        write_2d(u_bot, v_bot, out_bot)
+        print(f"  bottom:  {out_bot}  U=[{float(u_bot.min()):.3f}, {float(u_bot.max()):.3f}]")
 
     # Surface + Stokes
-    stokes_file = derive_stokes_path(args.c_file, args.stokes_dir)
-    if not stokes_file.exists():
-        raise FileNotFoundError(f"Stokes file not found: {stokes_file}")
-    stokes_ds = xr.open_dataset(stokes_file).fillna(0.0)
-    u_stokes, v_stokes = interpolate_stokes(
-        stokes_ds, ds.lon, ds.lat, ds.time,
-    )
-    u_total = u_surf + u_stokes
-    v_total = v_surf + v_stokes
-    u_total, v_total = apply_land_mask_at_edges(u_total, v_total, land_mask)
-    out_stokes = args.output_dir / f"{stem}_surface_stokes.nc"
-    write_2d(u_total, v_total, out_stokes)
-    print(f"  stokes:  {out_stokes}  U=[{float(u_total.min()):.3f}, {float(u_total.max()):.3f}]")
+    if not out_stokes.exists():
+        stokes_file = derive_stokes_path(args.c_file, args.stokes_dir)
+        if not stokes_file.exists():
+            raise FileNotFoundError(f"Stokes file not found: {stokes_file}")
+        stokes_ds = xr.open_dataset(stokes_file).fillna(0.0)
+        u_stokes, v_stokes = interpolate_stokes(
+            stokes_ds, ds.lon, ds.lat, ds.time,
+        )
+        u_total = u_surf + u_stokes
+        v_total = v_surf + v_stokes
+        u_total, v_total = apply_land_mask_at_edges(u_total, v_total, land_mask)
+        write_2d(u_total, v_total, out_stokes)
+        print(f"  stokes:  {out_stokes}  U=[{float(u_total.min()):.3f}, {float(u_total.max()):.3f}]")
 
 
 if __name__ == "__main__":
