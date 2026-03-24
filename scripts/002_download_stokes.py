@@ -21,11 +21,7 @@ VARIABLES = ["VSDX", "VSDY"]
 
 
 def download_day(day: date, output_dir: Path):
-    """Download one day of Stokes drift data.
-
-    Writes to a .tmp file first, then renames atomically to avoid
-    permanently skipping corrupt partial downloads on resume.
-    """
+    """Download one day of Stokes drift data. Skips if output exists."""
     filename = f"stokes_{day:%Y%m%d}.nc"
     filepath = output_dir / f"{day.year}" / filename
 
@@ -34,19 +30,14 @@ def download_day(day: date, output_dir: Path):
 
     filepath.parent.mkdir(parents=True, exist_ok=True)
     next_day = day + timedelta(days=1)
-    tmp_filename = filename + ".tmp"
-
     copernicusmarine.subset(
         dataset_id=DATASET_ID,
         variables=VARIABLES,
         start_datetime=f"{day}T00:00:00",
         end_datetime=f"{next_day}T00:00:00",
-        output_filename=tmp_filename,
+        output_filename=filename,
         output_directory=str(filepath.parent),
     )
-
-    # Atomic rename — only marks as complete if download succeeded
-    (filepath.parent / tmp_filename).rename(filepath)
     return True
 
 

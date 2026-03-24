@@ -156,7 +156,8 @@ def main():
     if not out_stokes.exists():
         stokes_file = derive_stokes_path(args.c_file, args.stokes_dir)
         if not stokes_file.exists():
-            raise FileNotFoundError(f"Stokes file not found: {stokes_file}")
+            print(f"  stokes:  SKIPPED (not yet downloaded: {stokes_file.name})")
+            return
         stokes_ds = xr.open_dataset(stokes_file).fillna(0.0)
         u_stokes, v_stokes = interpolate_stokes(
             stokes_ds, ds.lon, ds.lat, ds.time,
