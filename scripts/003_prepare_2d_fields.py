@@ -69,7 +69,18 @@ def apply_land_mask_at_edges(u, v, land_mask):
 
 
 def interpolate_stokes(stokes_ds, bsh_lon, bsh_lat, bsh_time):
-    """Interpolate Stokes A-grid onto BSH c_file coordinates and time."""
+    """Interpolate Stokes A-grid onto BSH C-grid U/V points and time.
+
+    BSH uses NEMO-like C-grid: lon/lat are cell centres on a regular grid.
+    U-points sit on the eastern cell edge:  (lon + 0.5*dlon, lat)
+    V-points sit on the southern cell edge: (lon, lat - 0.5*dlat)
+    """
+    dlon = float(bsh_lon[1] - bsh_lon[0])
+    dlat = float(bsh_lat[1] - bsh_lat[0])
+
+    lon_u = bsh_lon + 0.5 * dlon
+    lat_v = bsh_lat - 0.5 * abs(dlat)  # abs: works whether lat is ascending or descending
+
     stokes_flipped = (
         stokes_ds
         .sortby("latitude", ascending=False)
@@ -77,14 +88,18 @@ def interpolate_stokes(stokes_ds, bsh_lon, bsh_lat, bsh_time):
     )
 
     u_stokes = stokes_flipped["VSDX"].interp(
-        lon=bsh_lon, lat=bsh_lat, method="linear",
+        lon=lon_u, lat=bsh_lat, method="linear",
         kwargs={"fill_value": 0.0},
     ).interp(time=bsh_time, method="nearest")
+    # Reassign lon coordinate to match BSH implicit staggering convention
+    u_stokes = u_stokes.assign_coords(lon=bsh_lon)
 
     v_stokes = stokes_flipped["VSDY"].interp(
-        lon=bsh_lon, lat=bsh_lat, method="linear",
+        lon=bsh_lon, lat=lat_v, method="linear",
         kwargs={"fill_value": 0.0},
     ).interp(time=bsh_time, method="nearest")
+    # Reassign lat coordinate to match BSH implicit staggering convention
+    v_stokes = v_stokes.assign_coords(lat=bsh_lat)
 
     return u_stokes, v_stokes
 
