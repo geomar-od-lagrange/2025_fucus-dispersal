@@ -2,8 +2,8 @@
 #SBATCH --job-name=010_FucusDispersal
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem-per-cpu=120G
-#SBATCH --time=48:00:00
+#SBATCH --mem-per-cpu=30G
+#SBATCH --time=12:00:00
 #SBATCH --partition=base
 
 
