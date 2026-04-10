@@ -10,7 +10,7 @@ module load gcc12-env/12.3.0
 module load singularity/3.11.5
 
 base_path=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
-start_date=2019-01-01
+start_date=2018-01-01
 velocity_factor=1.0
 
 mkdir -p notebooks_executed/TrajectoryCalc/
