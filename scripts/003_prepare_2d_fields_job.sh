@@ -32,19 +32,13 @@ process_file() {
 export -f process_file
 export base_path container stokes_dir output_dir
 
-# Loop over years (outer) so each year completes with both resolutions
-# before moving on. This lets 010 experiments start as soon as a year is done.
+# Process all years and resolutions in a single xargs pass.
+# Sorted find output means early years/timestamps come first.
 for year in $(seq 2016 2025); do
     for res in fine coarse; do
         c_dir="${bsh_data}/c_file_${res}_${year}"
-        if [ ! -d "${c_dir}" ]; then
-            echo "Skipping ${c_dir} (not found)"
-            continue
-        fi
-        echo "Processing ${c_dir} ..."
-        find "${c_dir}" -name "*.nc" | sort | \
-            xargs -P ${SLURM_NTASKS} -I{} bash -c 'process_file "$@"' _ {}
+        [ -d "${c_dir}" ] && find "${c_dir}" -name "*.nc" | sort
     done
-done
+done | xargs -P ${SLURM_NTASKS} -I{} bash -c 'process_file "$@"' _ {}
 
 jobinfo
