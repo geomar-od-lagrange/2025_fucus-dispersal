@@ -158,11 +158,12 @@ if os.path.exists(zarr_path):
 
 output = pset.ParticleFile(name=zarr_path, outputdt=timedelta(minutes=15))
 
-print(f"Running {len(pset)} particles, 48h, dt=5min...")
+run_days = 30
+print(f"Running {len(pset)} particles, {run_days}d, dt=5min...")
 pset.execute(
     [AdvectionRK4_2D, delete_oob],
     dt=timedelta(minutes=5),
-    endtime=48 * 3600.0,
+    endtime=run_days * 24 * 3600.0,
     output_file=output,
     verbose_progress=False,
 )
@@ -199,21 +200,21 @@ land_f, lon_f, lat_f, dlon_f, dlat_f = build_land_mask(
 
 # The coarse grid has NaN in the rectangular fine-grid footprint (BSH blanks
 # it out). Don't count those as land — they're ocean covered by the fine grid.
-fine_lon_min, fine_lon_max = lon_f.min(), lon_f.max()
-fine_lat_min, fine_lat_max = lat_f.min(), lat_f.max()
+# Use the Parcels fine grid F-point boundaries (from the output file, after crop).
 in_fine = (
-    (lon_c[None, :] >= fine_lon_min) & (lon_c[None, :] <= fine_lon_max) &
-    (lat_c[:, None] >= fine_lat_min) & (lat_c[:, None] <= fine_lat_max)
+    (lon_c[None, :] >= fine_w) & (lon_c[None, :] <= fine_e) &
+    (lat_c[:, None] >= fine_s) & (lat_c[:, None] <= fine_n)
 )
 land_c[in_fine] = False
 
-# Clip fine land to the cropped Parcels grid extent (003 drops one N row for fine).
-# Output coords are NE F-points (T + d/2). A T-cell at position T is inside the
-# Parcels grid if T + d/2 >= boundary (its NE corner reaches the domain edge).
-# This keeps any cell whose rectangle overlaps the Parcels domain.
+# Clip fine land to Parcels cell centers only (not boundary-only T-points).
+# F-point coords are NE corners. Cell (yi,xi) = T-cell (yi+1, xi+1), so
+# T-cell 0 in each dim is boundary data, not a cell center. Excluding
+# T-points outside [fine_w, fine_e] x [fine_s, fine_n] drops exactly
+# those boundary-only points. Their rectangles then start at the red line.
 fine_out = (
-    (lat_f[:, None] + dlat_f / 2 < fine_s) | (lat_f[:, None] - dlat_f / 2 > fine_n) |
-    (lon_f[None, :] + dlon_f / 2 < fine_w) | (lon_f[None, :] - dlon_f / 2 > fine_e)
+    (lat_f[:, None] < fine_s) | (lat_f[:, None] > fine_n) |
+    (lon_f[None, :] < fine_w) | (lon_f[None, :] > fine_e)
 )
 land_f[fine_out] = False
 

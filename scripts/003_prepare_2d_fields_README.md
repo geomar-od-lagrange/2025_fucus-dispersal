@@ -27,14 +27,18 @@ stored T-point coordinates, shifting every cell by one index.
 
 ### 3. Fine grid crop
 
-The V-roll zeros the northernmost row (domain boundary). In a nested
-grid setup, this creates a one-cell stagnation band at the fine grid
-edge before particles fall through to the coarse grid. Cropping the
-fine grid by one row in lat (`isel(lat=slice(1, None))`) removes the
-dead row so particles transition smoothly to the coarse grid.
+Three dead boundaries are removed from the fine grid:
+- **North** (lat row 0): V-roll wraps boundary zero here
+- **South** (last lat row): land mask appends all-True row for V
+- **East** (last lon col): land mask appends all-True column for U
 
-The coarse grid is not cropped — its dead row is at the overall domain
-boundary where particles leave anyway.
+Cropping these (`isel(lat=slice(1,-1), lon=slice(None,-1))`) ensures
+particles at the fine grid edges fall through to the coarse grid via
+NestedField instead of stalling in a zero-velocity band. The western
+boundary has no dead column (no appended mask there).
+
+The coarse grid is not cropped — its dead boundaries are at the overall
+domain edge where particles leave anyway.
 
 ## Why a hotfix here
 

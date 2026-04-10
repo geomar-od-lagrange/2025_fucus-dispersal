@@ -177,29 +177,32 @@ def main():
     lon_f = ds.lon.values + dlon / 2
     lat_f = ds.lat.values - dlat / 2      # -dlat/2 = +|dlat|/2, shifts north
 
-    # Fine grids: crop the northernmost row (j=0 in descending lat).
-    # The V roll leaves V[0]=0 (dead boundary). Cropping removes it so
-    # particles at the fine grid's northern edge fall through to coarse
-    # via NestedField instead of seeing zero V.
+    # Fine grids: crop dead boundary rows/columns so particles fall
+    # through to the coarse grid via NestedField instead of stalling.
+    # Dead boundaries come from:
+    #   - lat row 0 (N): V roll wraps boundary zero here
+    #   - lat row -1 (S): land mask appends all-True row
+    #   - lon col -1 (E): land mask appends all-True column
     is_fine = "fine" in args.c_file.name
-    crop = slice(1, None) if is_fine else slice(None)
+    lat_crop = slice(1, -1) if is_fine else slice(None)
+    lon_crop = slice(None, -1) if is_fine else slice(None)
 
     # Surface — mask in BSH convention, then roll V to NEMO north-face
     u_surf, v_surf = load_surface(ds)
     u_surf, v_surf = apply_land_mask_at_edges(u_surf, v_surf, land_mask)
     if not out_surf.exists():
-        u_out = u_surf.isel(lat=crop)
-        v_out = roll_v_to_nemo(v_surf).isel(lat=crop)
-        write_2d(u_out, v_out, out_surf, lon_f, lat_f[crop])
+        u_out = u_surf.isel(lat=lat_crop, lon=lon_crop)
+        v_out = roll_v_to_nemo(v_surf).isel(lat=lat_crop, lon=lon_crop)
+        write_2d(u_out, v_out, out_surf, lon_f[lon_crop], lat_f[lat_crop])
         print(f"  surface: {out_surf}  U=[{float(u_out.min()):.3f}, {float(u_out.max()):.3f}]")
 
     # Bottom
     if not out_bot.exists():
         u_bot, v_bot = load_bottom(ds)
         u_bot, v_bot = apply_land_mask_at_edges(u_bot, v_bot, land_mask)
-        u_out = u_bot.isel(lat=crop)
-        v_out = roll_v_to_nemo(v_bot).isel(lat=crop)
-        write_2d(u_out, v_out, out_bot, lon_f, lat_f[crop])
+        u_out = u_bot.isel(lat=lat_crop, lon=lon_crop)
+        v_out = roll_v_to_nemo(v_bot).isel(lat=lat_crop, lon=lon_crop)
+        write_2d(u_out, v_out, out_bot, lon_f[lon_crop], lat_f[lat_crop])
         print(f"  bottom:  {out_bot}  U=[{float(u_out.min()):.3f}, {float(u_out.max()):.3f}]")
 
     # Surface + Stokes — sum in BSH convention, mask, then roll
@@ -215,9 +218,9 @@ def main():
         u_total = u_surf + u_stokes
         v_total = v_surf + v_stokes
         u_total, v_total = apply_land_mask_at_edges(u_total, v_total, land_mask)
-        u_out = u_total.isel(lat=crop)
-        v_out = roll_v_to_nemo(v_total).isel(lat=crop)
-        write_2d(u_out, v_out, out_stokes, lon_f, lat_f[crop])
+        u_out = u_total.isel(lat=lat_crop, lon=lon_crop)
+        v_out = roll_v_to_nemo(v_total).isel(lat=lat_crop, lon=lon_crop)
+        write_2d(u_out, v_out, out_stokes, lon_f[lon_crop], lat_f[lat_crop])
         print(f"  stokes:  {out_stokes}  U=[{float(u_out.min()):.3f}, {float(u_out.max()):.3f}]")
 
 
