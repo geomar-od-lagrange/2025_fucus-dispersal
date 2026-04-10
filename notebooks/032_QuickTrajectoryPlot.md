@@ -55,10 +55,21 @@ for zf in zarr_files:
     else:
         exp_type = "unknown"
 
-    ds = xr.open_zarr(zf)
-    n_traj = ds.sizes["trajectory"]
-    datasets[name] = {"ds": ds, "type": exp_type, "n_traj": n_traj, "path": zf}
-    print(f"  {name}: {exp_type}, {n_traj} trajectories")
+    try:
+        ds = xr.open_zarr(zf, decode_times=False)
+        # Drop invalid time values (NaT / fill values from oversized chunks)
+        # then decode manually
+        if "time" in ds:
+            raw_time = ds.time.values
+            valid_time = np.abs(raw_time) < 1e15  # filter obviously bogus values
+            if not valid_time.all():
+                print(f"  {name}: filtering {(~valid_time).sum()} invalid time values")
+                ds = ds.where(valid_time)
+        n_traj = ds.sizes["trajectory"]
+        datasets[name] = {"ds": ds, "type": exp_type, "n_traj": n_traj, "path": zf}
+        print(f"  {name}: {exp_type}, {n_traj} trajectories")
+    except Exception as e:
+        print(f"  {name}: SKIPPED ({e})")
 ```
 
 # Plot
