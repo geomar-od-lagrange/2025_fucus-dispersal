@@ -49,6 +49,20 @@ def land_mask_from_surface(ds):
     return ds["uvel"].sel(layer_number=1).isel(time=0).isnull()
 
 
+def roll_v_to_nemo(v):
+    """Roll V from BSH south-face to NEMO north-face convention.
+
+    BSH: V[j,i] on south face of cell (j,i).
+    NEMO: V[j,i] on north face of cell (j,i).
+    South face of cell j = north face of cell j+1 (descending lat: j+1 = south).
+    So V_nemo[j] = V_bsh[j-1], i.e. roll by +1 along lat.
+
+    The wrapped boundary row (j=0, northernmost) gets V_bsh[N-1], which
+    was zeroed by the land mask (domain boundary). So V_nemo[0] = 0.
+    """
+    return v.roll(lat=1, roll_coords=False)
+
+
 def apply_land_mask_at_edges(u, v, land_mask):
     """Zero velocities at edges adjacent to land.
 
@@ -104,9 +118,16 @@ def interpolate_stokes(stokes_ds, bsh_lon, bsh_lat, bsh_time):
     return u_stokes, v_stokes
 
 
-def write_2d(u, v, path):
-    """Write a 2D UV dataset to netCDF."""
-    xr.Dataset({"uvel": u, "vvel": v}).to_netcdf(path)
+def write_2d(u, v, path, lon_f=None, lat_f=None):
+    """Write a 2D UV dataset to netCDF.
+
+    If lon_f/lat_f are provided, replace the coordinate arrays with
+    NE F-point values (for Parcels NEMO C-grid convention).
+    """
+    ds = xr.Dataset({"uvel": u, "vvel": v})
+    if lon_f is not None:
+        ds = ds.assign_coords(lon=lon_f, lat=lat_f)
+    ds.to_netcdf(path)
 
 
 def derive_stokes_path(c_file: Path, stokes_dir: Path) -> Path:
@@ -149,25 +170,39 @@ def main():
     ds = xr.open_dataset(args.c_file)
     land_mask = land_mask_from_surface(ds)
 
-    # Surface
+    # NE F-point coordinates for Parcels NEMO C-grid.
+    # Cell (yi, xi) in Parcels = T-cell (yi+1, xi+1).
+    dlon = float(ds.lon[1] - ds.lon[0])
+    dlat = float(ds.lat[1] - ds.lat[0])  # negative (descending)
+    lon_f = ds.lon.values + dlon / 2
+    lat_f = ds.lat.values - dlat / 2      # -dlat/2 = +|dlat|/2, shifts north
+
+    # Fine grids: crop the northernmost row (j=0 in descending lat).
+    # The V roll leaves V[0]=0 (dead boundary). Cropping removes it so
+    # particles at the fine grid's northern edge fall through to coarse
+    # via NestedField instead of seeing zero V.
+    is_fine = "fine" in args.c_file.name
+    crop = slice(1, None) if is_fine else slice(None)
+
+    # Surface — mask in BSH convention, then roll V to NEMO north-face
+    u_surf, v_surf = load_surface(ds)
+    u_surf, v_surf = apply_land_mask_at_edges(u_surf, v_surf, land_mask)
     if not out_surf.exists():
-        u_surf, v_surf = load_surface(ds)
-        u_surf, v_surf = apply_land_mask_at_edges(u_surf, v_surf, land_mask)
-        write_2d(u_surf, v_surf, out_surf)
-        print(f"  surface: {out_surf}  U=[{float(u_surf.min()):.3f}, {float(u_surf.max()):.3f}]")
-    else:
-        # Still need surface for stokes sum
-        u_surf, v_surf = load_surface(ds)
-        u_surf, v_surf = apply_land_mask_at_edges(u_surf, v_surf, land_mask)
+        u_out = u_surf.isel(lat=crop)
+        v_out = roll_v_to_nemo(v_surf).isel(lat=crop)
+        write_2d(u_out, v_out, out_surf, lon_f, lat_f[crop])
+        print(f"  surface: {out_surf}  U=[{float(u_out.min()):.3f}, {float(u_out.max()):.3f}]")
 
     # Bottom
     if not out_bot.exists():
         u_bot, v_bot = load_bottom(ds)
         u_bot, v_bot = apply_land_mask_at_edges(u_bot, v_bot, land_mask)
-        write_2d(u_bot, v_bot, out_bot)
-        print(f"  bottom:  {out_bot}  U=[{float(u_bot.min()):.3f}, {float(u_bot.max()):.3f}]")
+        u_out = u_bot.isel(lat=crop)
+        v_out = roll_v_to_nemo(v_bot).isel(lat=crop)
+        write_2d(u_out, v_out, out_bot, lon_f, lat_f[crop])
+        print(f"  bottom:  {out_bot}  U=[{float(u_out.min()):.3f}, {float(u_out.max()):.3f}]")
 
-    # Surface + Stokes
+    # Surface + Stokes — sum in BSH convention, mask, then roll
     if not out_stokes.exists():
         stokes_file = derive_stokes_path(args.c_file, args.stokes_dir)
         if not stokes_file.exists():
@@ -180,8 +215,10 @@ def main():
         u_total = u_surf + u_stokes
         v_total = v_surf + v_stokes
         u_total, v_total = apply_land_mask_at_edges(u_total, v_total, land_mask)
-        write_2d(u_total, v_total, out_stokes)
-        print(f"  stokes:  {out_stokes}  U=[{float(u_total.min()):.3f}, {float(u_total.max()):.3f}]")
+        u_out = u_total.isel(lat=crop)
+        v_out = roll_v_to_nemo(v_total).isel(lat=crop)
+        write_2d(u_out, v_out, out_stokes, lon_f, lat_f[crop])
+        print(f"  stokes:  {out_stokes}  U=[{float(u_out.min()):.3f}, {float(u_out.max()):.3f}]")
 
 
 if __name__ == "__main__":
