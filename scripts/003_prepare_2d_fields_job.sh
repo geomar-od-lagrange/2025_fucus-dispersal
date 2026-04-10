@@ -32,9 +32,10 @@ process_file() {
 export -f process_file
 export base_path container stokes_dir output_dir
 
-# Loop over all c_files for fine and coarse grids, 2016-2025
-for res in fine coarse; do
-    for year in $(seq 2016 2025); do
+# Loop over years (outer) so each year completes with both resolutions
+# before moving on. This lets 010 experiments start as soon as a year is done.
+for year in $(seq 2016 2025); do
+    for res in fine coarse; do
         c_dir="${bsh_data}/c_file_${res}_${year}"
         if [ ! -d "${c_dir}" ]; then
             echo "Skipping ${c_dir} (not found)"
