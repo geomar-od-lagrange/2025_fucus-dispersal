@@ -2,12 +2,13 @@
 output/*
 *.sif
 *.nc
+*.zarr
+*.html
 notebooks_executed/*
 !notebooks_executed/.gitkeep
 *.out
 *startup.sh
 *.pdf
-plans/
 .claude/
 tmp_papermill_test/
 min_data/
