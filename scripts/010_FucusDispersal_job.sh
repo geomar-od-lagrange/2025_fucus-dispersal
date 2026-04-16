@@ -23,6 +23,7 @@ run_experiment() {
     local start_date="$1"
     local experiment_type="$2"
     local velocity_factor="$3"
+    local rng_seed="$4"
 
     srun --ntasks=1 --exact \
         singularity run -B /sfs -B /gxfs_work -B $PWD:/work --pwd /work \
@@ -30,9 +31,10 @@ run_experiment() {
         ". /opt/conda/etc/profile.d/conda.sh && conda activate base \
         && papermill --cwd notebooks/ \
             notebooks/010_FucusDispersal.ipynb \
-            notebooks_executed/TrajectoryCalc/Fucus_${start_date}_${experiment_type}_vf${velocity_factor}.ipynb \
+            notebooks_executed/TrajectoryCalc/Fucus_${start_date}_${experiment_type}_vf${velocity_factor}_seed${rng_seed}.ipynb \
             -p start_date ${start_date} \
             -p experiment_type ${experiment_type} \
+            -p RNG_seed ${rng_seed} \
             -p max_age_days ${max_age_days} \
             -p calc_dt_mins ${calc_dt_mins} \
             -p output_dt_mins ${output_dt_mins} \
@@ -48,15 +50,15 @@ export base_path container max_age_days calc_dt_mins output_dt_mins particles_pe
 
 # Generate all (start_date, experiment_type, velocity_factor) combinations
 # and run them in parallel via xargs, respecting SLURM task limit.
-# Each record is one null-delimited line: "start_date experiment_type vf"
+# Each record is one null-delimited line: "start_date experiment_type vf seed"
 for doy in $(seq 1 5 366); do
     start_date=$(date -d "${year}-01-01 +$(( doy - 1 )) days" +%Y-%m-%d)
 
-    printf '%s\0' "${start_date} surface 1.0"
-    printf '%s\0' "${start_date} bottom 1.0"
-    printf '%s\0' "${start_date} bottom 0.97"
-    printf '%s\0' "${start_date} bottom 0.87"
-    printf '%s\0' "${start_date} surface_stokes 1.0"
+    printf '%s\0' "${start_date} surface 1.0 ${RANDOM}"
+    printf '%s\0' "${start_date} bottom 1.0 ${RANDOM}"
+    printf '%s\0' "${start_date} bottom 0.97 ${RANDOM}"
+    printf '%s\0' "${start_date} bottom 0.87 ${RANDOM}"
+    printf '%s\0' "${start_date} surface_stokes 1.0 ${RANDOM}"
 done | xargs -0 -P ${SLURM_NTASKS} -n 1 bash -c 'run_experiment $1' _
 
 jobinfo
