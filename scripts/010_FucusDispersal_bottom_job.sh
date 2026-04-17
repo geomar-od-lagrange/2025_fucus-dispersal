@@ -9,6 +9,8 @@
 module load gcc12-env/12.3.0
 module load singularity/3.11.5
 
+# Submit from the repo root — relative paths and `-B $PWD:/work` assume it.
+
 # Override release year via positional arg, e.g. `sbatch <script> 2024`.
 year="${1:-2019}"
 
@@ -55,9 +57,9 @@ export base_path container max_age_days calc_dt_mins output_dt_mins particles_pe
 for doy in $(seq 1 5 366); do
     start_date=$(date -d "${year}-01-01 +$(( doy - 1 )) days" +%Y-%m-%d)
 
-    printf '%s\0' "${start_date} bottom 1.0 ${RANDOM}"
-    printf '%s\0' "${start_date} bottom 0.97 ${RANDOM}"
-    printf '%s\0' "${start_date} bottom 0.87 ${RANDOM}"
+    printf '%s\0' "${start_date} bottom 1.0 $((RANDOM * 32768 + RANDOM))"
+    printf '%s\0' "${start_date} bottom 0.97 $((RANDOM * 32768 + RANDOM))"
+    printf '%s\0' "${start_date} bottom 0.87 $((RANDOM * 32768 + RANDOM))"
 done | xargs -0 -P ${SLURM_NTASKS} -n 1 bash -c 'run_experiment $1' _
 
 jobinfo
