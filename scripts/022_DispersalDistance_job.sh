@@ -16,8 +16,7 @@ container=parcels-container_2024.10.07-7af7fd0.sif
 
 mkdir -p notebooks_executed/Visualisations/
 
-srun --ntasks=1 --exact \
-    singularity run -B /sfs -B /gxfs_work -B $PWD:/work --pwd /work \
+singularity run -B /sfs -B /gxfs_work -B $PWD:/work --pwd /work \
     ${container} bash -c \
     ". /opt/conda/etc/profile.d/conda.sh && conda activate base \
     && papermill --cwd notebooks/ \
