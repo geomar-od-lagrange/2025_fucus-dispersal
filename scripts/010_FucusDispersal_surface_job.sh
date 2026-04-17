@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH --job-name=010_FucusProd
-#SBATCH --ntasks=50
+#SBATCH --job-name=010_FucusSurface
+#SBATCH --ntasks=100
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=60G
 #SBATCH --time=24:00:00
@@ -9,9 +9,11 @@
 module load gcc12-env/12.3.0
 module load singularity/3.11.5
 
+# Override release year via positional arg, e.g. `sbatch <script> 2024`.
+year="${1:-2019}"
+
 base_path=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
 container=parcels-container_2024.10.07-7af7fd0.sif
-year=2019
 max_age_days=220
 calc_dt_mins=5
 output_dt_mins=60
@@ -50,14 +52,10 @@ export base_path container max_age_days calc_dt_mins output_dt_mins particles_pe
 
 # Generate all (start_date, experiment_type, velocity_factor) combinations
 # and run them in parallel via xargs, respecting SLURM task limit.
-# Each record is one null-delimited line: "start_date experiment_type vf seed"
 for doy in $(seq 1 5 366); do
     start_date=$(date -d "${year}-01-01 +$(( doy - 1 )) days" +%Y-%m-%d)
 
     printf '%s\0' "${start_date} surface 1.0 ${RANDOM}"
-    printf '%s\0' "${start_date} bottom 1.0 ${RANDOM}"
-    printf '%s\0' "${start_date} bottom 0.97 ${RANDOM}"
-    printf '%s\0' "${start_date} bottom 0.87 ${RANDOM}"
     printf '%s\0' "${start_date} surface_stokes 1.0 ${RANDOM}"
 done | xargs -0 -P ${SLURM_NTASKS} -n 1 bash -c 'run_experiment $1' _
 
