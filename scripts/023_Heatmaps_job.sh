@@ -2,7 +2,7 @@
 #SBATCH --job-name=023_Heatmaps
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=128G
+#SBATCH --mem-per-cpu=8G
 #SBATCH --time=04:00:00
 #SBATCH --partition=base
 
