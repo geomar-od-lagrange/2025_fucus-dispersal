@@ -108,6 +108,24 @@ ds = ds.assign(
 )
 ```
 
+# Loaded data
+
+```python
+ds
+```
+
+```python
+release_area
+```
+
+```python
+subbasins
+```
+
+```python
+release_to_subbasin
+```
+
 # Dask cluster
 
 ```python

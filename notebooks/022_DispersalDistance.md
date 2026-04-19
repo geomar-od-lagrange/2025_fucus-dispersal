@@ -120,6 +120,26 @@ for regime in regimes:
     regime_dsets[regime] = attach_metadata(load_regime(regime))
 ```
 
+# Loaded data
+
+```python
+for regime, ds in regime_dsets.items():
+    print(regime)
+    display(ds)
+```
+
+```python
+release_area
+```
+
+```python
+subbasins
+```
+
+```python
+release_to_subbasin
+```
+
 # Dask cluster
 
 ```python

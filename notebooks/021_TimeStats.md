@@ -57,6 +57,18 @@ for regime in regimes:
     print(f"{regime}: {ds.sizes['trajectory']} trajectories, {land_seed_counts[regime]} land-seeded")
 ```
 
+# Loaded data
+
+```python
+for regime, ds in regime_datasets.items():
+    print(regime)
+    display(ds)
+```
+
+```python
+land_seed_counts
+```
+
 # Dask cluster
 
 ```python
