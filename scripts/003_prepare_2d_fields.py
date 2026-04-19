@@ -25,22 +25,31 @@ def load_surface(ds):
 
 
 def load_bottom(ds):
-    """Extract deepest valid layer as 2D.
+    """Extract deepest fluid layer as 2D, independently for U and V.
 
-    The deepest valid layer varies spatially. We find the index from the
-    first timestep and apply to all timesteps. This assumes fixed bathymetry
-    (no wetting/drying).
+    BSH stores `0.0` (not NaN) at C-grid U/V faces blocked by the shallower
+    neighbour's bathymetry — a no-flux wall, not fluid. Picking the deepest
+    non-NaN would land on that wall at every cell whose east (U) or south
+    (V) neighbour is shallower. Instead, for each face, take the deepest
+    layer that is both non-NaN AND non-zero. U and V are resolved
+    independently because their face bathymetries — min(bathy_self,
+    bathy_east) for U, min(bathy_self, bathy_south) for V — can differ.
+
+    Indices are computed from t=0; assumes static bathymetry (no wet/dry).
     """
     n_layers = len(ds.layer_number)
-    valid_reversed = ds["uvel"].isel(time=0).notnull().isel(
-        layer_number=slice(None, None, -1)
-    )
-    deepest_idx = (
-        n_layers - 1 - valid_reversed.argmax(dim="layer_number")
-    ).drop_vars("time")
 
-    u = ds["uvel"].isel(layer_number=deepest_idx).drop_vars("layer_number")
-    v = ds["vvel"].isel(layer_number=deepest_idx).drop_vars("layer_number")
+    def deepest_fluid_idx(var):
+        a = ds[var].isel(time=0)
+        ok = a.notnull() & (a != 0.0)
+        ok_rev = ok.isel(layer_number=slice(None, None, -1))
+        return (n_layers - 1 - ok_rev.argmax(dim="layer_number")).drop_vars("time")
+
+    u_idx = deepest_fluid_idx("uvel")
+    v_idx = deepest_fluid_idx("vvel")
+
+    u = ds["uvel"].isel(layer_number=u_idx).drop_vars("layer_number")
+    v = ds["vvel"].isel(layer_number=v_idx).drop_vars("layer_number")
     return u, v
 
 
