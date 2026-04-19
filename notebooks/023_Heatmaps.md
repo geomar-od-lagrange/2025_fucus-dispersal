@@ -143,6 +143,7 @@ def mean_age_hours(h):
 ```python
 def facet_map(da, col, col_wrap=None):
     fg = da.plot(
+        x="lon", y="lat",
         col=col, col_wrap=col_wrap,
         subplot_kws=dict(projection=ccrs.PlateCarree()),
         transform=ccrs.PlateCarree(),
@@ -153,7 +154,7 @@ def facet_map(da, col, col_wrap=None):
 
 def single_map(da, extent):
     fig, ax = plt.subplots(subplot_kw=dict(projection=ccrs.PlateCarree()))
-    da.plot(ax=ax, transform=ccrs.PlateCarree())
+    da.plot(ax=ax, x="lon", y="lat", transform=ccrs.PlateCarree())
     ax.coastlines()
     ax.set_extent(extent, crs=ccrs.PlateCarree())
     return fig
