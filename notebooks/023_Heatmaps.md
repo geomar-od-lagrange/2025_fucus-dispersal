@@ -79,7 +79,7 @@ release_area = gpd.read_file(
 release_area = release_area.assign(CELLID=release_area.index.astype(int))
 release_area = release_area.loc[
     release_area.F_vesiculo != 0, ["geometry", "CELLCODE", "CELLID"]
-]
+].to_crs(crs=ccrs.Geodetic())
 subbasins = gpd.read_file(
     base_path / "data" / "HELCOM_subbasins_2022_level2" / "HELCOM_subbasins_2022_level2.shp"
 ).to_crs(crs=ccrs.Geodetic()).rename(dict(level_2="subbasin"), axis=1)
