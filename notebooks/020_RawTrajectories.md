@@ -54,7 +54,9 @@ ds = xr.concat([xr.open_zarr(z) for z in zarr_files], dim="trajectory")
 
 dlon0 = ds.lon.diff("obs").isel(obs=0)
 dlat0 = ds.lat.diff("obs").isel(obs=0)
-land_seeded = ((dlon0 == 0) & (dlat0 == 0)).compute()
+land_seeded = (
+    ((dlon0 == 0) & (dlat0 == 0)).drop_vars("obs", errors="ignore").compute()
+)
 n_land = int(land_seeded.sum())
 print(f"Dropping {n_land} land-seeded trajectories of {ds.sizes['trajectory']}")
 ds = ds.isel(trajectory=~land_seeded)
@@ -71,6 +73,7 @@ except ValueError:
 release_area = gpd.read_file(
     base_path / "data" / "Fucus_location_shp" / "REDLIST_SIS_Macrophytes.shp"
 )
+release_area = release_area.assign(CELLID=release_area.index.astype(int))
 release_area = release_area.loc[
     release_area.F_vesiculo != 0, ["geometry", "CELLCODE", "CELLID"]
 ]

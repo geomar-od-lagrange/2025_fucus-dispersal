@@ -63,7 +63,9 @@ except ValueError:
 
 dlon0 = ds.lon.diff("obs").isel(obs=0)
 dlat0 = ds.lat.diff("obs").isel(obs=0)
-land = ((dlon0 == 0) & (dlat0 == 0)).compute()
+land = (
+    ((dlon0 == 0) & (dlat0 == 0)).drop_vars("obs", errors="ignore").compute()
+)
 print(f"Dropping {int(land.sum())} land-seeded of {ds.sizes['trajectory']}")
 ds = ds.isel(trajectory=~land)
 ```
@@ -74,6 +76,7 @@ ds = ds.isel(trajectory=~land)
 release_area = gpd.read_file(
     base_path / "data" / "Fucus_location_shp" / "REDLIST_SIS_Macrophytes.shp"
 )
+release_area = release_area.assign(CELLID=release_area.index.astype(int))
 release_area = release_area.loc[
     release_area.F_vesiculo != 0, ["geometry", "CELLCODE", "CELLID"]
 ]

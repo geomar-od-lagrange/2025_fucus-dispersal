@@ -54,7 +54,9 @@ def load_regime(regime):
         pass
     dlon0 = ds.lon.diff("obs").isel(obs=0)
     dlat0 = ds.lat.diff("obs").isel(obs=0)
-    land = ((dlon0 == 0) & (dlat0 == 0)).compute()
+    land = (
+        ((dlon0 == 0) & (dlat0 == 0)).drop_vars("obs", errors="ignore").compute()
+    )
     ds = ds.isel(trajectory=~land)
     ds = ds.expand_dims(dim={"regime": [regime]}).squeeze(drop=False)
     return ds
@@ -66,6 +68,7 @@ def load_regime(regime):
 release_area = gpd.read_file(
     base_path / "data" / "Fucus_location_shp" / "REDLIST_SIS_Macrophytes.shp"
 )
+release_area = release_area.assign(CELLID=release_area.index.astype(int))
 release_area = release_area.loc[
     release_area.F_vesiculo != 0, ["geometry", "CELLCODE", "CELLID"]
 ]

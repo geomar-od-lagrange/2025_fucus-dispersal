@@ -49,7 +49,9 @@ for regime in regimes:
     ds = xr.concat([xr.open_zarr(z) for z in zarr_files], dim="trajectory")
     dlon0 = ds.lon.diff("obs").isel(obs=0)
     dlat0 = ds.lat.diff("obs").isel(obs=0)
-    land = ((dlon0 == 0) & (dlat0 == 0)).compute()
+    land = (
+        ((dlon0 == 0) & (dlat0 == 0)).drop_vars("obs", errors="ignore").compute()
+    )
     land_seed_counts[regime] = int(land.sum())
     regime_datasets[regime] = ds.isel(trajectory=~land)
     print(f"{regime}: {ds.sizes['trajectory']} trajectories, {land_seed_counts[regime]} land-seeded")
