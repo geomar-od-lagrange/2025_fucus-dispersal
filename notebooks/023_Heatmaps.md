@@ -159,23 +159,46 @@ def single_map(da, extent, size=panel_size):
     return fig
 ```
 
+# Precompute per-trajectory scope keys
+
+`subbasin`, `release_year`, `release_quarter` are lazy 1-D `(trajectory,)`
+arrays. Materialise their unique values once so the per-scope histograms
+below can be built as a single lazy graph.
+
+```python
+sb_np, year_np, quarter_np = dask.compute(
+    ds.subbasin, ds.release_year, ds.release_quarter,
+)
+sb_np = sb_np.values
+year_np = year_np.values
+quarter_np = quarter_np.values
+
+subbasins_list = sorted({s for s in sb_np if isinstance(s, str)})
+years = sorted({int(y) for y in year_np if not np.isnan(y)})
+quarters = sorted({int(q) for q in quarter_np if not np.isnan(q)})
+```
+
 # Compute histograms (one shared dask pass)
 
 Histograms live in bin space (small); compute them all in one
-`dask.compute(*)` so the trajectory graph is only walked once.
+`dask.compute(*)` so the trajectory graph is only walked once. Per-scope
+histograms loop over group values with a lazy `.where()` mask — the
+subbasin/year/quarter coords stay dask-backed and chunk-aligned with
+`ds.lon`/`ds.lat`, so the mask fuses block-wise on the workers instead
+of forcing client-side fancy indexing along the concat dim.
 
 ```python
+def hist_by(key_da, values, name, lon_bins, lat_bins):
+    parts = [
+        count_hist(ds.where(key_da == v), lon_bins, lat_bins) for v in values
+    ]
+    return xr.concat(parts, dim=name).assign_coords({name: values})
+
 h_baltic_lazy = count_hist(ds, lon_bins, lat_bins)
 h_de_lazy = count_hist(ds, de_lon_bins, de_lat_bins)
-h_by_sb_lazy = ds.groupby("subbasin").map(
-    lambda d: count_hist(d, lon_bins, lat_bins)
-)
-h_by_quarter_lazy = ds.groupby("release_quarter").map(
-    lambda d: count_hist(d, lon_bins, lat_bins)
-)
-h_by_year_lazy = ds.groupby("release_year").map(
-    lambda d: count_hist(d, lon_bins, lat_bins)
-)
+h_by_sb_lazy = hist_by(ds.subbasin, subbasins_list, "subbasin", lon_bins, lat_bins)
+h_by_quarter_lazy = hist_by(ds.release_quarter, quarters, "release_quarter", lon_bins, lat_bins)
+h_by_year_lazy = hist_by(ds.release_year, years, "release_year", lon_bins, lat_bins)
 
 h_baltic, h_de, h_by_sb, h_by_quarter, h_by_year = dask.compute(
     h_baltic_lazy, h_de_lazy, h_by_sb_lazy, h_by_quarter_lazy, h_by_year_lazy,

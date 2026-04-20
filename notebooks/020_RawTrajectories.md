@@ -106,10 +106,12 @@ ds
 Compute them once so the per-panel loops below don't re-walk the graph.
 
 ```python
-release_year_np, release_quarter_np = dask.compute(ds.release_year, ds.release_quarter)
+release_year_np, release_quarter_np, subbasin_np = dask.compute(
+    ds.release_year, ds.release_quarter, ds.subbasin,
+)
 release_year_np = release_year_np.values
 release_quarter_np = release_quarter_np.values
-subbasin_np = ds.subbasin.values
+subbasin_np = subbasin_np.values
 ```
 
 # Plot helper
@@ -118,12 +120,15 @@ One matplotlib call per panel: `ax.plot(lon, lat)` where each is a
 `(obs, trajectory)` 2-D array draws one line per column.
 
 ```python
-def plot_lines(ds_sub, ax, n, lw=None):
-    n_avail = ds_sub.sizes["trajectory"]
-    if n_avail == 0:
+def plot_lines(ds_, sel, ax, n, lw=None):
+    if sel is None:
+        avail = np.arange(ds_.sizes["trajectory"])
+    else:
+        avail = np.flatnonzero(sel)
+    if avail.size == 0:
         return
-    idx = rng.choice(n_avail, min(n_avail, n), replace=False)
-    ds_plot = ds_sub.isel(trajectory=idx).compute()
+    chosen = rng.choice(avail, min(avail.size, n), replace=False)
+    ds_plot = ds_.isel(trajectory=chosen).compute()
     lon = ds_plot.lon.to_pandas().T
     lat = ds_plot.lat.to_pandas().T
     ax.plot(lon, lat, lw=lw, transform=ccrs.PlateCarree())
@@ -142,7 +147,7 @@ fig, axes = plt.subplots(
 )
 for ax, basin in zip(axes.flat, subbasins_list):
     sel = subbasin_np == basin
-    plot_lines(ds.isel(trajectory=sel), ax, n_traj_subset, lw=0.5)
+    plot_lines(ds, sel, ax, n_traj_subset, lw=0.5)
     ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
     ax.coastlines()
     ax.set_title(basin)
@@ -158,7 +163,7 @@ fig, ax = plt.subplots(
     figsize=(panel_size, panel_size),
     subplot_kw=dict(projection=ccrs.PlateCarree()),
 )
-plot_lines(ds, ax, n_traj_subset)
+plot_lines(ds, None, ax, n_traj_subset)
 ax.set_extent([de_lon_min, de_lon_max, de_lat_min, de_lat_max], crs=ccrs.PlateCarree())
 ax.coastlines()
 ax.set_title(f"German waters — {experiment_type}")
@@ -176,7 +181,7 @@ fig, axes = plt.subplots(
 )
 for ax, (q_int, q_label) in zip(axes.flat, QUARTER_LABELS.items()):
     sel = release_quarter_np == q_int
-    plot_lines(ds.isel(trajectory=sel), ax, n_traj_subset)
+    plot_lines(ds, sel, ax, n_traj_subset)
     ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
     ax.coastlines()
     ax.set_title(q_label)
@@ -196,7 +201,7 @@ fig, axes = plt.subplots(
 )
 for ax, y in zip(axes.flat, years):
     sel = release_year_np == y
-    plot_lines(ds.isel(trajectory=sel), ax, n_traj_subset)
+    plot_lines(ds, sel, ax, n_traj_subset)
     ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
     ax.coastlines()
     ax.set_title(str(y))

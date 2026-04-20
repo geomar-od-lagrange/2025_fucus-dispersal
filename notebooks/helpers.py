@@ -7,6 +7,7 @@ per scope group instead of re-walking the graph per plot.
 
 from pathlib import Path
 
+import dask.array as da
 import geopandas as gpd
 import numpy as np
 import xarray as xr
@@ -59,7 +60,13 @@ def attach_release_metadata(ds, subbasins):
     )
     sjoined = gpd.sjoin_nearest(release_pts, subbasins, how="left")
     subbasin_per_traj = sjoined.subbasin.reindex(release_lon.index)
-    return ds.assign(subbasin=("trajectory", subbasin_per_traj.values))
+    # Keep the per-trajectory subbasin coord dask-backed and chunk-aligned with
+    # ds so downstream ``ds.where(ds.subbasin == sb)`` masks fuse block-wise
+    # instead of forcing a client-side fancy index along the concat dim.
+    subbasin_dask = da.from_array(
+        subbasin_per_traj.values, chunks=ds.chunksizes["trajectory"]
+    )
+    return ds.assign(subbasin=("trajectory", subbasin_dask))
 
 
 def relabel_quarter(da, dim="release_quarter"):
