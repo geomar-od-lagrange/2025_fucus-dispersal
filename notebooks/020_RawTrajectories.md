@@ -20,13 +20,29 @@ Polyline subsets of particle tracks on maps. One regime per run
 waters, per release quarter (JFM/AMJ/JAS/OND), per release year.
 
 ```python
+import warnings
+
 import dask
 import numpy as np
 import xarray as xr
 import geopandas as gpd
 import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
 import cartopy.crs as ccrs
 from pathlib import Path
+
+# Silence two noisy-but-harmless warning classes the structural fixes
+# should already avoid, as belt-and-braces for edge cases.
+warnings.filterwarnings(
+    "ignore",
+    message="invalid value encountered in linestrings",
+    category=RuntimeWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r"Sending large graph of size",
+    category=UserWarning,
+)
 
 from helpers import (
     QUARTER_LABELS,
@@ -114,30 +130,77 @@ release_quarter_np = release_quarter_np.values
 subbasin_np = subbasin_np.values
 ```
 
-# Plot helper
+# Plot helpers
 
-One matplotlib call per panel: `ax.plot(lon, lat)` where each is a
-`(obs, trajectory)` 2-D array draws one line per column.
+`sample_subsets` picks up to `n_traj_subset` random trajectories per
+group and materialises them in a single `dask.compute` per panel loop —
+one big `ds.isel(trajectory=...)` instead of N per-group isels, so the
+full trajectory graph is shipped once per loop (not once per panel).
+
+`plot_lines` renders a per-trajectory NaN-filtered `LineCollection` so
+cartopy's `path_to_shapely` never hands NaN coords to
+`shapely.linestrings` (the source of the
+``invalid value encountered in linestrings`` warning storm). NaN-only
+or <2-valid-point trajectories are dropped.
 
 ```python
-def plot_lines(ds_, sel, ax, n, lw=None):
-    if sel is None:
-        avail = np.arange(ds_.sizes["trajectory"])
-    else:
-        avail = np.flatnonzero(sel)
-    if avail.size == 0:
+def sample_subsets(ds_, groups, n):
+    """groups: dict name -> bool sel over trajectory (None = all). Returns
+    dict name -> locally-materialised Dataset with <= n trajectories."""
+    picks = {}
+    parts = []
+    for name, sel in groups.items():
+        avail = (
+            np.arange(ds_.sizes["trajectory"])
+            if sel is None
+            else np.flatnonzero(sel)
+        )
+        if avail.size == 0:
+            picks[name] = np.array([], dtype=int)
+            continue
+        chosen = rng.choice(avail, min(avail.size, n), replace=False)
+        picks[name] = chosen
+        parts.append(chosen)
+    if not parts:
+        empty = ds_.isel(trajectory=[]).compute()
+        return {name: empty for name in groups}
+    flat = np.concatenate(parts)
+    ds_all = ds_.isel(trajectory=flat).compute()
+    out = {}
+    offset = 0
+    for name, chosen in picks.items():
+        k = chosen.size
+        out[name] = ds_all.isel(trajectory=slice(offset, offset + k))
+        offset += k
+    return out
+
+
+def plot_lines(ds_plot, ax, lw=None):
+    if ds_plot.sizes["trajectory"] == 0:
         return
-    chosen = rng.choice(avail, min(avail.size, n), replace=False)
-    ds_plot = ds_.isel(trajectory=chosen).compute()
-    lon = ds_plot.lon.to_pandas().T
-    lat = ds_plot.lat.to_pandas().T
-    ax.plot(lon, lat, lw=lw, transform=ccrs.PlateCarree())
+    lon = ds_plot.lon.values
+    lat = ds_plot.lat.values
+    segments = []
+    for i in range(lon.shape[0]):
+        xi, yi = lon[i], lat[i]
+        m = ~(np.isnan(xi) | np.isnan(yi))
+        if m.sum() < 2:
+            continue
+        segments.append(np.column_stack([xi[m], yi[m]]))
+    if not segments:
+        return
+    ax.add_collection(
+        LineCollection(segments, linewidths=lw, transform=ccrs.PlateCarree())
+    )
 ```
 
 # Per HELCOM release subbasin
 
 ```python
 subbasins_list = sorted({s for s in subbasin_np if isinstance(s, str)})
+subsets = sample_subsets(
+    ds, {b: subbasin_np == b for b in subbasins_list}, n_traj_subset
+)
 ncols = 4
 nrows = int(np.ceil(len(subbasins_list) / ncols))
 fig, axes = plt.subplots(
@@ -146,8 +209,7 @@ fig, axes = plt.subplots(
     subplot_kw=dict(projection=ccrs.PlateCarree()),
 )
 for ax, basin in zip(axes.flat, subbasins_list):
-    sel = subbasin_np == basin
-    plot_lines(ds, sel, ax, n_traj_subset, lw=0.5)
+    plot_lines(subsets[basin], ax, lw=0.5)
     ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
     ax.coastlines()
     ax.set_title(basin)
@@ -159,11 +221,12 @@ plt.show()
 # German waters
 
 ```python
+subsets = sample_subsets(ds, {"all": None}, n_traj_subset)
 fig, ax = plt.subplots(
     figsize=(panel_size, panel_size),
     subplot_kw=dict(projection=ccrs.PlateCarree()),
 )
-plot_lines(ds, None, ax, n_traj_subset)
+plot_lines(subsets["all"], ax)
 ax.set_extent([de_lon_min, de_lon_max, de_lat_min, de_lat_max], crs=ccrs.PlateCarree())
 ax.coastlines()
 ax.set_title(f"German waters — {experiment_type}")
@@ -173,6 +236,11 @@ plt.show()
 # Per release quarter (JFM/AMJ/JAS/OND)
 
 ```python
+subsets = sample_subsets(
+    ds,
+    {q_int: release_quarter_np == q_int for q_int in QUARTER_LABELS},
+    n_traj_subset,
+)
 ncols, nrows = 2, 2
 fig, axes = plt.subplots(
     nrows=nrows, ncols=ncols,
@@ -180,8 +248,7 @@ fig, axes = plt.subplots(
     subplot_kw=dict(projection=ccrs.PlateCarree()),
 )
 for ax, (q_int, q_label) in zip(axes.flat, QUARTER_LABELS.items()):
-    sel = release_quarter_np == q_int
-    plot_lines(ds, sel, ax, n_traj_subset)
+    plot_lines(subsets[q_int], ax)
     ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
     ax.coastlines()
     ax.set_title(q_label)
@@ -192,6 +259,9 @@ plt.show()
 
 ```python
 years = sorted({int(y) for y in release_year_np if not np.isnan(y)})
+subsets = sample_subsets(
+    ds, {y: release_year_np == y for y in years}, n_traj_subset
+)
 ncols = 4
 nrows = int(np.ceil(len(years) / ncols))
 fig, axes = plt.subplots(
@@ -200,8 +270,7 @@ fig, axes = plt.subplots(
     subplot_kw=dict(projection=ccrs.PlateCarree()),
 )
 for ax, y in zip(axes.flat, years):
-    sel = release_year_np == y
-    plot_lines(ds, sel, ax, n_traj_subset)
+    plot_lines(subsets[y], ax)
     ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
     ax.coastlines()
     ax.set_title(str(y))
