@@ -58,7 +58,11 @@ def attach_release_metadata(ds, subbasins):
         geometry=gpd.points_from_xy(release_lon[valid], release_lat[valid]),
         crs=subbasins.crs,
     )
-    sjoined = gpd.sjoin_nearest(release_pts, subbasins, how="left")
+    # HELCOM level-2 subbasins tile the Baltic, so point-in-polygon is the
+    # natural join. Keep the first match in case a release point sits on a
+    # polygon boundary and hits two subbasins.
+    sjoined = gpd.sjoin(release_pts, subbasins, how="left", predicate="within")
+    sjoined = sjoined[~sjoined.index.duplicated(keep="first")]
     subbasin_per_traj = sjoined.subbasin.reindex(release_lon.index)
     # Keep the per-trajectory subbasin coord dask-backed and chunk-aligned with
     # ds so downstream ``ds.where(ds.subbasin == sb)`` masks fuse block-wise
