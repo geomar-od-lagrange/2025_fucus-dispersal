@@ -27,6 +27,7 @@ latitudes) instead of lon/lat rectangles. Counts only — no mean-age
 
 ```python
 import dask
+import dask.dataframe as dd
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -163,13 +164,20 @@ only computes its own slice. For the full Baltic the scope is the
 whole dataset.
 
 ```python
-def counts_for(hex_ids, mask=None):
-    """Return a GeoDataFrame with count+geometry over all hexes touched by
-    hex_ids (optionally masked by a (trajectory,) boolean)."""
+def counts_for(hex_ids, hp, mask=None):
+    """Distributed-friendly hex counting.
+
+    Instead of materialising the full (trajectory, obs) dask array in one
+    shot (OOM on large regimes), flatten to a dask Series and let
+    dask.dataframe.value_counts aggregate per partition, then build
+    geometries from the small result."""
     if mask is not None:
-        hex_ids = hex_ids.where(mask)
-    gdf = hex_counts(hex_ids, reduce_dims=list(hex_ids.dims), hp=hp_baltic)
-    # Drop INVALID_HEX_ID (-1, NaN-seeded lon/lat) — those have None geometry.
+        hex_ids = hex_ids.where(mask, other=-1)
+    flat = hex_ids.data.ravel()
+    vc = dd.from_dask_array(flat, columns="hex_id")["hex_id"].value_counts().compute()
+    vc = vc[vc.index >= 0]
+    gdf = hex_counts(pd.Series(vc.index, dtype=np.int64), hp=hp)
+    gdf["count"] = vc.reindex(gdf.index).values
     return gdf.dropna(subset=["geometry"])
 
 
@@ -192,7 +200,7 @@ def log_density_plot(gdf, ax, extent, title=None):
 # Whole Baltic
 
 ```python
-gdf_baltic = counts_for(hex_ids_baltic)
+gdf_baltic = counts_for(hex_ids_baltic, hp_baltic)
 fig, ax = plt.subplots(figsize=single_baltic_figsize)
 log_density_plot(gdf_baltic, ax, [lon_min, lon_max, lat_min, lat_max])
 plt.show()
@@ -208,7 +216,7 @@ fig, axes = plt.subplots(
     figsize=subbasin_grid_figsize,
 )
 for ax, basin in zip(axes.flat, subbasins_list):
-    gdf = counts_for(hex_ids_baltic, mask=(ds.subbasin == basin))
+    gdf = counts_for(hex_ids_baltic, hp_baltic, mask=(ds.subbasin == basin))
     log_density_plot(gdf, ax, [lon_min, lon_max, lat_min, lat_max], title=basin)
 for ax in axes.flat[len(subbasins_list):]:
     ax.set_visible(False)
@@ -221,9 +229,7 @@ Same trajectories, finer hex grid (`hex_size_meters_de`) for the
 German-waters zoom.
 
 ```python
-gdf_de = hex_counts(
-    hex_ids_de, reduce_dims=list(hex_ids_de.dims), hp=hp_de,
-).dropna(subset=["geometry"])
+gdf_de = counts_for(hex_ids_de, hp_de)
 fig, ax = plt.subplots(figsize=single_de_figsize)
 log_density_plot(gdf_de, ax, [de_lon_min, de_lon_max, de_lat_min, de_lat_max])
 plt.show()
@@ -238,7 +244,7 @@ fig, axes = plt.subplots(
     figsize=quarter_grid_figsize,
 )
 for ax, (q_int, q_label) in zip(axes.flat, QUARTER_LABELS.items()):
-    gdf = counts_for(hex_ids_baltic, mask=(ds.release_quarter == q_int))
+    gdf = counts_for(hex_ids_baltic, hp_baltic, mask=(ds.release_quarter == q_int))
     log_density_plot(gdf, ax, [lon_min, lon_max, lat_min, lat_max], title=q_label)
 plt.show()
 ```
