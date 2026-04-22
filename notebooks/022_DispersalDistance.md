@@ -146,7 +146,7 @@ def _grouped_mean(group_key):
     parts = []
     for r in regimes:
         ds = regime_dsets[r]
-        d = regime_distance[r].assign_coords({group_key: ds[group_key]})
+        d = regime_distance[r].assign_coords({group_key: ds[group_key].compute()})
         parts.append(d.groupby(group_key).mean("trajectory").expand_dims(regime=[r]))
     return xr.concat(parts, dim="regime")
 

@@ -6,6 +6,7 @@ platforms = ["osx-arm64", "linux-64"]
 version = "0.1.0"
 
 [dependencies]
+bottleneck = ">=1.4"
 cartopy = ">=0.25.0,<0.26"
 dask = ">=2025.1.0"
 distributed = ">=2025.1.0"
