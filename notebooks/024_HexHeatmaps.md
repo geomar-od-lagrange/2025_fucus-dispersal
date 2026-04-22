@@ -174,7 +174,7 @@ def counts_for(hex_ids, hp, mask=None):
     if mask is not None:
         hex_ids = hex_ids.where(mask, other=-1)
     flat = hex_ids.data.ravel()
-    vc = dd.from_dask_array(flat, columns="hex_id")["hex_id"].value_counts().compute()
+    vc = dd.from_dask_array(flat).value_counts().compute()
     vc = vc[vc.index >= 0]
     gdf = hex_counts(pd.Series(vc.index, dtype=np.int64), hp=hp)
     gdf["count"] = vc.reindex(gdf.index).values
