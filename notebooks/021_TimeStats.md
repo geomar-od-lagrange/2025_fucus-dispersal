@@ -15,14 +15,12 @@ jupyter:
 
 # Time statistics
 
-Global ensemble diagnostics across all regimes. Land-seed filter count,
-trajectory lifetimes, alive fraction vs age, final displacement
-distribution.
+Global ensemble diagnostics across all regimes. Land-seed filter count
+and final displacement distribution.
 
 ```python
 import dask
 import numpy as np
-import xarray as xr
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -35,7 +33,9 @@ from helpers import load_trajectories, mask_land_seeded
 ```python tags=["parameters"]
 base_path = "/gxfs_work/geomar/smomw122/2025_fucus-dispersal"
 
-panel_size = 4
+# Target ~3" width per panel at standard dpi.
+bar_figsize = (3, 3)
+hist_figsize = (6, 3)
 ```
 
 # Dask cluster
@@ -68,8 +68,8 @@ regime_datasets
 
 # Compute per-regime diagnostics (one shared pass per regime)
 
-For each regime, lifetime / alive-fraction / first-last coords all walk
-the same trajectory graph; `dask.compute(*)` evaluates them in one go.
+For each regime, land-seed count and first/last coords walk the same
+trajectory graph; `dask.compute(*)` evaluates them in one go.
 
 Last valid obs uses `ffill("obs")` + `isel(obs=-1)` to tolerate any
 NaN-tail inside a chunk (trajectories that die before their chunk ends).
@@ -80,8 +80,6 @@ for regime, ds in regime_datasets.items():
     n_total = ds.sizes["trajectory"]
     lazy = dict(
         land_count=land_seeded_masks[regime].sum(),
-        lifetime=ds.lon.notnull().sum("obs"),
-        alive_numerator=ds.lon.notnull().sum("trajectory"),
         first_lon=ds.lon.isel(obs=0, drop=True),
         first_lat=ds.lat.isel(obs=0, drop=True),
         last_lon=ds.lon.ffill("obs").isel(obs=-1, drop=True),
@@ -91,7 +89,6 @@ for regime, ds in regime_datasets.items():
     land = int(results["land_count"])
     results["n_total"] = n_total
     results["n_valid"] = n_total - land
-    results["alive"] = results["alive_numerator"] / results["n_valid"]
     per_regime[regime] = results
     print(
         f"{regime}: {n_total} trajectories, {land} land-seeded "
@@ -106,37 +103,14 @@ land_seed = pd.Series(
     {r: int(per_regime[r]["n_total"] - per_regime[r]["n_valid"]) for r in regimes},
     name="land_seeded",
 )
-land_seed.plot.bar(figsize=(panel_size, panel_size))
-```
-
-# Lifetime distribution
-
-Valid-obs count per trajectory; land-seeded (all-NaN) contribute 0 and
-are dropped from the histogram.
-
-```python
-df_life = pd.DataFrame({
-    regime: pd.Series(per_regime[regime]["lifetime"].values)
-    for regime in regimes
-})
-df_life = df_life.where(df_life > 0)
-df_life.plot.hist(bins=50, alpha=0.5, figsize=(panel_size * 2, panel_size))
-```
-
-# Alive fraction vs age
-
-```python
-da_alive = xr.concat(
-    [per_regime[r]["alive"].expand_dims(regime=[r]) for r in regimes],
-    dim="regime",
-)
-da_alive.to_pandas().T.plot.line(figsize=(panel_size * 2, panel_size))
+land_seed.plot.bar(figsize=bar_figsize)
 ```
 
 # Final displacement distribution
 
 Great-circle approximation (111 km per degree lat). NaN last-lon (land-
-seeded) drops out of the histogram automatically.
+seeded) drops out of the histogram automatically. `histtype="step"` so
+the three regimes overlay without bar occlusion.
 
 ```python
 finals = {}
@@ -147,5 +121,5 @@ for regime in regimes:
     finals[regime] = (111.0 * np.sqrt(dlat ** 2 + dlon ** 2)).values
 
 df_final = pd.DataFrame({r: pd.Series(v) for r, v in finals.items()}).dropna(how="all")
-df_final.plot.hist(bins=50, alpha=0.5, figsize=(panel_size * 2, panel_size))
+df_final.plot.hist(bins=50, histtype="step", figsize=hist_figsize)
 ```

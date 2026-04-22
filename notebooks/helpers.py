@@ -7,10 +7,10 @@ per scope group instead of re-walking the graph per plot.
 
 from pathlib import Path
 
-import dask.array as da
-import geopandas as gpd
 import numpy as np
+import shapely
 import xarray as xr
+from scipy.ndimage import distance_transform_edt
 
 
 QUARTER_LABELS = {1: "JFM", 2: "AMJ", 3: "JAS", 4: "OND"}
@@ -36,41 +36,100 @@ def mask_land_seeded(ds):
     return ds.where(~land_seeded), land_seeded
 
 
-def attach_release_metadata(ds, subbasins):
-    """Attach ``release_year``, ``release_quarter`` (int 1-4, JFM/AMJ/JAS/OND),
-    and ``subbasin`` per trajectory.
+def _build_subbasin_raster(
+    subbasins, lon_min, lon_max, lat_min, lat_max, resolution, fill_max_pixels
+):
+    """Raster-Voronoi of HELCOM subbasins.
 
-    Subbasin comes from a spatial nearest-neighbour join on release points
-    (first-obs lon/lat). NaN release points (land-seeded trajectories) get
-    NaN subbasin via reindex.
+    Returns ``(filled, lon_edges, lat_edges, id_to_name)``.
+
+    ``filled`` is an int raster on a regular grid; 0 = unassigned (outside the
+    fill cap). Interior cells carry the ID of the subbasin they sit in;
+    exterior cells within ``fill_max_pixels`` of a polygon inherit from the
+    nearest polygon cell — a raster Voronoi that respects polygon shapes and
+    is overlap-free by construction.
+    """
+    lon_edges = np.arange(lon_min, lon_max + resolution, resolution)
+    lat_edges = np.arange(lat_min, lat_max + resolution, resolution)
+    lon_centres = 0.5 * (lon_edges[:-1] + lon_edges[1:])
+    lat_centres = 0.5 * (lat_edges[:-1] + lat_edges[1:])
+    xx, yy = np.meshgrid(lon_centres, lat_centres)  # (n_lat, n_lon)
+
+    names = list(subbasins.subbasin.values)
+    id_to_name = np.array([None] + list(names), dtype=object)
+    raster = np.zeros(xx.shape, dtype=np.int32)
+    for i, geom in enumerate(subbasins.geometry, start=1):
+        mask = shapely.contains_xy(geom, xx, yy)
+        # HELCOM level-2 tiles the Baltic; gaps only (no overlaps expected).
+        # If two polygons claim the same pixel, first-come wins.
+        raster[mask & (raster == 0)] = i
+
+    dist, (iy, ix) = distance_transform_edt(
+        raster == 0, return_distances=True, return_indices=True
+    )
+    filled = raster[iy, ix]
+    filled[dist > fill_max_pixels] = 0
+    return filled, lon_edges, lat_edges, id_to_name
+
+
+def attach_release_metadata(
+    ds,
+    subbasins,
+    lon_min=5,
+    lon_max=32,
+    lat_min=53,
+    lat_max=66,
+    raster_resolution=0.02,
+    fill_max_pixels=10,
+):
+    """Attach ``release_quarter`` (int 1-4, JFM/AMJ/JAS/OND) and ``subbasin``
+    per trajectory.
+
+    Subbasin comes from a raster-Voronoi lookup on release points
+    (``obs=0`` lon/lat). Points inside any HELCOM polygon hit it directly;
+    points just outside inherit from the nearest polygon cell (up to
+    ``fill_max_pixels`` away ≈ ``fill_max_pixels * raster_resolution * 111`` km).
+    Points further out (or NaN-seeded) become ``None``.
+
+    The lookup runs inside ``xr.apply_ufunc(..., dask="parallelized")`` on the
+    1-D ``(trajectory,)`` release coords, so shapely only ever sees polygons
+    (once, at graph-build time), never trajectories.
     """
     release_time = ds.time.isel(obs=0, drop=True)
-    ds = ds.assign(
-        release_year=release_time.dt.year,
-        release_quarter=release_time.dt.quarter,
+    ds = ds.assign(release_quarter=release_time.dt.quarter)
+
+    filled, lon_edges, lat_edges, id_to_name = _build_subbasin_raster(
+        subbasins, lon_min, lon_max, lat_min, lat_max,
+        raster_resolution, fill_max_pixels,
     )
 
-    release_lon = ds.lon.isel(obs=0, drop=True).to_pandas()
-    release_lat = ds.lat.isel(obs=0, drop=True).to_pandas()
-    valid = release_lon.notna() & release_lat.notna()
-    release_pts = gpd.GeoDataFrame(
-        index=release_lon.index[valid],
-        geometry=gpd.points_from_xy(release_lon[valid], release_lat[valid]),
-        crs=subbasins.crs,
+    def _lookup(lon, lat):
+        out = np.full(lon.shape, None, dtype=object)
+        valid = ~(np.isnan(lon) | np.isnan(lat))
+        if not valid.any():
+            return out
+        lon_v = lon[valid]
+        lat_v = lat[valid]
+        lat_idx = np.searchsorted(lat_edges, lat_v) - 1
+        lon_idx = np.searchsorted(lon_edges, lon_v) - 1
+        in_bounds = (
+            (lat_idx >= 0) & (lat_idx < filled.shape[0])
+            & (lon_idx >= 0) & (lon_idx < filled.shape[1])
+        )
+        ids = np.zeros(lat_idx.size, dtype=np.int32)
+        ib = in_bounds
+        ids[ib] = filled[lat_idx[ib], lon_idx[ib]]
+        out[valid] = np.where(ids > 0, id_to_name[ids], None)
+        return out
+
+    lon0 = ds.lon.isel(obs=0, drop=True)
+    lat0 = ds.lat.isel(obs=0, drop=True)
+    subbasin = xr.apply_ufunc(
+        _lookup, lon0, lat0,
+        dask="parallelized",
+        output_dtypes=[object],
     )
-    # HELCOM level-2 subbasins tile the Baltic, so point-in-polygon is the
-    # natural join. Keep the first match in case a release point sits on a
-    # polygon boundary and hits two subbasins.
-    sjoined = gpd.sjoin(release_pts, subbasins, how="left", predicate="within")
-    sjoined = sjoined[~sjoined.index.duplicated(keep="first")]
-    subbasin_per_traj = sjoined.subbasin.reindex(release_lon.index)
-    # Keep the per-trajectory subbasin coord dask-backed and chunk-aligned with
-    # ds so downstream ``ds.where(ds.subbasin == sb)`` masks fuse block-wise
-    # instead of forcing a client-side fancy index along the concat dim.
-    subbasin_dask = da.from_array(
-        subbasin_per_traj.values, chunks=ds.chunksizes["trajectory"]
-    )
-    return ds.assign(subbasin=("trajectory", subbasin_dask))
+    return ds.assign(subbasin=subbasin)
 
 
 def relabel_quarter(da, dim="release_quarter"):

@@ -15,9 +15,9 @@ jupyter:
 
 # Raw trajectories
 
-Polyline subsets of particle tracks on maps. One regime per run
-(papermill parameter). Scopes: per HELCOM release subbasin, German
-waters, per release quarter (JFM/AMJ/JAS/OND), per release year.
+Polyline subsets of particle tracks on maps. All regimes overlaid per
+panel, one colour per regime. Scopes: per HELCOM release subbasin,
+German waters, per release quarter (JFM/AMJ/JAS/OND).
 
 ```python
 import warnings
@@ -28,6 +28,7 @@ import xarray as xr
 import geopandas as gpd
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
+from matplotlib.lines import Line2D
 import cartopy.crs as ccrs
 from pathlib import Path
 
@@ -56,7 +57,6 @@ from helpers import (
 
 ```python tags=["parameters"]
 base_path = "/gxfs_work/geomar/smomw122/2025_fucus-dispersal"
-experiment_type = "surface"
 
 n_traj_subset = 1000
 
@@ -65,8 +65,20 @@ lat_min, lat_max = 53, 66
 de_lon_min, de_lon_max = 8, 15
 de_lat_min, de_lat_max = 53.2, 55.5
 
-panel_size = 4
-panel_size_sub = 8
+# Panel sizing probed for ~3" width per panel at standard dpi, Baltic box
+# (27x13 deg) in PlateCarree. Single German panel is narrower in lat
+# (2.3 deg), so figsize height is reduced to match.
+single_baltic_figsize = (4, 2)
+single_de_figsize = (4, 1.5)
+subbasin_grid_figsize = (18, 9)   # 4x4, Baltic extent per panel
+quarter_grid_figsize = (9, 4.5)   # 2x2, Baltic extent per panel
+
+# Regime colours.
+regime_colors = {
+    "bottom": "tab:orange",
+    "surface": "tab:blue",
+    "surface_stokes": "tab:green",
+}
 ```
 
 # Global RNG
@@ -105,37 +117,43 @@ subbasins = gpd.read_file(
 subbasins
 ```
 
-# Load trajectories and attach metadata
+# Load all regimes and attach metadata
 
 ```python
-trajectory_path = base_path / "output" / "Trajectories" / experiment_type
-ds, zarr_files = load_trajectories(trajectory_path)
-print(f"{len(zarr_files)} trajectory files for {experiment_type}")
-ds, _ = mask_land_seeded(ds)
-ds = attach_release_metadata(ds, subbasins)
-ds
+trajectory_root = base_path / "output" / "Trajectories"
+regimes = sorted(p.name for p in trajectory_root.iterdir() if p.is_dir())
+print(f"Regimes: {regimes}")
+
+regime_dsets = {}
+for regime in regimes:
+    ds, zarr_files = load_trajectories(trajectory_root / regime)
+    print(f"{regime}: {len(zarr_files)} trajectory files")
+    ds, _ = mask_land_seeded(ds)
+    ds = attach_release_metadata(ds, subbasins)
+    regime_dsets[regime] = ds
 ```
 
-# Precompute per-trajectory scope keys
+# Precompute per-trajectory scope keys per regime
 
-`release_year` / `release_quarter` are lazy 1-D `(trajectory,)` arrays.
-Compute them once so the per-panel loops below don't re-walk the graph.
+`release_quarter` / `subbasin` are lazy 1-D `(trajectory,)` arrays.
+Compute them once per regime so the per-panel loops below don't re-walk
+the graph.
 
 ```python
-release_year_np, release_quarter_np, subbasin_np = dask.compute(
-    ds.release_year, ds.release_quarter, ds.subbasin,
-)
-release_year_np = release_year_np.values
-release_quarter_np = release_quarter_np.values
-subbasin_np = subbasin_np.values
+regime_keys = {}
+for regime, ds in regime_dsets.items():
+    quarter_np, subbasin_np = dask.compute(ds.release_quarter, ds.subbasin)
+    regime_keys[regime] = dict(
+        quarter=quarter_np.values,
+        subbasin=subbasin_np.values,
+    )
 ```
 
 # Plot helpers
 
-`sample_subsets` picks up to `n_traj_subset` random trajectories per
-group and materialises them in a single `dask.compute` per panel loop —
-one big `ds.isel(trajectory=...)` instead of N per-group isels, so the
-full trajectory graph is shipped once per loop (not once per panel).
+`sample_subsets` picks up to `n` random trajectories per group and
+materialises them in a single `dask.compute` per panel loop — one big
+`ds.isel(trajectory=...)` instead of N per-group isels.
 
 `plot_lines` renders a per-trajectory NaN-filtered `LineCollection` so
 cartopy's `path_to_shapely` never hands NaN coords to
@@ -175,7 +193,7 @@ def sample_subsets(ds_, groups, n):
     return out
 
 
-def plot_lines(ds_plot, ax, lw=None):
+def plot_lines(ds_plot, ax, color, lw=None):
     if ds_plot.sizes["trajectory"] == 0:
         return
     lon = ds_plot.lon.values
@@ -190,91 +208,111 @@ def plot_lines(ds_plot, ax, lw=None):
     if not segments:
         return
     ax.add_collection(
-        LineCollection(segments, linewidths=lw, transform=ccrs.PlateCarree())
+        LineCollection(
+            segments, linewidths=lw, colors=color,
+            alpha=0.3, transform=ccrs.PlateCarree(),
+        )
     )
+
+
+def regime_legend_handles():
+    return [
+        Line2D([], [], color=regime_colors[r], label=r, linewidth=1.5)
+        for r in regimes
+    ]
+
+
+def sample_per_regime(groups_for):
+    """For each regime, run sample_subsets(ds, groups_for(regime), n).
+    Returns dict[regime] -> dict[group_name -> materialised ds]."""
+    return {
+        regime: sample_subsets(regime_dsets[regime], groups_for(regime), n_traj_subset)
+        for regime in regimes
+    }
 ```
 
 # Per HELCOM release subbasin
 
+Subbasin list comes from the union over regimes (they should agree, but
+the union is robust to a regime missing a subbasin entirely).
+
 ```python
-subbasins_list = sorted({s for s in subbasin_np if isinstance(s, str)})
-subsets = sample_subsets(
-    ds, {b: subbasin_np == b for b in subbasins_list}, n_traj_subset
+subbasins_list = sorted({
+    s
+    for regime in regimes
+    for s in regime_keys[regime]["subbasin"]
+    if isinstance(s, str)
+})
+
+subsets_per_regime = sample_per_regime(
+    lambda regime: {b: regime_keys[regime]["subbasin"] == b for b in subbasins_list}
 )
+
 ncols = 4
 nrows = int(np.ceil(len(subbasins_list) / ncols))
 fig, axes = plt.subplots(
     nrows=nrows, ncols=ncols,
-    figsize=(ncols * panel_size_sub, nrows * panel_size_sub),
+    figsize=subbasin_grid_figsize,
     subplot_kw=dict(projection=ccrs.PlateCarree()),
 )
 for ax, basin in zip(axes.flat, subbasins_list):
-    plot_lines(subsets[basin], ax, lw=0.5)
+    for regime in regimes:
+        plot_lines(
+            subsets_per_regime[regime][basin], ax,
+            color=regime_colors[regime], lw=0.5,
+        )
     ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
     ax.coastlines()
     ax.set_title(basin)
 for ax in axes.flat[len(subbasins_list):]:
     ax.set_visible(False)
+fig.legend(handles=regime_legend_handles(), loc="lower center", ncol=len(regimes))
 plt.show()
 ```
 
 # German waters
 
 ```python
-subsets = sample_subsets(ds, {"all": None}, n_traj_subset)
+subsets_per_regime = sample_per_regime(lambda regime: {"all": None})
+
 fig, ax = plt.subplots(
-    figsize=(panel_size, panel_size),
+    figsize=single_de_figsize,
     subplot_kw=dict(projection=ccrs.PlateCarree()),
 )
-plot_lines(subsets["all"], ax)
+for regime in regimes:
+    plot_lines(
+        subsets_per_regime[regime]["all"], ax,
+        color=regime_colors[regime],
+    )
 ax.set_extent([de_lon_min, de_lon_max, de_lat_min, de_lat_max], crs=ccrs.PlateCarree())
 ax.coastlines()
-ax.set_title(f"German waters — {experiment_type}")
+ax.set_title("German waters")
+ax.legend(handles=regime_legend_handles(), loc="upper right")
 plt.show()
 ```
 
 # Per release quarter (JFM/AMJ/JAS/OND)
 
 ```python
-subsets = sample_subsets(
-    ds,
-    {q_int: release_quarter_np == q_int for q_int in QUARTER_LABELS},
-    n_traj_subset,
+subsets_per_regime = sample_per_regime(
+    lambda regime: {q_int: regime_keys[regime]["quarter"] == q_int for q_int in QUARTER_LABELS}
 )
+
 ncols, nrows = 2, 2
 fig, axes = plt.subplots(
     nrows=nrows, ncols=ncols,
-    figsize=(ncols * panel_size, nrows * panel_size),
+    figsize=quarter_grid_figsize,
     subplot_kw=dict(projection=ccrs.PlateCarree()),
 )
 for ax, (q_int, q_label) in zip(axes.flat, QUARTER_LABELS.items()):
-    plot_lines(subsets[q_int], ax)
+    for regime in regimes:
+        plot_lines(
+            subsets_per_regime[regime][q_int], ax,
+            color=regime_colors[regime],
+        )
     ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
     ax.coastlines()
     ax.set_title(q_label)
-plt.show()
-```
-
-# Per release year
-
-```python
-years = sorted({int(y) for y in release_year_np if not np.isnan(y)})
-subsets = sample_subsets(
-    ds, {y: release_year_np == y for y in years}, n_traj_subset
-)
-ncols = 4
-nrows = int(np.ceil(len(years) / ncols))
-fig, axes = plt.subplots(
-    nrows=nrows, ncols=ncols,
-    figsize=(ncols * panel_size, nrows * panel_size),
-    subplot_kw=dict(projection=ccrs.PlateCarree()),
-)
-for ax, y in zip(axes.flat, years):
-    plot_lines(subsets[y], ax)
-    ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
-    ax.coastlines()
-    ax.set_title(str(y))
-for ax in axes.flat[len(years):]:
-    ax.set_visible(False)
+fig.legend(handles=regime_legend_handles(), loc="lower center", ncol=len(regimes))
 plt.show()
 ```

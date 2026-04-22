@@ -18,7 +18,7 @@ jupyter:
 Particle-density + mean-age maps from one lazy xhistogram (obs kept
 as a dim) per regime. One regime per run (papermill parameter).
 Scopes: whole Baltic, per HELCOM release subbasin, German waters,
-per release quarter (JFM/AMJ/JAS/OND), per release year.
+per release quarter (JFM/AMJ/JAS/OND).
 
 ```python
 import dask
@@ -56,8 +56,12 @@ de_lat_min, de_lat_max = 53.2, 55.5
 dlon_de = 0.125
 dlat_de = 0.125
 
-panel_size = 4
-panel_size_sub = 8
+# Panel sizing (probed for ~3" width per panel on a Baltic box of 27x13 deg
+# in PlateCarree; German box of 7x2.3 deg needs a wider figsize).
+single_baltic_figsize = (4, 2)
+single_de_figsize = (4, 1.5)
+facet_baltic_size = 2.0
+facet_baltic_aspect = 2.1
 ```
 
 # Dask cluster
@@ -136,11 +140,11 @@ def mean_age_hours(h):
 ```
 
 ```python
-def facet_map(da, col, col_wrap=None, size=panel_size):
+def facet_map(da, col, col_wrap=None):
     fg = da.plot(
         x="lon", y="lat",
         col=col, col_wrap=col_wrap,
-        size=size, aspect=1.0,
+        size=facet_baltic_size, aspect=facet_baltic_aspect,
         subplot_kws=dict(projection=ccrs.PlateCarree()),
         transform=ccrs.PlateCarree(),
     )
@@ -148,9 +152,9 @@ def facet_map(da, col, col_wrap=None, size=panel_size):
         ax.coastlines()
     return fg
 
-def single_map(da, extent, size=panel_size):
+def single_map(da, extent, figsize):
     fig, ax = plt.subplots(
-        figsize=(size, size),
+        figsize=figsize,
         subplot_kw=dict(projection=ccrs.PlateCarree()),
     )
     da.plot(ax=ax, x="lon", y="lat", transform=ccrs.PlateCarree())
@@ -161,20 +165,16 @@ def single_map(da, extent, size=panel_size):
 
 # Precompute per-trajectory scope keys
 
-`subbasin`, `release_year`, `release_quarter` are lazy 1-D `(trajectory,)`
-arrays. Materialise their unique values once so the per-scope histograms
-below can be built as a single lazy graph.
+`subbasin`, `release_quarter` are lazy 1-D `(trajectory,)` arrays.
+Materialise their unique values once so the per-scope histograms below
+can be built as a single lazy graph.
 
 ```python
-sb_np, year_np, quarter_np = dask.compute(
-    ds.subbasin, ds.release_year, ds.release_quarter,
-)
+sb_np, quarter_np = dask.compute(ds.subbasin, ds.release_quarter)
 sb_np = sb_np.values
-year_np = year_np.values
 quarter_np = quarter_np.values
 
 subbasins_list = sorted({s for s in sb_np if isinstance(s, str)})
-years = sorted({int(y) for y in year_np if not np.isnan(y)})
 quarters = sorted({int(q) for q in quarter_np if not np.isnan(q)})
 ```
 
@@ -198,10 +198,9 @@ h_baltic_lazy = count_hist(ds, lon_bins, lat_bins)
 h_de_lazy = count_hist(ds, de_lon_bins, de_lat_bins)
 h_by_sb_lazy = hist_by(ds.subbasin, subbasins_list, "subbasin", lon_bins, lat_bins)
 h_by_quarter_lazy = hist_by(ds.release_quarter, quarters, "release_quarter", lon_bins, lat_bins)
-h_by_year_lazy = hist_by(ds.release_year, years, "release_year", lon_bins, lat_bins)
 
-h_baltic, h_de, h_by_sb, h_by_quarter, h_by_year = dask.compute(
-    h_baltic_lazy, h_de_lazy, h_by_sb_lazy, h_by_quarter_lazy, h_by_year_lazy,
+h_baltic, h_de, h_by_sb, h_by_quarter = dask.compute(
+    h_baltic_lazy, h_de_lazy, h_by_sb_lazy, h_by_quarter_lazy,
 )
 h_by_quarter = relabel_quarter(h_by_quarter)
 ```
@@ -209,27 +208,27 @@ h_by_quarter = relabel_quarter(h_by_quarter)
 # Whole Baltic
 
 ```python
-single_map(density(h_baltic), [lon_min, lon_max, lat_min, lat_max])
+single_map(density(h_baltic), [lon_min, lon_max, lat_min, lat_max], single_baltic_figsize)
 plt.show()
-single_map(mean_age_hours(h_baltic), [lon_min, lon_max, lat_min, lat_max])
+single_map(mean_age_hours(h_baltic), [lon_min, lon_max, lat_min, lat_max], single_baltic_figsize)
 plt.show()
 ```
 
 # Per HELCOM release subbasin
 
 ```python
-facet_map(density(h_by_sb), col="subbasin", col_wrap=4, size=panel_size_sub)
+facet_map(density(h_by_sb), col="subbasin", col_wrap=4)
 plt.show()
-facet_map(mean_age_hours(h_by_sb), col="subbasin", col_wrap=4, size=panel_size_sub)
+facet_map(mean_age_hours(h_by_sb), col="subbasin", col_wrap=4)
 plt.show()
 ```
 
 # German waters
 
 ```python
-single_map(density(h_de), [de_lon_min, de_lon_max, de_lat_min, de_lat_max])
+single_map(density(h_de), [de_lon_min, de_lon_max, de_lat_min, de_lat_max], single_de_figsize)
 plt.show()
-single_map(mean_age_hours(h_de), [de_lon_min, de_lon_max, de_lat_min, de_lat_max])
+single_map(mean_age_hours(h_de), [de_lon_min, de_lon_max, de_lat_min, de_lat_max], single_de_figsize)
 plt.show()
 ```
 
@@ -239,14 +238,5 @@ plt.show()
 facet_map(density(h_by_quarter), col="release_quarter")
 plt.show()
 facet_map(mean_age_hours(h_by_quarter), col="release_quarter")
-plt.show()
-```
-
-# Per release year
-
-```python
-facet_map(density(h_by_year), col="release_year", col_wrap=4)
-plt.show()
-facet_map(mean_age_hours(h_by_year), col="release_year", col_wrap=4)
 plt.show()
 ```
