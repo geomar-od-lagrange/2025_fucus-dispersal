@@ -10,6 +10,5 @@ sbatch scripts/020_RawTrajectories_job.sh
 sbatch scripts/021_TimeStats_job.sh
 sbatch scripts/022_DispersalDistance_job.sh
 for r in "${regimes[@]}"; do
-    sbatch scripts/023_Heatmaps_job.sh "$r"
     sbatch scripts/024_HexHeatmaps_job.sh "$r"
 done

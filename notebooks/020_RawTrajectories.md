@@ -58,7 +58,7 @@ from helpers import (
 ```python tags=["parameters"]
 base_path = "/gxfs_work/geomar/smomw122/2025_fucus-dispersal"
 
-n_traj_subset = 1000
+n_traj_subset = 300
 
 lon_min, lon_max = 5, 32
 lat_min, lat_max = 53, 66
@@ -250,24 +250,25 @@ subsets_per_regime = sample_per_regime(
 
 ncols = 4
 nrows = int(np.ceil(len(subbasins_list) / ncols))
-fig, axes = plt.subplots(
-    nrows=nrows, ncols=ncols,
-    figsize=subbasin_grid_figsize,
-    subplot_kw=dict(projection=ccrs.PlateCarree()),
-)
-for ax, basin in zip(axes.flat, subbasins_list):
-    for regime in regimes:
+for regime in regimes:
+    fig, axes = plt.subplots(
+        nrows=nrows, ncols=ncols,
+        figsize=subbasin_grid_figsize,
+        subplot_kw=dict(projection=ccrs.PlateCarree()),
+    )
+    for ax, basin in zip(axes.flat, subbasins_list):
         plot_lines(
             subsets_per_regime[regime][basin], ax,
             color=regime_colors[regime], lw=0.5,
         )
-    ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
-    ax.coastlines()
-    ax.set_title(basin)
-for ax in axes.flat[len(subbasins_list):]:
-    ax.set_visible(False)
-fig.legend(handles=regime_legend_handles(), loc="lower center", ncol=len(regimes))
-plt.show()
+        ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
+        ax.coastlines()
+        ax.set_title(basin)
+    for ax in axes.flat[len(subbasins_list):]:
+        ax.set_visible(False)
+    fig.suptitle(regime)
+    fig.legend(handles=regime_legend_handles(), loc="lower center", ncol=len(regimes))
+    plt.show()
 ```
 
 # German waters
@@ -275,19 +276,20 @@ plt.show()
 ```python
 subsets_per_regime = sample_per_regime(lambda regime: {"all": None})
 
-fig, ax = plt.subplots(
-    figsize=single_de_figsize,
+fig, axes = plt.subplots(
+    nrows=1, ncols=len(regimes),
+    figsize=(single_de_figsize[0] * len(regimes), single_de_figsize[1]),
     subplot_kw=dict(projection=ccrs.PlateCarree()),
 )
-for regime in regimes:
+for ax, regime in zip(axes, regimes):
     plot_lines(
         subsets_per_regime[regime]["all"], ax,
         color=regime_colors[regime],
     )
-ax.set_extent([de_lon_min, de_lon_max, de_lat_min, de_lat_max], crs=ccrs.PlateCarree())
-ax.coastlines()
-ax.set_title("German waters")
-ax.legend(handles=regime_legend_handles(), loc="upper right")
+    ax.set_extent([de_lon_min, de_lon_max, de_lat_min, de_lat_max], crs=ccrs.PlateCarree())
+    ax.coastlines()
+    ax.set_title(regime)
+fig.legend(handles=regime_legend_handles(), loc="lower center", ncol=len(regimes))
 plt.show()
 ```
 
@@ -298,21 +300,26 @@ subsets_per_regime = sample_per_regime(
     lambda regime: {q_int: regime_keys[regime]["quarter"] == q_int for q_int in QUARTER_LABELS}
 )
 
-ncols, nrows = 2, 2
+nrows = len(QUARTER_LABELS)
+ncols = len(regimes)
 fig, axes = plt.subplots(
     nrows=nrows, ncols=ncols,
-    figsize=quarter_grid_figsize,
+    figsize=(single_baltic_figsize[0] * ncols, single_baltic_figsize[1] * nrows),
     subplot_kw=dict(projection=ccrs.PlateCarree()),
 )
-for ax, (q_int, q_label) in zip(axes.flat, QUARTER_LABELS.items()):
-    for regime in regimes:
+for row, (q_int, q_label) in enumerate(QUARTER_LABELS.items()):
+    for col, regime in enumerate(regimes):
+        ax = axes[row, col]
         plot_lines(
             subsets_per_regime[regime][q_int], ax,
             color=regime_colors[regime],
         )
-    ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
-    ax.coastlines()
-    ax.set_title(q_label)
+        ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
+        ax.coastlines()
+        if row == 0:
+            ax.set_title(regime)
+        if col == 0:
+            ax.set_ylabel(q_label)
 fig.legend(handles=regime_legend_handles(), loc="lower center", ncol=len(regimes))
 plt.show()
 ```

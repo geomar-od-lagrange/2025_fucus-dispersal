@@ -121,5 +121,6 @@ for regime in regimes:
     finals[regime] = (111.0 * np.sqrt(dlat ** 2 + dlon ** 2)).values
 
 df_final = pd.DataFrame({r: pd.Series(v) for r, v in finals.items()}).dropna(how="all")
-df_final.plot.hist(bins=50, histtype="step", figsize=hist_figsize)
+ax = df_final.plot.hist(bins=50, histtype="step", figsize=hist_figsize)
+ax.set_xlabel("Final displacement (km)")
 ```
