@@ -65,15 +65,14 @@ de_lon_min, de_lon_max = 8, 15
 de_lat_min, de_lat_max = 53.2, 55.5
 hex_size_meters_de = 4_000
 
-# Colour scale (log density).
-cmap = "YlOrRd"
+cmap = "viridis"
 
 # Panel sizing probed for ~3" width per panel at standard dpi, Baltic box
 # (27x13 deg). GeoDataFrame.plot enforces equal aspect by default.
-single_baltic_figsize = (4, 2)
-single_de_figsize = (4, 1.5)
-subbasin_grid_figsize = (18, 9)
-quarter_grid_figsize = (9, 4.5)
+single_baltic_figsize = (12, 6)
+single_de_figsize = (12, 4.5)
+subbasin_grid_figsize = (54, 27)
+quarter_grid_figsize = (27, 13.5)
 ```
 
 # Dask cluster
