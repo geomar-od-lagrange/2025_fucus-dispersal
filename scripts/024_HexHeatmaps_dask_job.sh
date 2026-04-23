@@ -32,13 +32,13 @@ cleanup() {
 trap cleanup EXIT
 
 SRUN_STEP="srun --ntasks=1 --cpus-per-task=${SLURM_CPUS_PER_TASK} --exact"
-WORKER_ARGS="--scheduler-file ${SCHEDULER_FILE} --host 0.0.0.0"
+WORKER_ARGS="--scheduler-file ${SCHEDULER_FILE} --interface ib0"
 
 # Task 0: scheduler + attached workers (shape auto-detected from cgroup).
 # dask worker --scheduler-file polls the file until it appears, so no
 # explicit wait loop needed here.
 ${SRUN_STEP} pixi run bash -c "
-    dask scheduler --host 0.0.0.0 --scheduler-file ${SCHEDULER_FILE} &
+    dask scheduler --interface ib0 --scheduler-file ${SCHEDULER_FILE} &
     dask worker ${WORKER_ARGS} &
     wait
 " &
