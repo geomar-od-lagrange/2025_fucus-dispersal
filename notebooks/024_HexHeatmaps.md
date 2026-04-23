@@ -68,12 +68,11 @@ hex_size_meters_de = 4_000
 
 cmap = "viridis"
 
-# Panel sizing probed for ~3" width per panel at standard dpi, Baltic box
-# (27x13 deg). GeoDataFrame.plot enforces equal aspect by default.
-single_baltic_figsize = (12, 6)
-single_de_figsize = (12, 4.5)
-subbasin_grid_figsize = (54, 27)
-quarter_grid_figsize = (27, 13.5)
+# Panel heights (inches). Widths are derived below from the projected
+# bounding-box aspect so we don't pad the figure with whitespace when
+# the LAEA box is narrower than the lon/lat box.
+baltic_panel_height_in = 6
+de_panel_height_in = 4.5
 ```
 
 # Dask cluster
@@ -248,6 +247,19 @@ def hp_to_cartopy(hp):
     raise ValueError(f"Unsupported HexProj projection: {hp.projection_name}")
 
 
+def projected_extent_aspect(hp, extent):
+    """Width / height ratio of ``extent`` in ``hp``'s projected CRS."""
+    proj = hp_to_cartopy(hp)
+    lon_min_, lon_max_, lat_min_, lat_max_ = extent
+    lons_ = np.linspace(lon_min_, lon_max_, 9)
+    lats_ = np.linspace(lat_min_, lat_max_, 9)
+    LL, TT = np.meshgrid(lons_, lats_)
+    xy = proj.transform_points(ccrs.PlateCarree(), LL.ravel(), TT.ravel())
+    return (xy[:, 0].max() - xy[:, 0].min()) / (
+        xy[:, 1].max() - xy[:, 1].min()
+    )
+
+
 def log_density_plot(gdf, ax, extent, title=None, overlay=None):
     # Reproject the hex GDF to the axis projection once so matplotlib
     # can draw native polygons without cartopy re-projecting every edge
@@ -265,12 +277,12 @@ def log_density_plot(gdf, ax, extent, title=None, overlay=None):
         linewidth=0.4,
         zorder=1,
     )
-    ax.coastlines(resolution="50m", color="black", linewidth=0.5, zorder=2)
+    ax.coastlines(resolution="10m", color="black", linewidth=0.5, zorder=2)
     if overlay is not None:
         overlay.boundary.plot(
             ax=ax,
-            color="black",
-            linewidth=0.7,
+            color="magenta",
+            linewidth=1.05,
             transform=ccrs.PlateCarree(),
             zorder=3,
         )
@@ -282,12 +294,17 @@ def log_density_plot(gdf, ax, extent, title=None, overlay=None):
 # Whole Baltic
 
 ```python
+baltic_extent = [lon_min, lon_max, lat_min, lat_max]
+de_extent = [de_lon_min, de_lon_max, de_lat_min, de_lat_max]
+baltic_aspect = projected_extent_aspect(hp_baltic, baltic_extent)
+de_aspect = projected_extent_aspect(hp_de, de_extent)
+
 gdf_baltic = counts_for(hex_ids_baltic, hp_baltic)
 fig, ax = plt.subplots(
-    figsize=single_baltic_figsize,
+    figsize=(baltic_panel_height_in * baltic_aspect, baltic_panel_height_in),
     subplot_kw={"projection": hp_to_cartopy(hp_baltic)},
 )
-log_density_plot(gdf_baltic, ax, [lon_min, lon_max, lat_min, lat_max])
+log_density_plot(gdf_baltic, ax, baltic_extent)
 plt.show()
 ```
 
@@ -300,7 +317,10 @@ ncols = 4
 nrows = int(np.ceil(len(subbasins_list) / ncols))
 fig, axes = plt.subplots(
     nrows=nrows, ncols=ncols,
-    figsize=subbasin_grid_figsize,
+    figsize=(
+        baltic_panel_height_in * baltic_aspect * ncols,
+        baltic_panel_height_in * nrows,
+    ),
     subplot_kw={"projection": hp_to_cartopy(hp_baltic)},
 )
 for ax, basin in zip(axes.flat, subbasins_list):
@@ -310,10 +330,7 @@ for ax, basin in zip(axes.flat, subbasins_list):
         continue
     overlay = subbasins[subbasins["subbasin"] == basin]
     log_density_plot(
-        gdf, ax,
-        [lon_min, lon_max, lat_min, lat_max],
-        title=basin,
-        overlay=overlay,
+        gdf, ax, baltic_extent, title=basin, overlay=overlay,
     )
 for ax in axes.flat[len(subbasins_list):]:
     ax.set_visible(False)
@@ -328,10 +345,10 @@ German-waters zoom.
 ```python
 gdf_de = counts_for(hex_ids_de, hp_de)
 fig, ax = plt.subplots(
-    figsize=single_de_figsize,
+    figsize=(de_panel_height_in * de_aspect, de_panel_height_in),
     subplot_kw={"projection": hp_to_cartopy(hp_de)},
 )
-log_density_plot(gdf_de, ax, [de_lon_min, de_lon_max, de_lat_min, de_lat_max])
+log_density_plot(gdf_de, ax, de_extent)
 plt.show()
 ```
 
@@ -343,7 +360,10 @@ gdfs_by_quarter = counts_by_scope(hex_ids_baltic, ds.release_quarter, hp_baltic)
 ncols, nrows = 2, 2
 fig, axes = plt.subplots(
     nrows=nrows, ncols=ncols,
-    figsize=quarter_grid_figsize,
+    figsize=(
+        baltic_panel_height_in * baltic_aspect * ncols,
+        baltic_panel_height_in * nrows,
+    ),
     subplot_kw={"projection": hp_to_cartopy(hp_baltic)},
 )
 for ax, (q_int, q_label) in zip(axes.flat, QUARTER_LABELS.items()):
@@ -351,6 +371,6 @@ for ax, (q_int, q_label) in zip(axes.flat, QUARTER_LABELS.items()):
     if gdf is None or gdf.empty:
         ax.set_visible(False)
         continue
-    log_density_plot(gdf, ax, [lon_min, lon_max, lat_min, lat_max], title=q_label)
+    log_density_plot(gdf, ax, baltic_extent, title=q_label)
 plt.show()
 ```
