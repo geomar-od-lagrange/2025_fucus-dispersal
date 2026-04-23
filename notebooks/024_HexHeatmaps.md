@@ -33,6 +33,7 @@ import pandas as pd
 import xarray as xr
 import geopandas as gpd
 import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
 from pathlib import Path
 
 from hextraj import HexProj
@@ -237,7 +238,17 @@ def counts_by_scope(hex_ids, scope, hp):
     return result
 
 
-def log_density_plot(gdf, ax, extent, title=None):
+def hp_to_cartopy(hp):
+    """Cartopy CRS matching a hextraj ``HexProj``."""
+    if hp.projection_name == "laea":
+        return ccrs.LambertAzimuthalEqualArea(
+            central_longitude=hp.lon_origin,
+            central_latitude=hp.lat_origin,
+        )
+    raise ValueError(f"Unsupported HexProj projection: {hp.projection_name}")
+
+
+def log_density_plot(gdf, ax, extent, title=None, overlay=None):
     gdf = gdf.copy()
     gdf["log_count"] = np.log10(gdf["count"].where(gdf["count"] > 0))
     gdf.plot(
@@ -246,9 +257,19 @@ def log_density_plot(gdf, ax, extent, title=None):
         cmap=cmap,
         legend=False,
         missing_kwds={"color": "none"},
+        transform=ccrs.PlateCarree(),
+        zorder=1,
     )
-    ax.set_xlim(*extent[:2])
-    ax.set_ylim(*extent[2:])
+    ax.coastlines(resolution="50m", color="black", linewidth=0.5, zorder=2)
+    if overlay is not None:
+        overlay.boundary.plot(
+            ax=ax,
+            color="black",
+            linewidth=0.7,
+            transform=ccrs.PlateCarree(),
+            zorder=3,
+        )
+    ax.set_extent(extent, crs=ccrs.PlateCarree())
     if title is not None:
         ax.set_title(title)
 ```
@@ -257,7 +278,10 @@ def log_density_plot(gdf, ax, extent, title=None):
 
 ```python
 gdf_baltic = counts_for(hex_ids_baltic, hp_baltic)
-fig, ax = plt.subplots(figsize=single_baltic_figsize)
+fig, ax = plt.subplots(
+    figsize=single_baltic_figsize,
+    subplot_kw={"projection": hp_to_cartopy(hp_baltic)},
+)
 log_density_plot(gdf_baltic, ax, [lon_min, lon_max, lat_min, lat_max])
 plt.show()
 ```
@@ -272,13 +296,20 @@ nrows = int(np.ceil(len(subbasins_list) / ncols))
 fig, axes = plt.subplots(
     nrows=nrows, ncols=ncols,
     figsize=subbasin_grid_figsize,
+    subplot_kw={"projection": hp_to_cartopy(hp_baltic)},
 )
 for ax, basin in zip(axes.flat, subbasins_list):
     gdf = gdfs_by_basin.get(basin)
     if gdf is None or gdf.empty:
         ax.set_visible(False)
         continue
-    log_density_plot(gdf, ax, [lon_min, lon_max, lat_min, lat_max], title=basin)
+    overlay = subbasins[subbasins["subbasin"] == basin]
+    log_density_plot(
+        gdf, ax,
+        [lon_min, lon_max, lat_min, lat_max],
+        title=basin,
+        overlay=overlay,
+    )
 for ax in axes.flat[len(subbasins_list):]:
     ax.set_visible(False)
 plt.show()
@@ -291,7 +322,10 @@ German-waters zoom.
 
 ```python
 gdf_de = counts_for(hex_ids_de, hp_de)
-fig, ax = plt.subplots(figsize=single_de_figsize)
+fig, ax = plt.subplots(
+    figsize=single_de_figsize,
+    subplot_kw={"projection": hp_to_cartopy(hp_de)},
+)
 log_density_plot(gdf_de, ax, [de_lon_min, de_lon_max, de_lat_min, de_lat_max])
 plt.show()
 ```
@@ -305,6 +339,7 @@ ncols, nrows = 2, 2
 fig, axes = plt.subplots(
     nrows=nrows, ncols=ncols,
     figsize=quarter_grid_figsize,
+    subplot_kw={"projection": hp_to_cartopy(hp_baltic)},
 )
 for ax, (q_int, q_label) in zip(axes.flat, QUARTER_LABELS.items()):
     gdf = gdfs_by_quarter.get(q_int)
