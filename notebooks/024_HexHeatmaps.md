@@ -195,17 +195,23 @@ def counts_by_scope(hex_ids, scope, hp):
     over ``(scope, hex_id)`` replaces N independent value_counts
     scans. Returns ``{scope_value: GeoDataFrame}``.
     """
-    # Materialise scope first. It's 1-D ``(trajectory,)``, so small, and
-    # dask-backed accessors like ``.dt.quarter`` on a NaT-masked time
-    # array advertise int64 meta while actually holding float-with-NaN.
-    # fillna/astype on the lazy form are no-ops against that mismatch;
-    # partition creation then crashes with IntCastingNaNError.
-    if dask.is_dask_collection(scope):
-        scope = scope.compute()
+    # Dask-backed accessors like ``.dt.quarter`` on a NaT-masked time
+    # array advertise int64 meta while actually holding float-with-NaN;
+    # to_dask_dataframe then crashes on the partition int cast. Repair
+    # per-chunk via apply_ufunc, staying lazy so scope keeps its
+    # trajectory chunking. (A .compute() here would turn scope into a
+    # graph literal and pin the groupby tail to a single worker.)
     sentinel = None
     if np.issubdtype(scope.dtype, np.number):
         sentinel = -1
-        scope = scope.fillna(sentinel).astype(np.int64)
+        scope = xr.apply_ufunc(
+            lambda x: np.where(
+                np.isnan(np.asarray(x, dtype=float)), -1, x
+            ).astype(np.int64),
+            scope,
+            dask="parallelized",
+            output_dtypes=[np.int64],
+        )
 
     frame = xr.Dataset(
         {"hex_id": hex_ids, "scope": scope}
