@@ -1,5 +1,5 @@
 #!/bin/bash
-# Submit all visualisation jobs. 020/021/022 run once; 023/024 run per regime.
+# Submit all visualisation jobs. 020/021/022 run once; 024 runs per regime.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
