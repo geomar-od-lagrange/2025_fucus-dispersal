@@ -33,8 +33,9 @@ import pandas as pd
 import xarray as xr
 import geopandas as gpd
 import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
 from pathlib import Path
+from shapely.geometry import box
+from cartopy.io.shapereader import natural_earth
 
 from hextraj import HexProj
 from hextraj.hex_analysis import hex_counts
@@ -237,43 +238,23 @@ def counts_by_scope(hex_ids, scope, hp):
     return result
 
 
-def hp_to_cartopy(hp):
-    """Cartopy CRS matching a hextraj ``HexProj``.
-
-    hextraj builds its pyproj CRS as ``+proj=... +datum=WGS84``; pass an
-    explicit WGS84 ``Globe`` so cartopy's LAEA doesn't pick a slightly
-    different implicit ellipsoid — otherwise the coastline drifts a few
-    tens of km northward at Baltic latitudes relative to the hex grid.
-    """
-    if hp.projection_name != "laea":
-        raise ValueError(f"Unsupported HexProj projection: {hp.projection_name}")
-    globe = ccrs.Globe(datum="WGS84", ellipse="WGS84")
-    return ccrs.LambertAzimuthalEqualArea(
-        central_longitude=hp.lon_origin,
-        central_latitude=hp.lat_origin,
-        globe=globe,
-    )
-
-
-def projected_extent_aspect(hp, extent):
-    """Width / height ratio of ``extent`` in ``hp``'s projected CRS."""
-    proj = hp_to_cartopy(hp)
+def lonlat_aspect(extent):
+    """Displayed width / height ratio for a lon/lat ``extent`` with an
+    aspect that keeps 1 deg lon at ``lat_mean`` visually equal to 1 deg
+    lat. Matches ``ax.set_aspect(1 / cos(lat_mean))`` below."""
     lon_min_, lon_max_, lat_min_, lat_max_ = extent
-    lons_ = np.linspace(lon_min_, lon_max_, 9)
-    lats_ = np.linspace(lat_min_, lat_max_, 9)
-    LL, TT = np.meshgrid(lons_, lats_)
-    xy = proj.transform_points(ccrs.PlateCarree(), LL.ravel(), TT.ravel())
-    return (xy[:, 0].max() - xy[:, 0].min()) / (
-        xy[:, 1].max() - xy[:, 1].min()
+    lat_mean = 0.5 * (lat_min_ + lat_max_)
+    return ((lon_max_ - lon_min_) * np.cos(np.radians(lat_mean))) / (
+        lat_max_ - lat_min_
     )
 
 
-def log_density_plot(gdf, ax, extent, title=None, overlay=None):
-    # Reproject the hex GDF to the axis projection once so matplotlib
-    # can draw native polygons without cartopy re-projecting every edge
-    # at draw time. Paired with ``edgecolor="face"`` this removes the
-    # anti-aliased seams between adjacent hexes.
-    gdf = gdf.to_crs(ax.projection)
+def log_density_plot(gdf, ax, extent, title=None, overlay=None, coast=None):
+    """Plot hex density, coastline, and optional subbasin overlay on a
+    plain (non-cartopy) lon/lat axis. Everything stays in EPSG:4326 so
+    hexes, coastline, and overlay share one coordinate system — no
+    drift from mismatched reprojection pipelines."""
+    gdf = gdf.copy()
     gdf["log_count"] = np.log10(gdf["count"].where(gdf["count"] > 0))
     gdf.plot(
         ax=ax,
@@ -285,16 +266,21 @@ def log_density_plot(gdf, ax, extent, title=None, overlay=None):
         linewidth=0.4,
         zorder=1,
     )
-    ax.coastlines(resolution="10m", color="black", linewidth=0.5, zorder=2)
+    if coast is not None:
+        coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
     if overlay is not None:
         overlay.boundary.plot(
             ax=ax,
             color="magenta",
             linewidth=1.05,
-            transform=ccrs.PlateCarree(),
             zorder=3,
         )
-    ax.set_extent(extent, crs=ccrs.PlateCarree())
+    lon_min_, lon_max_, lat_min_, lat_max_ = extent
+    ax.set_xlim(lon_min_, lon_max_)
+    ax.set_ylim(lat_min_, lat_max_)
+    ax.set_aspect(1 / np.cos(np.radians(0.5 * (lat_min_ + lat_max_))))
+    ax.set_xticks([])
+    ax.set_yticks([])
     if title is not None:
         ax.set_title(title)
 ```
@@ -304,16 +290,23 @@ def log_density_plot(gdf, ax, extent, title=None, overlay=None):
 ```python
 baltic_extent = [lon_min, lon_max, lat_min, lat_max]
 de_extent = [de_lon_min, de_lon_max, de_lat_min, de_lat_max]
-baltic_aspect = projected_extent_aspect(hp_baltic, baltic_extent)
-de_aspect = projected_extent_aspect(hp_de, de_extent)
+baltic_aspect = lonlat_aspect(baltic_extent)
+de_aspect = lonlat_aspect(de_extent)
+
+# Load Natural Earth 10m coastline via cartopy's shapereader (cached
+# locally), clip to each extent once so per-panel plotting is cheap.
+_coast_gdf = gpd.read_file(
+    natural_earth(resolution="10m", category="physical", name="coastline")
+)
+coast_baltic = _coast_gdf.clip(box(lon_min, lat_min, lon_max, lat_max))
+coast_de = _coast_gdf.clip(box(de_lon_min, de_lat_min, de_lon_max, de_lat_max))
 
 gdf_baltic = counts_for(hex_ids_baltic, hp_baltic)
 fig, ax = plt.subplots(
     figsize=(baltic_panel_height_in * baltic_aspect, baltic_panel_height_in),
-    subplot_kw={"projection": hp_to_cartopy(hp_baltic)},
     layout="constrained",
 )
-log_density_plot(gdf_baltic, ax, baltic_extent)
+log_density_plot(gdf_baltic, ax, baltic_extent, coast=coast_baltic)
 plt.show()
 ```
 
@@ -337,7 +330,6 @@ fig, axes = plt.subplots(
         baltic_panel_height_in * baltic_aspect * ncols,
         baltic_panel_height_in * nrows,
     ),
-    subplot_kw={"projection": hp_to_cartopy(hp_baltic)},
     layout="constrained",
 )
 for ax, basin in zip(axes.flat, subbasins_list):
@@ -347,7 +339,8 @@ for ax, basin in zip(axes.flat, subbasins_list):
         continue
     overlay = subbasins_smoothed[subbasins_smoothed["subbasin"] == basin]
     log_density_plot(
-        gdf, ax, baltic_extent, title=basin, overlay=overlay,
+        gdf, ax, baltic_extent, title=basin,
+        overlay=overlay, coast=coast_baltic,
     )
 for ax in axes.flat[len(subbasins_list):]:
     ax.set_visible(False)
@@ -363,10 +356,9 @@ German-waters zoom.
 gdf_de = counts_for(hex_ids_de, hp_de)
 fig, ax = plt.subplots(
     figsize=(de_panel_height_in * de_aspect, de_panel_height_in),
-    subplot_kw={"projection": hp_to_cartopy(hp_de)},
     layout="constrained",
 )
-log_density_plot(gdf_de, ax, de_extent)
+log_density_plot(gdf_de, ax, de_extent, coast=coast_de)
 plt.show()
 ```
 
@@ -382,7 +374,6 @@ fig, axes = plt.subplots(
         baltic_panel_height_in * baltic_aspect * ncols,
         baltic_panel_height_in * nrows,
     ),
-    subplot_kw={"projection": hp_to_cartopy(hp_baltic)},
     layout="constrained",
 )
 for ax, (q_int, q_label) in zip(axes.flat, QUARTER_LABELS.items()):
@@ -390,6 +381,8 @@ for ax, (q_int, q_label) in zip(axes.flat, QUARTER_LABELS.items()):
     if gdf is None or gdf.empty:
         ax.set_visible(False)
         continue
-    log_density_plot(gdf, ax, baltic_extent, title=q_label)
+    log_density_plot(
+        gdf, ax, baltic_extent, title=q_label, coast=coast_baltic,
+    )
 plt.show()
 ```
