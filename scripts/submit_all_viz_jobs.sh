@@ -4,11 +4,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-regimes=(bottom surface surface_stokes)
+sbatch --ntasks=7 scripts/020_RawTrajectories_job.sh
+sbatch --ntasks=7 scripts/021_TimeStats_job.sh
+sbatch --ntasks=7 scripts/022_DispersalDistance_job.sh
 
-sbatch scripts/020_RawTrajectories_job.sh
-sbatch scripts/021_TimeStats_job.sh
-sbatch scripts/022_DispersalDistance_job.sh
-for r in "${regimes[@]}"; do
-    sbatch scripts/024_HexHeatmaps_job.sh "$r"
-done
+sbatch --ntasks=9 --cpus-per-task=10 scripts/024_HexHeatmaps_job.sh surface
+sbatch --ntasks=9 --cpus-per-task=10 scripts/024_HexHeatmaps_job.sh surface_stokes
+sbatch --ntasks=19 --cpus-per-task=10 scripts/024_HexHeatmaps_job.sh bottom
