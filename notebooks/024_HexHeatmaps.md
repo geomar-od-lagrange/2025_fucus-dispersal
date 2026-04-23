@@ -249,7 +249,11 @@ def hp_to_cartopy(hp):
 
 
 def log_density_plot(gdf, ax, extent, title=None, overlay=None):
-    gdf = gdf.copy()
+    # Reproject the hex GDF to the axis projection once so matplotlib
+    # can draw native polygons without cartopy re-projecting every edge
+    # at draw time. Paired with ``edgecolor="face"`` this removes the
+    # anti-aliased seams between adjacent hexes.
+    gdf = gdf.to_crs(ax.projection)
     gdf["log_count"] = np.log10(gdf["count"].where(gdf["count"] > 0))
     gdf.plot(
         ax=ax,
@@ -257,7 +261,8 @@ def log_density_plot(gdf, ax, extent, title=None, overlay=None):
         cmap=cmap,
         legend=False,
         missing_kwds={"color": "none"},
-        transform=ccrs.PlateCarree(),
+        edgecolor="face",
+        linewidth=0.4,
         zorder=1,
     )
     ax.coastlines(resolution="50m", color="black", linewidth=0.5, zorder=2)
