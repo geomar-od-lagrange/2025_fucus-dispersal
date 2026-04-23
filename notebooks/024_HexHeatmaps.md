@@ -77,9 +77,24 @@ quarter_grid_figsize = (27, 13.5)
 
 # Dask cluster
 
+Connect to an external scheduler when ``SCHEDULER_FILE`` is set (the
+multi-task SLURM layout in ``scripts/024_HexHeatmaps_dask_job.sh``
+writes it). Otherwise spin up a local cluster on the current node.
+
 ```python
+import os
+import time
 from dask.distributed import Client
-client = Client(ip="0.0.0.0")
+
+scheduler_file = os.environ.get("SCHEDULER_FILE")
+if scheduler_file:
+    for _ in range(60):
+        if os.path.exists(scheduler_file):
+            break
+        time.sleep(1)
+    client = Client(scheduler_file=scheduler_file)
+else:
+    client = Client(ip="0.0.0.0")
 client
 ```
 
@@ -180,10 +195,21 @@ def counts_by_scope(hex_ids, scope, hp):
     over ``(scope, hex_id)`` replaces N independent value_counts
     scans. Returns ``{scope_value: GeoDataFrame}``.
     """
+    # Numeric scope with NaN (e.g. release_quarter, which is NaN for
+    # land-seeded trajectories whose time was masked to NaT) has int64
+    # meta but float values -> to_dask_dataframe fails with
+    # IntCastingNaNError. Fill with a sentinel and drop that group.
+    sentinel = None
+    if np.issubdtype(scope.dtype, np.number):
+        sentinel = -1
+        scope = scope.fillna(sentinel).astype(np.int64)
+
     frame = xr.Dataset(
         {"hex_id": hex_ids, "scope": scope}
     ).to_dask_dataframe(dim_order=list(hex_ids.dims))
     frame = frame[frame["hex_id"] >= 0]
+    if sentinel is not None:
+        frame = frame[frame["scope"] != sentinel]
     counts = frame.groupby(["scope", "hex_id"]).size().rename("count").compute()
 
     unique_ids = np.asarray(counts.index.unique(level="hex_id"), dtype=np.int64)
