@@ -238,13 +238,21 @@ def counts_by_scope(hex_ids, scope, hp):
 
 
 def hp_to_cartopy(hp):
-    """Cartopy CRS matching a hextraj ``HexProj``."""
-    if hp.projection_name == "laea":
-        return ccrs.LambertAzimuthalEqualArea(
-            central_longitude=hp.lon_origin,
-            central_latitude=hp.lat_origin,
-        )
-    raise ValueError(f"Unsupported HexProj projection: {hp.projection_name}")
+    """Cartopy CRS matching a hextraj ``HexProj``.
+
+    hextraj builds its pyproj CRS as ``+proj=... +datum=WGS84``; pass an
+    explicit WGS84 ``Globe`` so cartopy's LAEA doesn't pick a slightly
+    different implicit ellipsoid — otherwise the coastline drifts a few
+    tens of km northward at Baltic latitudes relative to the hex grid.
+    """
+    if hp.projection_name != "laea":
+        raise ValueError(f"Unsupported HexProj projection: {hp.projection_name}")
+    globe = ccrs.Globe(datum="WGS84", ellipse="WGS84")
+    return ccrs.LambertAzimuthalEqualArea(
+        central_longitude=hp.lon_origin,
+        central_latitude=hp.lat_origin,
+        globe=globe,
+    )
 
 
 def projected_extent_aspect(hp, extent):
