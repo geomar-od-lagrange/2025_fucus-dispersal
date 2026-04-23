@@ -77,9 +77,9 @@ quarter_grid_figsize = (27, 13.5)
 
 # Dask cluster
 
-Connect to an external scheduler when ``SCHEDULER_FILE`` is set (the
-multi-task SLURM layout in ``scripts/024_HexHeatmaps_dask_job.sh``
-writes it). Otherwise spin up a local cluster on the current node.
+Connect to an external scheduler when ``SCHEDULER_FILE`` is set (written
+by the multi-task SLURM job). Otherwise spin up a local cluster on the
+current node.
 
 ```python
 import os
@@ -195,10 +195,13 @@ def counts_by_scope(hex_ids, scope, hp):
     over ``(scope, hex_id)`` replaces N independent value_counts
     scans. Returns ``{scope_value: GeoDataFrame}``.
     """
-    # Numeric scope with NaN (e.g. release_quarter, which is NaN for
-    # land-seeded trajectories whose time was masked to NaT) has int64
-    # meta but float values -> to_dask_dataframe fails with
-    # IntCastingNaNError. Fill with a sentinel and drop that group.
+    # Materialise scope first. It's 1-D ``(trajectory,)``, so small, and
+    # dask-backed accessors like ``.dt.quarter`` on a NaT-masked time
+    # array advertise int64 meta while actually holding float-with-NaN.
+    # fillna/astype on the lazy form are no-ops against that mismatch;
+    # partition creation then crashes with IntCastingNaNError.
+    if dask.is_dask_collection(scope):
+        scope = scope.compute()
     sentinel = None
     if np.issubdtype(scope.dtype, np.number):
         sentinel = -1

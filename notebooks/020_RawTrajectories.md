@@ -89,9 +89,24 @@ rng = np.random.default_rng()
 
 # Dask cluster
 
+Connect to an external scheduler when ``SCHEDULER_FILE`` is set (written
+by the multi-task SLURM job). Otherwise spin up a local cluster on the
+current node.
+
 ```python
+import os
+import time
 from dask.distributed import Client
-client = Client(ip="0.0.0.0")
+
+scheduler_file = os.environ.get("SCHEDULER_FILE")
+if scheduler_file:
+    for _ in range(60):
+        if os.path.exists(scheduler_file):
+            break
+        time.sleep(1)
+    client = Client(scheduler_file=scheduler_file)
+else:
+    client = Client(ip="0.0.0.0")
 client
 ```
 
