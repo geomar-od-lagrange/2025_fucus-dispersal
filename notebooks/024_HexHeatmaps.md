@@ -311,6 +311,7 @@ gdf_baltic = counts_for(hex_ids_baltic, hp_baltic)
 fig, ax = plt.subplots(
     figsize=(baltic_panel_height_in * baltic_aspect, baltic_panel_height_in),
     subplot_kw={"projection": hp_to_cartopy(hp_baltic)},
+    layout="constrained",
 )
 log_density_plot(gdf_baltic, ax, baltic_extent)
 plt.show()
@@ -321,6 +322,13 @@ plt.show()
 ```python
 gdfs_by_basin = counts_by_scope(hex_ids_baltic, ds.subbasin, hp_baltic)
 
+# Smooth the HELCOM subbasin polygons at ~5 km scale so the overlay
+# is readable on Baltic-wide panels. Buffer out then in (in lon/lat);
+# 0.05 deg ~= 5.5 km at mid-latitudes.
+subbasins_smoothed = subbasins.assign(
+    geometry=subbasins.geometry.buffer(0.05).buffer(-0.05)
+)
+
 ncols = 4
 nrows = int(np.ceil(len(subbasins_list) / ncols))
 fig, axes = plt.subplots(
@@ -330,13 +338,14 @@ fig, axes = plt.subplots(
         baltic_panel_height_in * nrows,
     ),
     subplot_kw={"projection": hp_to_cartopy(hp_baltic)},
+    layout="constrained",
 )
 for ax, basin in zip(axes.flat, subbasins_list):
     gdf = gdfs_by_basin.get(basin)
     if gdf is None or gdf.empty:
         ax.set_visible(False)
         continue
-    overlay = subbasins[subbasins["subbasin"] == basin]
+    overlay = subbasins_smoothed[subbasins_smoothed["subbasin"] == basin]
     log_density_plot(
         gdf, ax, baltic_extent, title=basin, overlay=overlay,
     )
@@ -355,6 +364,7 @@ gdf_de = counts_for(hex_ids_de, hp_de)
 fig, ax = plt.subplots(
     figsize=(de_panel_height_in * de_aspect, de_panel_height_in),
     subplot_kw={"projection": hp_to_cartopy(hp_de)},
+    layout="constrained",
 )
 log_density_plot(gdf_de, ax, de_extent)
 plt.show()
@@ -373,6 +383,7 @@ fig, axes = plt.subplots(
         baltic_panel_height_in * nrows,
     ),
     subplot_kw={"projection": hp_to_cartopy(hp_baltic)},
+    layout="constrained",
 )
 for ax, (q_int, q_label) in zip(axes.flat, QUARTER_LABELS.items()):
     gdf = gdfs_by_quarter.get(q_int)
