@@ -26,4 +26,4 @@ xhistogram = ">=0.3.2"
 zarr = ">=2.18"
 
 [pypi-dependencies]
-hextraj = { version = "*", extras = ["full"] }
+hextraj = { git = "https://github.com/willirath/hextraj.git", rev = "eccfd9cbff73ec944d82812ae47a0ee7a11f1893", extras = ["full"] }
