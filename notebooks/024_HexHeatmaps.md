@@ -157,27 +157,49 @@ quarters = sorted({int(q) for q in quarter_np if not np.isnan(q)})
 
 # Count helpers
 
-`hex_counts` materialises the (trajectory, obs) hex-ID array it is
-given; we therefore pre-subset with `ds.where(key==v)` so each scope
-only computes its own slice. For the full Baltic the scope is the
-whole dataset.
+`counts_for` delegates aggregation and geometry attachment to
+`hextraj.hex_counts`, which handles dask-backed `(trajectory, obs)`
+inputs lazily without materialising the full array. `counts_by_scope`
+adds a scope column (subbasin, release quarter) and replaces N
+per-scope scans with a single `groupby(["scope", "hex_id"]).size()`
+over the same data — hextraj's `reduce_dims` only groups by
+DataArray dims, not by `(trajectory,)`-valued categoricals, so the
+scope path stays in the notebook.
 
 ```python
-def counts_for(hex_ids, hp, mask=None):
-    """Distributed-friendly hex counting.
+def counts_for(hex_ids, hp):
+    """Aggregate (trajectory, obs) hex IDs into a GeoDataFrame."""
+    return hex_counts(hex_ids, hp=hp).dropna(subset=["geometry"])
 
-    Instead of materialising the full (trajectory, obs) dask array in one
-    shot (OOM on large regimes), flatten to a dask Series and let
-    dask.dataframe.value_counts aggregate per partition, then build
-    geometries from the small result."""
-    if mask is not None:
-        hex_ids = hex_ids.where(mask, other=-1)
-    flat = hex_ids.data.ravel()
-    vc = dd.from_dask_array(flat).value_counts().compute()
-    vc = vc[vc.index >= 0]
-    gdf = hex_counts(pd.Series(vc.index, dtype=np.int64), hp=hp)
-    gdf["count"] = vc.reindex(gdf.index).values
-    return gdf.dropna(subset=["geometry"])
+
+def counts_by_scope(hex_ids, scope, hp):
+    """Hex counts per scope value, computed in a single groupby pass.
+
+    ``scope`` is a 1-D ``(trajectory,)`` DataArray; xarray broadcasts
+    it to ``hex_ids`` shape at dataframe-conversion time. One groupby
+    over ``(scope, hex_id)`` replaces N independent value_counts
+    scans. Returns ``{scope_value: GeoDataFrame}``.
+    """
+    frame = xr.Dataset(
+        {"hex_id": hex_ids, "scope": scope}
+    ).to_dask_dataframe(dim_order=list(hex_ids.dims))
+    frame = frame[frame["hex_id"] >= 0]
+    counts = frame.groupby(["scope", "hex_id"]).size().rename("count").compute()
+
+    unique_ids = np.asarray(counts.index.unique(level="hex_id"), dtype=np.int64)
+    geo = hp.to_geodataframe(unique_ids)
+
+    result = {}
+    for scope_val, sub in counts.groupby(level="scope"):
+        hex_id_values = sub.index.get_level_values("hex_id").to_numpy()
+        gdf = gpd.GeoDataFrame(
+            {"count": sub.to_numpy(),
+             "geometry": geo.geometry.reindex(hex_id_values).values},
+            index=pd.Index(hex_id_values, name="hex_id"),
+            crs="EPSG:4326",
+        ).dropna(subset=["geometry"])
+        result[scope_val] = gdf
+    return result
 
 
 def log_density_plot(gdf, ax, extent, title=None):
@@ -208,6 +230,8 @@ plt.show()
 # Per HELCOM release subbasin
 
 ```python
+gdfs_by_basin = counts_by_scope(hex_ids_baltic, ds.subbasin, hp_baltic)
+
 ncols = 4
 nrows = int(np.ceil(len(subbasins_list) / ncols))
 fig, axes = plt.subplots(
@@ -215,7 +239,10 @@ fig, axes = plt.subplots(
     figsize=subbasin_grid_figsize,
 )
 for ax, basin in zip(axes.flat, subbasins_list):
-    gdf = counts_for(hex_ids_baltic, hp_baltic, mask=(ds.subbasin == basin))
+    gdf = gdfs_by_basin.get(basin)
+    if gdf is None or gdf.empty:
+        ax.set_visible(False)
+        continue
     log_density_plot(gdf, ax, [lon_min, lon_max, lat_min, lat_max], title=basin)
 for ax in axes.flat[len(subbasins_list):]:
     ax.set_visible(False)
@@ -237,13 +264,18 @@ plt.show()
 # Per release quarter (JFM/AMJ/JAS/OND)
 
 ```python
+gdfs_by_quarter = counts_by_scope(hex_ids_baltic, ds.release_quarter, hp_baltic)
+
 ncols, nrows = 2, 2
 fig, axes = plt.subplots(
     nrows=nrows, ncols=ncols,
     figsize=quarter_grid_figsize,
 )
 for ax, (q_int, q_label) in zip(axes.flat, QUARTER_LABELS.items()):
-    gdf = counts_for(hex_ids_baltic, hp_baltic, mask=(ds.release_quarter == q_int))
+    gdf = gdfs_by_quarter.get(q_int)
+    if gdf is None or gdf.empty:
+        ax.set_visible(False)
+        continue
     log_density_plot(gdf, ax, [lon_min, lon_max, lat_min, lat_max], title=q_label)
 plt.show()
 ```
