@@ -56,12 +56,8 @@ de_lat_min, de_lat_max = 53.2, 55.5
 dlon_de = 0.125
 dlat_de = 0.125
 
-# Panel sizing (probed for ~3" width per panel on a Baltic box of 27x13 deg
-# in PlateCarree; German box of 7x2.3 deg needs a wider figsize).
-single_baltic_figsize = (4, 2)
-single_de_figsize = (4, 1.5)
-facet_baltic_size = 2.0
-facet_baltic_aspect = 2.1
+baltic_panel_height_in = 2
+de_panel_height_in = 1.5
 ```
 
 # Dask cluster
@@ -155,11 +151,28 @@ def mean_age_hours(h):
 ```
 
 ```python
+def lonlat_aspect(extent):
+    """Displayed width / height ratio for a lon/lat ``extent`` with an
+    aspect that keeps 1 deg lon at ``lat_mean`` visually equal to 1 deg
+    lat."""
+    lon_min_, lon_max_, lat_min_, lat_max_ = extent
+    lat_mean = 0.5 * (lat_min_ + lat_max_)
+    return ((lon_max_ - lon_min_) * np.cos(np.radians(lat_mean))) / (
+        lat_max_ - lat_min_
+    )
+
+baltic_extent = [lon_min, lon_max, lat_min, lat_max]
+de_extent = [de_lon_min, de_lon_max, de_lat_min, de_lat_max]
+baltic_aspect = lonlat_aspect(baltic_extent)
+de_aspect = lonlat_aspect(de_extent)
+```
+
+```python
 def facet_map(da, col, col_wrap=None):
     fg = da.plot(
         x="lon", y="lat",
         col=col, col_wrap=col_wrap,
-        size=facet_baltic_size, aspect=facet_baltic_aspect,
+        size=baltic_panel_height_in, aspect=baltic_aspect,
         subplot_kws=dict(projection=ccrs.PlateCarree()),
         transform=ccrs.PlateCarree(),
     )
@@ -167,10 +180,12 @@ def facet_map(da, col, col_wrap=None):
         ax.coastlines()
     return fg
 
-def single_map(da, extent, figsize):
+def single_map(da, extent, panel_height_in):
+    width = lonlat_aspect(extent) * panel_height_in
     fig, ax = plt.subplots(
-        figsize=figsize,
+        figsize=(width, panel_height_in),
         subplot_kw=dict(projection=ccrs.PlateCarree()),
+        layout="constrained",
     )
     da.plot(ax=ax, x="lon", y="lat", transform=ccrs.PlateCarree())
     ax.coastlines()
@@ -223,9 +238,9 @@ h_by_quarter = relabel_quarter(h_by_quarter)
 # Whole Baltic
 
 ```python
-single_map(density(h_baltic), [lon_min, lon_max, lat_min, lat_max], single_baltic_figsize)
+single_map(density(h_baltic), baltic_extent, baltic_panel_height_in)
 plt.show()
-single_map(mean_age_hours(h_baltic), [lon_min, lon_max, lat_min, lat_max], single_baltic_figsize)
+single_map(mean_age_hours(h_baltic), baltic_extent, baltic_panel_height_in)
 plt.show()
 ```
 
@@ -241,9 +256,9 @@ plt.show()
 # German waters
 
 ```python
-single_map(density(h_de), [de_lon_min, de_lon_max, de_lat_min, de_lat_max], single_de_figsize)
+single_map(density(h_de), de_extent, de_panel_height_in)
 plt.show()
-single_map(mean_age_hours(h_de), [de_lon_min, de_lon_max, de_lat_min, de_lat_max], single_de_figsize)
+single_map(mean_age_hours(h_de), de_extent, de_panel_height_in)
 plt.show()
 ```
 

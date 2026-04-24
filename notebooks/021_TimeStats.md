@@ -32,10 +32,6 @@ from helpers import load_trajectories, mask_land_seeded
 
 ```python tags=["parameters"]
 base_path = "/gxfs_work/geomar/smomw122/2025_fucus-dispersal"
-
-# Target ~3" width per panel at standard dpi.
-bar_figsize = (3, 3)
-hist_figsize = (6, 3)
 ```
 
 # Dask cluster
@@ -118,7 +114,7 @@ land_seed = pd.Series(
     {r: int(per_regime[r]["n_total"] - per_regime[r]["n_valid"]) for r in regimes},
     name="land_seeded",
 )
-land_seed.plot.bar(figsize=bar_figsize)
+land_seed.plot.bar()
 ```
 
 # Final displacement distribution
@@ -136,6 +132,6 @@ for regime in regimes:
     finals[regime] = (111.0 * np.sqrt(dlat ** 2 + dlon ** 2)).values
 
 df_final = pd.DataFrame({r: pd.Series(v) for r, v in finals.items()}).dropna(how="all")
-ax = df_final.plot.hist(bins=50, histtype="step", figsize=hist_figsize)
+ax = df_final.plot.hist(bins=50, histtype="step")
 ax.set_xlabel("Final displacement (km)")
 ```

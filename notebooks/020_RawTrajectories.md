@@ -27,23 +27,9 @@ import numpy as np
 import xarray as xr
 import geopandas as gpd
 import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
 from matplotlib.lines import Line2D
 import cartopy.crs as ccrs
 from pathlib import Path
-
-# Silence two noisy-but-harmless warning classes the structural fixes
-# should already avoid, as belt-and-braces for edge cases.
-warnings.filterwarnings(
-    "ignore",
-    message="invalid value encountered in linestrings",
-    category=RuntimeWarning,
-)
-warnings.filterwarnings(
-    "ignore",
-    message=r"Sending large graph of size",
-    category=UserWarning,
-)
 
 from helpers import (
     QUARTER_LABELS,
@@ -65,13 +51,8 @@ lat_min, lat_max = 53, 66
 de_lon_min, de_lon_max = 8, 15
 de_lat_min, de_lat_max = 53.2, 55.5
 
-# Panel sizing probed for ~3" width per panel at standard dpi, Baltic box
-# (27x13 deg) in PlateCarree. Single German panel is narrower in lat
-# (2.3 deg), so figsize height is reduced to match.
-single_baltic_figsize = (4, 2)
-single_de_figsize = (4, 1.5)
-subbasin_grid_figsize = (18, 9)   # 4x4, Baltic extent per panel
-quarter_grid_figsize = (9, 4.5)   # 2x2, Baltic extent per panel
+baltic_panel_height_in = 2
+de_panel_height_in = 1.5
 
 # Regime colours.
 regime_colors = {
@@ -84,7 +65,9 @@ regime_colors = {
 # Global RNG
 
 ```python
-rng = np.random.default_rng()
+seed = np.random.randint(0, 2**31 - 1)
+print(f"RNG seed: {seed}")
+rng = np.random.default_rng(seed)
 ```
 
 # Dask cluster
@@ -166,84 +149,36 @@ for regime, ds in regime_dsets.items():
 
 # Plot helpers
 
-`sample_subsets` picks up to `n` random trajectories per group and
-materialises them in a single `dask.compute` per panel loop — one big
-`ds.isel(trajectory=...)` instead of N per-group isels.
-
-`plot_lines` renders a per-trajectory NaN-filtered `LineCollection` so
-cartopy's `path_to_shapely` never hands NaN coords to
-`shapely.linestrings` (the source of the
-``invalid value encountered in linestrings`` warning storm). NaN-only
-or <2-valid-point trajectories are dropped.
-
 ```python
-def sample_subsets(ds_, groups, n):
-    """groups: dict name -> bool sel over trajectory (None = all). Returns
-    dict name -> locally-materialised Dataset with <= n trajectories."""
-    picks = {}
-    parts = []
-    for name, sel in groups.items():
-        avail = (
-            np.arange(ds_.sizes["trajectory"])
-            if sel is None
-            else np.flatnonzero(sel)
-        )
-        if avail.size == 0:
-            picks[name] = np.array([], dtype=int)
-            continue
-        chosen = rng.choice(avail, min(avail.size, n), replace=False)
-        picks[name] = chosen
-        parts.append(chosen)
-    if not parts:
-        empty = ds_.isel(trajectory=[]).compute()
-        return {name: empty for name in groups}
-    flat = np.concatenate(parts)
-    ds_all = ds_.isel(trajectory=flat).compute()
-    out = {}
-    offset = 0
-    for name, chosen in picks.items():
-        k = chosen.size
-        out[name] = ds_all.isel(trajectory=slice(offset, offset + k))
-        offset += k
-    return out
+def lonlat_aspect(extent):
+    """Displayed width / height ratio for a lon/lat ``extent`` with an
+    aspect that keeps 1 deg lon at ``lat_mean`` visually equal to 1 deg
+    lat. Matches ``ax.set_aspect(1 / cos(lat_mean))`` below."""
+    lon_min_, lon_max_, lat_min_, lat_max_ = extent
+    lat_mean = 0.5 * (lat_min_ + lat_max_)
+    return ((lon_max_ - lon_min_) * np.cos(np.radians(lat_mean))) / (
+        lat_max_ - lat_min_
+    )
+
+
+baltic_extent = [lon_min, lon_max, lat_min, lat_max]
+de_extent = [de_lon_min, de_lon_max, de_lat_min, de_lat_max]
+baltic_aspect = lonlat_aspect(baltic_extent)
+de_aspect = lonlat_aspect(de_extent)
 
 
 def plot_lines(ds_plot, ax, color, lw=None):
     if ds_plot.sizes["trajectory"] == 0:
         return
-    lon = ds_plot.lon.values
-    lat = ds_plot.lat.values
-    segments = []
-    for i in range(lon.shape[0]):
-        xi, yi = lon[i], lat[i]
-        m = ~(np.isnan(xi) | np.isnan(yi))
-        if m.sum() < 2:
-            continue
-        segments.append(np.column_stack([xi[m], yi[m]]))
-    if not segments:
-        return
-    ax.add_collection(
-        LineCollection(
-            segments, linewidths=lw, colors=color,
-            alpha=0.3, transform=ccrs.PlateCarree(),
-        )
-    )
-
-
-def regime_legend_handles():
-    return [
-        Line2D([], [], color=regime_colors[r], label=r, linewidth=1.5)
-        for r in regimes
-    ]
-
-
-def sample_per_regime(groups_for):
-    """For each regime, run sample_subsets(ds, groups_for(regime), n).
-    Returns dict[regime] -> dict[group_name -> materialised ds]."""
-    return {
-        regime: sample_subsets(regime_dsets[regime], groups_for(regime), n_traj_subset)
-        for regime in regimes
-    }
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        for i in range(ds_plot.sizes["trajectory"]):
+            ax.plot(
+                ds_plot.lon.isel(trajectory=i),
+                ds_plot.lat.isel(trajectory=i),
+                color=color, linewidth=lw, alpha=0.3,
+                transform=ccrs.PlateCarree(),
+            )
 ```
 
 # Per HELCOM release subbasin
@@ -259,82 +194,94 @@ subbasins_list = sorted({
     if isinstance(s, str)
 })
 
-subsets_per_regime = sample_per_regime(
-    lambda regime: {b: regime_keys[regime]["subbasin"] == b for b in subbasins_list}
-)
-
 ncols = 4
 nrows = int(np.ceil(len(subbasins_list) / ncols))
 for regime in regimes:
+    ds = regime_dsets[regime]
     fig, axes = plt.subplots(
         nrows=nrows, ncols=ncols,
-        figsize=subbasin_grid_figsize,
+        figsize=(baltic_panel_height_in * baltic_aspect * ncols, baltic_panel_height_in * nrows),
+        layout="constrained",
         subplot_kw=dict(projection=ccrs.PlateCarree()),
     )
     for ax, basin in zip(axes.flat, subbasins_list):
-        plot_lines(
-            subsets_per_regime[regime][basin], ax,
-            color=regime_colors[regime], lw=0.5,
-        )
-        ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
+        mask = regime_keys[regime]["subbasin"] == basin
+        avail = np.flatnonzero(mask)
+        if avail.size == 0:
+            ax.set_visible(False)
+            continue
+        idx = rng.choice(avail, size=min(n_traj_subset, avail.size), replace=False)
+        ds_plot = ds.isel(trajectory=idx).compute()
+        plot_lines(ds_plot, ax, color=regime_colors[regime], lw=0.5)
+        ax.set_extent(baltic_extent, crs=ccrs.PlateCarree())
         ax.coastlines()
         ax.set_title(basin)
     for ax in axes.flat[len(subbasins_list):]:
         ax.set_visible(False)
     fig.suptitle(regime)
-    fig.legend(handles=regime_legend_handles(), loc="lower center", ncol=len(regimes))
+    fig.legend(
+        handles=[Line2D([], [], color=regime_colors[r], label=r, linewidth=1.5) for r in regimes],
+        loc="lower center", ncol=len(regimes),
+    )
     plt.show()
 ```
 
 # German waters
 
 ```python
-subsets_per_regime = sample_per_regime(lambda regime: {"all": None})
-
 fig, axes = plt.subplots(
     nrows=1, ncols=len(regimes),
-    figsize=(single_de_figsize[0] * len(regimes), single_de_figsize[1]),
+    figsize=(de_panel_height_in * de_aspect * len(regimes), de_panel_height_in),
+    layout="constrained",
     subplot_kw=dict(projection=ccrs.PlateCarree()),
 )
 for ax, regime in zip(axes, regimes):
-    plot_lines(
-        subsets_per_regime[regime]["all"], ax,
-        color=regime_colors[regime],
-    )
-    ax.set_extent([de_lon_min, de_lon_max, de_lat_min, de_lat_max], crs=ccrs.PlateCarree())
+    ds = regime_dsets[regime]
+    idx = rng.choice(ds.sizes["trajectory"], size=min(n_traj_subset, ds.sizes["trajectory"]), replace=False)
+    ds_plot = ds.isel(trajectory=idx).compute()
+    plot_lines(ds_plot, ax, color=regime_colors[regime])
+    ax.set_extent(de_extent, crs=ccrs.PlateCarree())
     ax.coastlines()
     ax.set_title(regime)
-fig.legend(handles=regime_legend_handles(), loc="lower center", ncol=len(regimes))
+fig.legend(
+    handles=[Line2D([], [], color=regime_colors[r], label=r, linewidth=1.5) for r in regimes],
+    loc="lower center", ncol=len(regimes),
+)
 plt.show()
 ```
 
 # Per release quarter (JFM/AMJ/JAS/OND)
 
 ```python
-subsets_per_regime = sample_per_regime(
-    lambda regime: {q_int: regime_keys[regime]["quarter"] == q_int for q_int in QUARTER_LABELS}
-)
-
 nrows = len(QUARTER_LABELS)
 ncols = len(regimes)
 fig, axes = plt.subplots(
     nrows=nrows, ncols=ncols,
-    figsize=(single_baltic_figsize[0] * ncols, single_baltic_figsize[1] * nrows),
+    figsize=(baltic_panel_height_in * baltic_aspect * ncols, baltic_panel_height_in * nrows),
+    layout="constrained",
     subplot_kw=dict(projection=ccrs.PlateCarree()),
 )
 for row, (q_int, q_label) in enumerate(QUARTER_LABELS.items()):
     for col, regime in enumerate(regimes):
         ax = axes[row, col]
-        plot_lines(
-            subsets_per_regime[regime][q_int], ax,
-            color=regime_colors[regime],
-        )
-        ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
+        ds = regime_dsets[regime]
+        mask = regime_keys[regime]["quarter"] == q_int
+        avail = np.flatnonzero(mask)
+        if avail.size == 0:
+            ax.set_visible(False)
+            continue
+        idx = rng.choice(avail, size=min(n_traj_subset, avail.size), replace=False)
+        ds_plot = ds.isel(trajectory=idx).compute()
+        plot_lines(ds_plot, ax, color=regime_colors[regime])
+        ax.set_extent(baltic_extent, crs=ccrs.PlateCarree())
         ax.coastlines()
         if row == 0:
             ax.set_title(regime)
         if col == 0:
             ax.set_ylabel(q_label)
-fig.legend(handles=regime_legend_handles(), loc="lower center", ncol=len(regimes))
+fig.legend(
+    handles=[Line2D([], [], color=regime_colors[r], label=r, linewidth=1.5) for r in regimes],
+    loc="lower center", ncol=len(regimes),
+)
 plt.show()
 ```

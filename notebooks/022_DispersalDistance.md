@@ -43,8 +43,6 @@ base_path = "/gxfs_work/geomar/smomw122/2025_fucus-dispersal"
 de_lon_min, de_lon_max = 8, 15
 de_lat_min, de_lat_max = 53.2, 55.5
 
-# Line plots target ~3" width per panel (no projection, aspect=1 is fine).
-single_line_figsize = (6, 3)
 facet_line_size = 3.0
 facet_line_aspect = 1.0
 ```
@@ -177,7 +175,7 @@ da_quarter = relabel_quarter(da_quarter)
 # Global
 
 ```python
-fig, ax = plt.subplots(figsize=single_line_figsize)
+fig, ax = plt.subplots(layout="constrained")
 da_global.plot.line(x="obs", hue="regime", ax=ax)
 ```
 
@@ -193,7 +191,7 @@ da_sb.plot.line(
 # German waters (release cells inside bounding box)
 
 ```python
-fig, ax = plt.subplots(figsize=single_line_figsize)
+fig, ax = plt.subplots(layout="constrained")
 da_de.plot.line(x="obs", hue="regime", ax=ax)
 ```
 
