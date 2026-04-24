@@ -11,7 +11,12 @@ notebooks_executed/*
 *.out
 *startup.sh
 *.pdf
-.claude/
+# Agent harness — track only shared skills, ignore everything else
+.agents/*
+!.agents/skills
+.claude/*
+!.claude/skills
+
 tmp_papermill_test/
 min_data/
 data/HELCOM_subbasins_2022_level2/
