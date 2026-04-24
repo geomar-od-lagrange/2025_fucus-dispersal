@@ -29,20 +29,22 @@ CLAUDE.md -> AGENTS.md       # symlink — DONE
 .claude/skills -> ../.agents/skills   # compat symlink — DONE
 .gitmodules                  # NEW: data/ submodule → data twin repo
 scripts/
-  fetch_data.sh              # NEW: one-shot setup wrapper (§3)
-  obtain/
-    helcom.sh                # NEW: download + convert HELCOM shapes
-    fucus.sh                 # NEW: download MADS/SYKE macrophyte shapefile
-    stokes_sample.sh         # NEW: thin wrapper around scripts/002 for demo window
-    bsh_minimal.sh           # RENAMED from copy_minimal_bsh_data.sh; cluster-only
+  obtain/                    # upstream-rebuild recipe, used by twin CI
+    download_helcom_subbasins.sh
+    download_fucus_shapefile.sh
+    download_stokes_sample.sh
+    copy_bsh_minimal.sh      # RENAMED from copy_minimal_bsh_data.sh
+  fetch_data.sh              # invokes the obtain/ chain end-to-end
   001_prepare_sigma_files.py
   002_download_stokes.py
   003_prepare_2d_fields.py
   004_extract_coastline.py
-  010_FucusDispersal_job.sh  # MERGED from the two twin scripts
-  020..024_job.sh, submit_all_viz_jobs.sh  # updated base_path logic
+  010_FucusDispersal_bottom_job.sh
+  010_FucusDispersal_surface_job.sh
+  020..024_job.sh, submit_all_viz_jobs.sh  # updated path args
 data/                        # git submodule → data twin repo
-ATTRIBUTION.md               # NEW: per-dataset blocks (see licensing plan)
+docs/                        # NEW (per AGENTS.md): standalone state docs
+ATTRIBUTION.md               # per-dataset blocks (see licensing plan)
 LICENSE                      # code, unchanged
 notebooks/                   # unchanged logic, renumbered per §5
 plans/, pixi.toml, README.md, Notes.md
@@ -50,6 +52,26 @@ plans/, pixi.toml, README.md, Notes.md
 
 `min_data/` is **deleted**. Everything in it moves to the data twin
 (inputs) or the NESH output tree (derived demo outputs).
+
+`data/` keeps its generic name because it's a single submodule mount
+point, not a bucket that mixes sources: provenance lives one level
+down in the source-prefixed subdir names (§1 twin layout), so
+`data/helcom_subbasins/…` already reads as "what data" without the
+mount point needing to carry it.
+
+`scripts/` (non-interactive batch: preprocessing + orchestration + obtain)
+and `notebooks/` (scientific analysis with narrative) stay split as
+they are. The 001–004 preprocessing scripts run unattended and don't
+carry analytical narrative, so they belong with the job scripts, not
+in `notebooks/`. Revisit if the count of non-notebook scripts grows
+enough to warrant subdividing `scripts/`.
+
+Primary setup path is the submodule — no convenience wrapper needed.
+`scripts/fetch_data.sh` is the **upstream rebuild** entry point (invokes
+`scripts/obtain/*`), not a submodule wrapper; it's what you run when the
+twin is unreachable or you want to regenerate the bundled blobs from
+source. README.md and AGENTS.md describe the submodule + `git lfs pull`
+flow directly — that's self-explaining and doesn't need wrapping.
 
 ### Public data twin repo (new, git-LFS)
 
@@ -59,25 +81,40 @@ repo as a **git submodule** at `./data/`. Because the twin is public,
 the recursive-clone hazard that would normally rule out submodules
 doesn't apply — no auth wall to fail against.
 
+Directory names carry their source as a prefix (`helcom_…`, `fucus_…`,
+`bsh_…`, `cmems_…`) so provenance is visible without cross-referencing
+the attribution file.
+
 ```
-HELCOM_subbasins_2022_level2/    # was gitignored here; lives only in twin
-Fucus_location_shp/              # REDLIST_SIS_Macrophytes.{shp,dbf,shx,prj,...}
-BSH_model_coastline/             # derived via scripts/004 but bundled for speed
+helcom_subbasins/                # HELCOM subbasins 2022 level 2
+fucus_redlist_shapefile/         # REDLIST_SIS_Macrophytes.{shp,dbf,shx,prj,...}
+bsh_coastline/                   # derived via scripts/004 but bundled for speed
   coastline.geojson
   coastline_always_wet.geojson
-bsh_h0/                          # just the H0 files 025 needs for the key
-  H0_file_fine.nc
-  H0_file_coarse.nc
-bsh_minimal/                     # demo subset for 003 / 010 / 025 smoke runs
-  c_file_{fine,coarse}_2020/
-  static_file_{fine,coarse}/
-  t_file_{fine,coarse}_2020/
-stokes_sample/
+bsh_minimal/                     # demo subset for 003 / 010 / 025 smoke runs;
+                                 # mirrors the on-NESH BSH layout so notebooks
+                                 # don't special-case the twin.
+  static_file_fine/              # includes H0 (no separate bsh_h0/ dir)
+  static_file_coarse/
+  c_file_fine_2020/
+  c_file_coarse_2020/
+  t_file_fine_2020/
+  t_file_coarse_2020/
+cmems_stokes_sample/
   baltic_stokes_20200101.nc
+derived/                         # 000-style one-shot preprocess outputs
+  fucus_release_points.geojson   # built once by scripts/obtain, committed
+  helcom_subbasins_simplified.geojson  # same idea, if 000 factors it out
 ATTRIBUTION.md                   # mirrors the main repo's, verbatim
 README.md
-.gitattributes                   # *.nc, *.shp, *.zarr → lfs
+.gitignore                       # os cruft, editor files, build leftovers
+.gitattributes                   # see below
 ```
+
+`.gitattributes` LFS patterns must cover every binary blob the twin
+carries: `*.nc`, `*.zarr/**`, `*.shp`, `*.dbf`, `*.shx`, `*.prj`,
+`*.sbn`, `*.sbx`, `*.cpg`, `*.qix`, `*.tif`, `*.tiff`. The `.geojson`
+files stay as plain text (diffable, small).
 
 ### NESH layout — outputs leave the repo
 
@@ -95,61 +132,74 @@ Target:
     stokes/                            # from scripts/002 (full-year)
     Trajectories/<regime>/<year>/*.zarr   # from notebook 010
     HexAggregates/r{N}km_v1/           # from the aggregate-store notebook
-    debug/                             # bottom-stationary audit etc.
 ```
 
 Repo-name underscore mismatch (`fucus-dispersal` vs.
 `fucus_dispersal_outputs`) is fine — they're distinct entities; the
 outputs dir is the one that'll most often be read as a variable name.
 
+The large on-NESH BSH store (full multi-year `c_file_*`, `t_file_*`)
+lives at its existing NESH path and is **not** under `./data/`. `./data/`
+always contains the demo subset bundled by the twin; the big store is
+addressed by a separate `bsh_root` parameter on the runs that need it.
+
 ## 2. Path convention across notebooks/scripts
 
-Two explicit roots, no more `base_path`:
+Three explicit roots, passed as **parameters**, not environment
+variables:
 
-- `data_root` — inputs. Default `Path("./data")` (relative to repo).
-  Used for reading HELCOM shapes, Fucus shapes, BSH coastline geojsons,
-  H0 files.
-- `output_root` — outputs. Default
-  `os.environ.get("FUCUS_OUTPUT_ROOT", "./output")`. On NESH, set to
-  `<work>/2025_fucus_dispersal_outputs/`.
+- `data_root` — inputs bundled in the twin. Default
+  `Path("./data")` (relative to repo).
+- `output_root` — heavy outputs. Default `Path("./output")` locally;
+  on NESH set to `<work>/2025_fucus_dispersal_outputs/`.
+- `bsh_root` — the large on-NESH BSH store. No default; only the
+  stages that need it (003, 010) take it.
 
-Every notebook parameters cell takes both. Every job script exports
-`FUCUS_OUTPUT_ROOT` once at the top and passes `data_root` through
-papermill. Scripts/001–004 take them as CLI args (already close —
-tidy the defaults).
+Every notebook parameters cell takes the roots it uses as plain
+papermill parameters (primitives only, per AGENTS.md). Every job script
+passes them explicitly on the papermill command line. No
+`FUCUS_OUTPUT_ROOT` / `FUCUS_DATA_ROOT` env vars: the papermill
+parameter is the single contract, visible in each notebook's
+parameters cell.
 
-## 3. Fetching inputs: submodule primary, `scripts/fetch_data.sh` wrapper
+`scripts/001..004` are CLI tools and take the same roots as `--data-root`
+/ `--output-root` args (defaults matching the notebook defaults).
 
-The submodule is the canonical path. A recursive clone plus LFS pull
-populates `./data/` and pins the exact data SHA into the main repo's
-history — no separate version file needed. Publication freezes both
-via git tags + Zenodo DOIs.
+## 3. Fetching inputs
 
-Primary path:
+The submodule is the canonical path — self-explaining, no wrapper.
+
 ```bash
 git clone --recurse-submodules https://github.com/.../2025_fucus-dispersal.git
 cd 2025_fucus-dispersal
-git -C data lfs pull          # or: pixi run fetch-data
+git -C data lfs pull
 ```
 
-`scripts/fetch_data.sh` is a thin convenience wrapper that:
-1. Runs `git submodule update --init data` (no-op if already there).
-2. Runs `git -C data lfs pull`.
-3. On submodule failure (e.g. GitLab temporarily unreachable), falls
-   back to the `scripts/obtain/*.sh` chain to fetch from upstream
-   public sources (HELCOM, MADS, Copernicus). Rebuild populates the
-   same paths under `./data/` and the notebooks don't care which path
-   filled them.
-4. Skips tier-3 (BSH bulk) unless `WITH_BSH=1`; that's cluster-only.
+After a plain clone:
+```bash
+git submodule update --init data
+git -C data lfs pull
+```
 
-The rebuild fallback also doubles as the **recipe of record** for the
-data twin. Twin-side CI runs the same scripts on schedule (and on
-main-repo recipe changes) to keep twin HEAD in sync with main HEAD —
-so the submodule pointer on main is always advanceable to a fresh twin
-commit when recipes change.
+README.md and AGENTS.md document this directly; both mention that
+git-lfs must be installed locally first (`brew install git-lfs` / conda
+equivalent, then `git lfs install` once per user).
 
-No `data/VERSION` file: the submodule SHA is the version, and "main
-HEAD is the only supported vintage" is the workflow.
+`scripts/fetch_data.sh` is only the **upstream rebuild** path: it runs
+the `scripts/obtain/*` chain to reconstruct `./data/` from public
+sources (HELCOM, MADS/SYKE, Copernicus), and is also what the twin's CI
+runs on schedule to keep the twin's blobs in sync with the recipe. Use
+it when the twin is unreachable or when the recipe changes and you need
+to refresh locally.
+
+Everything lives under `./data/`, always. There is no cluster-only data
+*inside* `./data/` — the only cluster-only thing is the heavy on-NESH
+BSH store, which is a separate path (§1 NESH, `bsh_root` in §2) and
+never touched by this flow.
+
+Version pinning: the main repo's submodule SHA records the exact twin
+commit. Publication freezes both via git tags + Zenodo DOIs. No
+`data/VERSION` file.
 
 ## 4. Code straightening (sequenced)
 
@@ -166,19 +216,25 @@ renames are free.
      `counts_by_scope`; becomes a geopandas read + groupby-sum +
      `log_density_plot`.
 
-2. **Fold 000 into 010 (or drop).** 010 reads
-   `REDLIST_SIS_Macrophytes.geojson` which only 000 produces, and uses
-   000's `CELLID = index`. The `cell_ID` particle attribute is never
-   read downstream. Cheapest: 010 reads the `.shp` directly, drops
-   `cell_ID`, and 000 moves to `notebooks/explore/` (the SH-coast
-   splitting logic is still useful there).
+2. **Move 000 to a one-shot data-prep step.** 000 currently builds
+   `REDLIST_SIS_Macrophytes.geojson` (plus SH-coast splitting) at run
+   time. Instead, run 000 once, commit the resulting geojson to the
+   twin under `data/derived/`, and have 010 read that pre-baked file
+   directly. The `cell_ID` particle attribute is never read downstream
+   — drop it. Same approach for any HELCOM subbasin simplification:
+   bake once into the twin, not recomputed every run. The SH-coast
+   splitting logic that doesn't fit the bake-once shape stays in
+   `notebooks/explore/`.
 
-3. **Merge the two 010 job scripts.** `010_FucusDispersal_bottom_job.sh`
-   and `..._surface_job.sh` differ only in the trailing regime/vf loop.
-   One script, regime matrix as argv.
+3. **Keep the two 010 job scripts separate.** The surface and bottom
+   runs will diverge (bottom Ekman, boundary layer, Fucus on rough
+   substrate — bottom needs its own treatment, not a shared matrix
+   sweep). No merge; the earlier proposal to collapse them is
+   withdrawn.
 
-4. **Unify `base_path` → `data_root` + `output_root`** (§2) across
-   010/020/021/022/023/024/025. Mechanical; do after §4.1 renumbering.
+4. **Unify `base_path` → `data_root` + `output_root` (+ `bsh_root`
+   where relevant)** (§2) across 010/020/021/022/023/024/025.
+   Mechanical; do after §4.1 renumbering.
 
 5. **Pin output filename convention** and extract
    `parse_zarr_stem(path)` into `helpers.py`. The new 024 relies on
@@ -194,9 +250,10 @@ renames are free.
    names — this also unblocks future regime variants (e.g. bottom at
    vf=0.97).
 
-Not doing now: experiment tracking (`plans/experiment_tracking.md`),
-hextraj OOM upstream PR (`plans/hextraj_hex_counts_oom.md` — keep the
-downstream workaround until upstream accepts a patch).
+Not doing now: experiment tracking (`plans/experiment_tracking.md`).
+The hextraj OOM workaround is already fixed upstream — move
+`plans/hextraj_hex_counts_oom.md` to `plans/done/` as part of this
+migration.
 
 ## 5. Attribution
 
@@ -206,6 +263,22 @@ Same file copied verbatim into the data twin so the licence travels
 with the blobs. `LICENSE` (code, MIT) unchanged; add one line to
 `README.md` distinguishing code licence (MIT) from data terms
 (per-dataset in ATTRIBUTION.md).
+
+**Why `ATTRIBUTION.md` is needed in the main repo even though the twin
+ships the data.** The per-dataset licences (CC BY 4.0 for HELCOM and
+MADS/SYKE REDLIST; the CMEMS and BSH terms) require attribution on
+*both* redistribution and use-in-derived-products. The twin's copy
+discharges redistribution. The main repo's copy discharges the
+derived-products trigger: we commit freshly-executed `.ipynb` files
+alongside their `.md` sources (per AGENTS.md), and those executed
+notebooks contain figures rendered from every bundled dataset. A
+repo-root `ATTRIBUTION.md` is the single place that satisfies the
+licences for that derivative content. No per-plot annotations.
+
+Scope covered: everything the pipeline *touches*, which is a superset
+of what's redistributed in the twin — notably the full on-NESH BSH
+store is used (003, 010) but not redistributed, and still needs
+attribution here.
 
 Two outstanding attribution inputs still needed:
 - BSH minimal: enumerate the year/grid/file scope actually shipped in
@@ -227,34 +300,32 @@ Rough order; each step self-contained and mergeable.
 
 1. Initialise the data twin at
    <https://git.geomar.de/od-lagrange/2025_fucus_dispersal_data>:
-   add `.gitattributes` (LFS patterns), `README.md`, `ATTRIBUTION.md`.
-   Push HELCOM + Fucus + BSH-coastline geojsons first (small, tier
-   1 / derived).
-2. Write `scripts/obtain/helcom.sh`, `scripts/obtain/fucus.sh`, plus
-   `scripts/fetch_data.sh` (submodule + LFS + rebuild fallback, §3).
-   This is the recipe that the twin's CI will also run.
-3. Copy the BSH H0 and BSH minimal subsets into the twin. Add
-   `scripts/obtain/bsh_minimal.sh` (renamed from
-   `copy_minimal_bsh_data.sh`; cluster-only guarded).
-4. On the main repo: `git submodule add https://git.geomar.de/od-lagrange/2025_fucus_dispersal_data data`.
-   Delete `min_data/`. Update 025 to read H0 from `data/bsh_h0/`.
-   Update every notebook's `base_path` usage per §2.
-5. On NESH: create `<work>/2025_fucus_dispersal_outputs/`, wipe the
-   in-repo `output/` (nothing to preserve), update every job script
-   to export `FUCUS_OUTPUT_ROOT`.
-6. Do the code straightening (§4) — can be spread across follow-up PRs
+   add `.gitattributes` (LFS patterns — see §1 twin layout),
+   `.gitignore`, `README.md`, `ATTRIBUTION.md`. Push
+   `helcom_subbasins/` + `fucus_redlist_shapefile/` +
+   `bsh_coastline/` geojsons first (small, derived).
+2. Rename `scripts/obtain/*` to the 2-3-word forms
+   (`download_helcom_subbasins.sh`, `download_fucus_shapefile.sh`,
+   `download_stokes_sample.sh`, `copy_bsh_minimal.sh`). Rewrite
+   `scripts/fetch_data.sh` to chain them (upstream rebuild only — no
+   submodule / LFS wrapping). The twin's CI runs the same chain.
+3. Run the 000-style one-shot preprocess locally, commit the resulting
+   geojsons to the twin under `data/derived/`.
+4. Copy the `bsh_minimal/` subset (including H0 under
+   `static_file_{fine,coarse}/`) into the twin.
+5. On the main repo: `git submodule add
+   https://git.geomar.de/od-lagrange/2025_fucus_dispersal_data data`.
+   Delete `min_data/`. Update 010 and 025 to read pre-baked geojsons
+   and H0 from the new layout. Unify every notebook's `base_path`
+   usage to the three-root convention per §2.
+6. On NESH: create `<work>/2025_fucus_dispersal_outputs/`, wipe the
+   in-repo `output/` (nothing to preserve), update every job script to
+   pass `--output-root` / `--data-root` / `--bsh-root` explicitly on
+   the papermill command line.
+7. Do the code straightening (§4) — can be spread across follow-up PRs
    once the layout migration is in.
-7. Once green on main, move this plan to `plans/done/` (with a
+8. Once green on main, move this plan to `plans/done/` (with a
    one-liner pointing to the `docs/` doc that describes the resulting
    state — create `docs/` if it doesn't exist yet, per `AGENTS.md`
    conventions).
 
-## 7. Open questions (don't block)
-
-- Whether to drop the BSH minimal from the twin entirely and keep it
-  cluster-only (saves LFS cost, loses laptop smoke-testing). Default
-  is "include it"; revisit if LFS size becomes a problem.
-- `FUCUS_OUTPUT_ROOT` default — env var only, or sibling-of-repo
-  convenience (`../2025_fucus_dispersal_outputs/`)? Env var is more
-  portable; sibling is zero-config. Proposing env var with the sibling
-  path as a suggested value in `README.md`.

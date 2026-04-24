@@ -22,6 +22,14 @@ problem. Deletions, renames, and rewrites are the normal mode. **No produced
 data on NESH needs preserving** — filenames, output layout, and notebook
 numbering are free to change.
 
+**"Already X" is not a justification.** When deciding a name, layout, or API
+shape, don't defend an option on the grounds that "AGENTS.md already uses X",
+"the notebooks already call it X", or "historical usage is X". That's inertia,
+not an argument. State the merit-based case at the moment of the decision, or
+concede there isn't one and change course. This applies equally to plan docs,
+PR descriptions, and code review — scrub "already…" reasoning wherever it
+appears.
+
 **Be ruthless about dropping dead code.** Patch sparingly; rewrite when the
 abstraction is wrong. Prefer clean parameter plumbing over clever hacks — no
 monkey-patches, global state swaps, or closure tricks when passing a parameter
