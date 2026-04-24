@@ -4,9 +4,9 @@ Downloads VSDX/VSDY for 2016-2025, one file per day.
 Designed to be resumable — skips files that already exist.
 
 Usage:
-    python 002_download_stokes.py --output-dir /path/to/stokes/
-    python 002_download_stokes.py --output-dir /path/to/stokes/ --year 2020
-    python 002_download_stokes.py --output-dir /path/to/stokes/ --year 2020 --month 1
+    python 002_download_stokes.py --output-root /path/to/outputs
+    python 002_download_stokes.py --output-root /path/to/outputs --year 2020
+    python 002_download_stokes.py --output-root /path/to/outputs --year 2020 --month 1
 """
 
 import argparse
@@ -20,10 +20,10 @@ DATASET_ID = "cmems_mod_bal_wav_my_PT1H-i"
 VARIABLES = ["VSDX", "VSDY"]
 
 
-def download_day(day: date, output_dir: Path):
+def download_day(day: date, stokes_dir: Path):
     """Download one day of Stokes drift data. Skips if output exists."""
     filename = f"stokes_{day:%Y%m%d}.nc"
-    filepath = output_dir / f"{day.year}" / filename
+    filepath = stokes_dir / f"{day.year}" / filename
 
     if filepath.exists():
         return False  # already downloaded
@@ -42,10 +42,15 @@ def download_day(day: date, output_dir: Path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--output-dir", type=Path, required=True,
-                        help="Base output directory for Stokes files")
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--output-root", type=Path, default=Path("../output"),
+        help="Heavy-outputs root; Stokes files are written to <output-root>/stokes/ "
+             "(default: %(default)s)",
+    )
     parser.add_argument("--start-year", type=int, default=2016)
     parser.add_argument("--end-year", type=int, default=2025)
     parser.add_argument("--year", type=int, default=None,
@@ -56,6 +61,8 @@ def main():
 
     if args.month is not None and args.year is None:
         parser.error("--month requires --year")
+
+    stokes_dir = args.output_root / "stokes"
 
     if args.year is not None:
         start_year = end_year = args.year
@@ -77,7 +84,7 @@ def main():
     n_failed = 0
     while day < end:
         try:
-            downloaded = download_day(day, args.output_dir)
+            downloaded = download_day(day, stokes_dir)
             if downloaded:
                 n_downloaded += 1
                 print(f"Downloaded {day}")

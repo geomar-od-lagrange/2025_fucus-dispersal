@@ -194,9 +194,9 @@ def build_land_mask(path):
     return ~has_flux, lon, lat, dl, da
 
 land_c, lon_c, lat_c, dlon_c, dlat_c = build_land_mask(
-    "../min_data/bsh_operationalmodel_data/c_file_coarse_2020/c_file_coarse_2020010100_000_006.nc")
+    "../data/bsh_minimal/c_file_coarse_2020/c_file_coarse_2020010100_000_006.nc")
 land_f, lon_f, lat_f, dlon_f, dlat_f = build_land_mask(
-    "../min_data/bsh_operationalmodel_data/c_file_fine_2020/c_file_fine_2020010100_000_006.nc")
+    "../data/bsh_minimal/c_file_fine_2020/c_file_fine_2020010100_000_006.nc")
 
 # The coarse grid has NaN in the rectangular fine-grid footprint (BSH blanks
 # it out). Don't count those as land — they're ocean covered by the fine grid.

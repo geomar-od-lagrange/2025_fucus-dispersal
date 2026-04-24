@@ -41,7 +41,8 @@ from helpers import (
 # Parameters
 
 ```python tags=["parameters"]
-base_path = "/gxfs_work/geomar/smomw122/2025_fucus-dispersal"
+data_root = "../data"
+output_root = "../output"
 experiment_type = "surface"
 
 output_dt_mins = 60
@@ -86,9 +87,11 @@ client
 # Release area
 
 ```python
-base_path = Path(base_path)
+data_root = Path(data_root)
+output_root = Path(output_root)
+
 release_area = gpd.read_file(
-    base_path / "data" / "Fucus_location_shp" / "REDLIST_SIS_Macrophytes.shp"
+    data_root / "fucus_redlist_shapefile" / "REDLIST_SIS_Macrophytes.shp"
 )
 release_area = release_area.loc[
     release_area.F_vesiculo != 0, ["geometry", "CELLCODE"]
@@ -100,7 +103,7 @@ release_area
 
 ```python
 subbasins = gpd.read_file(
-    base_path / "data" / "HELCOM_subbasins_2022_level2" / "HELCOM_subbasins_2022_level2.shp"
+    data_root / "helcom_subbasins" / "HELCOM_subbasins_2022_level2.shp"
 ).to_crs(crs=ccrs.Geodetic()).rename(dict(level_2="subbasin"), axis=1)
 subbasins
 ```
@@ -108,7 +111,7 @@ subbasins
 # Load trajectories and attach metadata
 
 ```python
-trajectory_path = base_path / "output" / "Trajectories" / experiment_type
+trajectory_path = output_root / "Trajectories" / experiment_type
 ds, zarr_files = load_trajectories(trajectory_path)
 print(f"{len(zarr_files)} trajectory files for {experiment_type}")
 ds, _ = mask_land_seeded(ds)

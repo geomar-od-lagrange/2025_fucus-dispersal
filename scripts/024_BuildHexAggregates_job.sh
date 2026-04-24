@@ -1,9 +1,9 @@
 #!/bin/bash
-#SBATCH --job-name=024_HexHeatmaps
+#SBATCH --job-name=024_BuildHexAggregates
 #SBATCH --ntasks=3
 #SBATCH --cpus-per-task=8
 #SBATCH --mem-per-cpu=8G
-#SBATCH --time=04:00:00
+#SBATCH --time=08:00:00
 #SBATCH --partition=base
 
 # Multi-task dask layout, one task per SLURM task, adjust --ntasks at submit:
@@ -18,10 +18,15 @@ export http_proxy=http://10.0.7.235:3128
 export https_proxy=http://10.0.7.235:3128
 export no_proxy=localhost,127.0.0.1,0.0.0.0,10.0.0.0/8
 
-experiment_type="${1:-surface}"
-base_path=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
+# Override release year via positional arg, e.g. `sbatch <script> 2020`.
+year="${1:-2019}"
 
-export SCHEDULER_FILE=${base_path}/.scheduler_${SLURM_JOB_ID}.json
+repo_root=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
+output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
+# Full BSH store on NESH (provides H0 for the hex key; not the bsh_minimal demo subset).
+bsh_root=/gxfs_work/geomar/smomw400/bsh_operationalmodel_data
+
+export SCHEDULER_FILE=${repo_root}/.scheduler_${SLURM_JOB_ID}.json
 
 mkdir -p notebooks_executed/Visualisations/
 
@@ -45,12 +50,14 @@ ${SRUN_STEP} pixi run bash -c "
 
 sleep 30
 
-# Task 1: papermill.
+# Task 1: papermill. Regimes are discovered inside the notebook.
 ${SRUN_STEP} pixi run papermill --cwd notebooks/ \
-    notebooks/024_HexHeatmaps.ipynb \
-    notebooks_executed/Visualisations/024_HexHeatmaps_${experiment_type}.ipynb \
-    -p base_path ${base_path} \
-    -p experiment_type ${experiment_type} \
+    notebooks/024_BuildHexAggregates.ipynb \
+    notebooks_executed/Visualisations/024_BuildHexAggregates_${year}.ipynb \
+    -p data_root ${repo_root}/data \
+    -p output_root ${output_root} \
+    -p bsh_root ${bsh_root} \
+    -p release_year ${year} \
     -k python &
 PAPERMILL_PID=$!
 

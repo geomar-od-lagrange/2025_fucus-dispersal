@@ -18,9 +18,10 @@ export http_proxy=http://10.0.7.235:3128
 export https_proxy=http://10.0.7.235:3128
 export no_proxy=localhost,127.0.0.1,0.0.0.0,10.0.0.0/8
 
-base_path=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
+repo_root=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
+output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
 
-export SCHEDULER_FILE=${base_path}/.scheduler_${SLURM_JOB_ID}.json
+export SCHEDULER_FILE=${repo_root}/.scheduler_${SLURM_JOB_ID}.json
 
 mkdir -p notebooks_executed/Visualisations/
 
@@ -48,7 +49,8 @@ sleep 30
 ${SRUN_STEP} pixi run papermill --cwd notebooks/ \
     notebooks/022_DispersalDistance.ipynb \
     notebooks_executed/Visualisations/022_DispersalDistance.ipynb \
-    -p base_path ${base_path} \
+    -p data_root ${repo_root}/data \
+    -p output_root ${output_root} \
     -k python &
 PAPERMILL_PID=$!
 

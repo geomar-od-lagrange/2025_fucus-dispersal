@@ -5,9 +5,11 @@ on the large arrays. Downstream notebooks trigger one ``dask.compute(*...)``
 per scope group instead of re-walking the graph per plot.
 """
 
+import re
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import shapely
 import xarray as xr
 from scipy.ndimage import distance_transform_edt
@@ -137,3 +139,36 @@ def relabel_quarter(da, dim="release_quarter"):
     return da.assign_coords(
         {dim: [QUARTER_LABELS[int(q)] for q in da[dim].values]}
     )
+
+
+# Pattern: Fucus_BSH_YYYYMMDD_{regime}_dt{N}min_vf{vf}_seed{seed}
+# Regime is one of the three known experiment types; surface_stokes must be
+# listed before surface so the alternation matches the longer form first.
+_ZARR_STEM_RE = re.compile(
+    r"^Fucus_BSH_(\d{8})_(surface_stokes|surface|bottom)_"
+)
+
+
+def parse_zarr_stem(path):
+    """Parse a trajectory zarr filename into its (release_date, regime) tuple.
+
+    The authoritative filename format (from notebooks/010_FucusDispersal.ipynb) is::
+
+        Fucus_BSH_{YYYYMMDD}_{regime}_dt{N}min_vf{vf}_seed{seed}.zarr
+
+    where ``{regime}`` is one of ``surface``, ``surface_stokes``, or ``bottom``.
+
+    Returns ``(release_date: pandas.Timestamp, regime: str)``.
+    Raises ``ValueError`` with the offending filename on mismatch.
+    """
+    path = Path(path)
+    stem = path.stem  # strips the final .zarr suffix
+    m = _ZARR_STEM_RE.match(stem)
+    if m is None:
+        raise ValueError(
+            f"zarr filename does not match expected pattern "
+            f"'Fucus_BSH_YYYYMMDD_<regime>_…': {path.name!r}"
+        )
+    release_date = pd.Timestamp(m.group(1))  # YYYYMMDD → Timestamp
+    regime = m.group(2)
+    return release_date, regime

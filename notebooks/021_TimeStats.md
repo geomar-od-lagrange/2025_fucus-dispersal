@@ -31,7 +31,7 @@ from helpers import load_trajectories, mask_land_seeded
 # Parameters
 
 ```python tags=["parameters"]
-base_path = "/gxfs_work/geomar/smomw122/2025_fucus-dispersal"
+output_root = "../output"
 ```
 
 # Dask cluster
@@ -60,8 +60,8 @@ client
 # Load all regimes
 
 ```python
-base_path = Path(base_path)
-trajectory_root = base_path / "output" / "Trajectories"
+output_root = Path(output_root)
+trajectory_root = output_root / "Trajectories"
 regimes = sorted(p.name for p in trajectory_root.iterdir() if p.is_dir())
 print(f"Regimes: {regimes}")
 ```

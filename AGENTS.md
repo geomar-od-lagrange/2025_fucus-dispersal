@@ -66,7 +66,19 @@ Prefer conda packages; use pypi only when no suitable conda package exists.
 between commands — pass relative paths to tools (e.g.
 `pixi run jupytext --sync --execute notebooks/foo.md`) or use a subshell
 `(cd notebooks && ...)` for one-off needs. Don't pass `-C <path>` to
-`git`; it already operates on the cwd.
+`git` for ordinary repo-root operations; it already operates on the cwd.
+
+**`./data/` is a submodule — pwd matters.** `./data/` points at the data
+twin repo (see §Data access), so git commands inside `data/` act on the
+*submodule*, not the main repo. A plain `git status` in `data/` reports
+only twin-side changes and ignores every modification in the main tree;
+`git rm --cached -r data/` from inside `data/` resolves `data/data/` and
+fails outright. Never leave cwd sitting inside `data/` between unrelated
+commands — if you need to operate on the submodule (fetch, pull, the
+rare twin push), use an explicit `(cd data && git <cmd>)` subshell so
+cwd returns to the repo root automatically, or prefix a single command
+with `git -C data <cmd>` (this is the one exception to the "no `-C`"
+rule above).
 
 ## Pipeline stages
 
@@ -79,7 +91,7 @@ filename.
   extraction).
 - `scripts/010_FucusDispersal_job.sh` + `notebooks/010_FucusDispersal.md`
   — Parcels runs, papermill-swept across (year, doy, regime,
-  velocity_factor). Writes trajectory zarrs under `$FUCUS_OUTPUT_ROOT/Trajectories/`.
+  velocity_factor). Writes trajectory zarrs under `output_root/Trajectories/`.
 - `notebooks/020..023_*.md` — per-trajectory visualisations (raw lines,
   time stats, distance vs. time, density + mean-age heatmaps).
 - `notebooks/024_*.md` — build the hex-aggregated dispersal store
@@ -108,10 +120,12 @@ twin's CI runs to rebuild its blobs. Keep them in sync with how the
 twin was produced.
 
 Cluster outputs live **outside** the repo tree on NESH, at
-`$FUCUS_OUTPUT_ROOT` (typically `<work>/2025_fucus_dispersal_outputs/`).
-Every job script exports this; every notebook reads it via parameters
-(`data_root` for inputs, `output_root` for outputs). Never commit
-output data, and don't leak `output/` into the repo directory.
+`<work>/2025_fucus_dispersal_outputs/`. Every job script sets `output_root`
+as a shell variable and passes it to papermill via `-p output_root
+${output_root}`; there is no `$FUCUS_OUTPUT_ROOT` environment variable.
+The papermill parameter is the single contract — visible in each notebook's
+parameters cell. Never commit output data, and don't leak `output/` into
+the repo directory.
 
 **BSH H0 semantics.** `H0` is *minus z of the sea floor* on a z-up axis
 with `z = 0` at MSL — **not** water depth. Always-wet cells have `H0 > 0`

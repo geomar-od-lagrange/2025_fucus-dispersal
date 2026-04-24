@@ -19,14 +19,15 @@ module load singularity/3.11.5
 res="${1:-fine}"
 year="${2:-2019}"
 
-base_path=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
-input_dir=${base_path}/output/2d_fields
-output_dir=${base_path}/output/debug/bottom_stationary
+repo_root=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
+output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
+input_dir=${output_root}/2d_fields
+output_dir=${output_root}/debug/bottom_stationary
 container=parcels-container_2024.10.07-7af7fd0.sif
 
 mkdir -p ${output_dir}
 
-singularity run -B /sfs -B /gxfs_work -B ${base_path}:/work --pwd /work \
+singularity run -B /sfs -B /gxfs_work -B ${repo_root}:/work --pwd /work \
     ${container} bash -c \
     ". /opt/conda/etc/profile.d/conda.sh && conda activate base \
     && python scripts/debug_bottom_stationary.py \

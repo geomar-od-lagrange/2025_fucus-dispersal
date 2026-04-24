@@ -5,14 +5,14 @@ cell, unions them in integer grid space (to avoid floating-point slivers),
 transforms back to lon/lat, and writes the combined MultiPolygon as GeoJSON.
 
 Usage:
-    python 004_extract_coastline.py \
-        --h0-dir /path/to/bsh_operationalmodel_data \
-        --output /path/to/data/BSH_model_coastline/coastline.geojson
+    python 004_extract_coastline.py \\
+        --bsh-root /path/to/bsh_operationalmodel_data \\
+        --output-geojson /path/to/data/bsh_coastline/coastline.geojson
 
     # Exclude tidal flats (H0 < 0) for an "always wet" coastline:
-    python 004_extract_coastline.py \
-        --h0-dir /path/to/bsh_operationalmodel_data \
-        --output /path/to/data/BSH_model_coastline/coastline_always_wet.geojson \
+    python 004_extract_coastline.py \\
+        --bsh-root /path/to/bsh_operationalmodel_data \\
+        --output-geojson /path/to/data/bsh_coastline/coastline_always_wet.geojson \\
         --min-h0 0
 """
 
@@ -69,14 +69,15 @@ def coastline_from_h0(h0_path, min_h0=None, scale=6):
 
 def main():
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--h0-dir", type=Path, required=True,
-        help="Directory containing static_file_fine/ and static_file_coarse/",
+        "--bsh-root", type=Path, required=True,
+        help="BSH store root (contains static_file_fine/ and static_file_coarse/)",
     )
     parser.add_argument(
-        "--output", type=Path, required=True,
+        "--output-geojson", type=Path, required=True,
         help="Output GeoJSON path",
     )
     parser.add_argument(
@@ -86,8 +87,8 @@ def main():
     args = parser.parse_args()
 
     grids = {
-        "fine": args.h0_dir / "static_file_fine" / "H0_file_fine.nc",
-        "coarse": args.h0_dir / "static_file_coarse" / "H0_file_coarse.nc",
+        "fine": args.bsh_root / "static_file_fine" / "H0_file_fine.nc",
+        "coarse": args.bsh_root / "static_file_coarse" / "H0_file_coarse.nc",
     }
 
     all_polys = []
@@ -105,9 +106,9 @@ def main():
         print(f"  {region.geom_type}, {len(getattr(region, 'geoms', [region]))} parts")
 
     gdf = gpd.GeoDataFrame({"grid": sources}, geometry=all_polys, crs="EPSG:4326")
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    gdf.to_file(args.output, driver="GeoJSON")
-    print(f"\nWrote {len(gdf)} polygons to {args.output}")
+    args.output_geojson.parent.mkdir(parents=True, exist_ok=True)
+    gdf.to_file(args.output_geojson, driver="GeoJSON")
+    print(f"\nWrote {len(gdf)} polygons to {args.output_geojson}")
 
 
 if __name__ == "__main__":

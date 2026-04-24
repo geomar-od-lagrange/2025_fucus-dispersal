@@ -14,7 +14,8 @@ module load singularity/3.11.5
 # Override release year via positional arg, e.g. `sbatch <script> 2024`.
 year="${1:-2019}"
 
-base_path=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
+repo_root=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
+output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
 container=parcels-container_2024.10.07-7af7fd0.sif
 max_age_days=220
 calc_dt_mins=5
@@ -44,13 +45,12 @@ run_experiment() {
             -p output_dt_mins ${output_dt_mins} \
             -p velocity_factor ${velocity_factor} \
             -p particles_per_cell ${particles_per_cell} \
-            -p path_2d_fields ${base_path}/output/2d_fields \
-            -p path_release_locations ${base_path}/data/Fucus_location_shp \
-            -p path_trajectories ${base_path}/output/Trajectories \
+            -p data_root ${repo_root}/data \
+            -p output_root ${output_root} \
             -k python"
 }
 export -f run_experiment
-export base_path container max_age_days calc_dt_mins output_dt_mins particles_per_cell
+export repo_root output_root container max_age_days calc_dt_mins output_dt_mins particles_per_cell
 
 # Generate all (start_date, experiment_type, velocity_factor) combinations
 # and run them in parallel via xargs, respecting SLURM task limit.

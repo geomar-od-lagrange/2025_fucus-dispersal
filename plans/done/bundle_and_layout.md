@@ -1,3 +1,7 @@
+> **Done.** Implemented state is documented in
+> [../../docs/bundle_and_layout.md](../../docs/bundle_and_layout.md).
+> This file is retained as the historical plan record.
+
 # Public-repo refactor: data bundle + NESH output layout + code cleanups
 
 One plan covering the merge-to-main preparation on `wr/prod-prep`. Aimed
@@ -182,8 +186,8 @@ git -C data lfs pull
 ```
 
 README.md and AGENTS.md document this directly; both mention that
-git-lfs must be installed locally first (`brew install git-lfs` / conda
-equivalent, then `git lfs install` once per user).
+git-lfs must be installed locally first (e.g. `pixi global install
+git-lfs`), then `git lfs install` once per user.
 
 `scripts/fetch_data.sh` is only the **upstream rebuild** path: it runs
 the `scripts/obtain/*` chain to reconstruct `./data/` from public

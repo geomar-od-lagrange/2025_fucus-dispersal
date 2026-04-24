@@ -1,10 +1,14 @@
 """Prepare sigma files for Parcels fieldset.
 
-Reads the original sigma files from the shared static data, replaces NaN
-values in the first layer with 0, and writes cleaned versions to
-<base_path>/output/sigma/.
+Reads the sigma files from the BSH store, replaces NaN values in the first
+layer with 0, and writes cleaned versions to <output_root>/sigma/.
 
 This is a one-time preprocessing step that must run before 010_FucusDispersal.
+
+Usage:
+    python 001_prepare_sigma_files.py \\
+        --bsh-root /path/to/bsh_operationalmodel_data \\
+        --output-root /path/to/outputs
 """
 
 import argparse
@@ -13,11 +17,11 @@ from pathlib import Path
 import xarray as xr
 
 
-def prepare_sigma(static_path: Path, output_path: Path):
+def prepare_sigma(bsh_root: Path, output_path: Path):
     output_path.mkdir(parents=True, exist_ok=True)
 
     for resolution in ("fine", "coarse"):
-        src = static_path / f"static_file_{resolution}" / f"sigma_file_{resolution}.nc"
+        src = bsh_root / f"static_file_{resolution}" / f"sigma_file_{resolution}.nc"
         dst = output_path / f"sigma_{resolution}.nc"
 
         print(f"Reading {src}")
@@ -28,22 +32,25 @@ def prepare_sigma(static_path: Path, output_path: Path):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--base-path",
-        type=Path,
-        default=Path("/gxfs_work/geomar/smomw122/2025_fucus-dispersal"),
-        help="Project base path (default: %(default)s)",
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "--static-path",
+        "--bsh-root",
         type=Path,
-        default=Path("/gxfs_work/geomar/smomw122/bsh_operationalmodel_data"),
-        help="Path to shared static data (default: %(default)s)",
+        default=Path("../data/bsh_minimal"),
+        help="BSH store root (contains static_file_fine/, static_file_coarse/, …)",
+    )
+    parser.add_argument(
+        "--output-root",
+        type=Path,
+        default=Path("../output"),
+        help="Heavy-outputs root; sigma files are written to <output-root>/sigma/",
     )
     args = parser.parse_args()
 
     prepare_sigma(
-        static_path=args.static_path,
-        output_path=args.base_path / "output" / "sigma",
+        bsh_root=args.bsh_root,
+        output_path=args.output_root / "sigma",
     )

@@ -39,7 +39,8 @@ from helpers import (
 # Parameters
 
 ```python tags=["parameters"]
-base_path = "/gxfs_work/geomar/smomw122/2025_fucus-dispersal"
+data_root = "../data"
+output_root = "../output"
 de_lon_min, de_lon_max = 8, 15
 de_lat_min, de_lat_max = 53.2, 55.5
 
@@ -73,8 +74,9 @@ client
 # List regimes
 
 ```python
-base_path = Path(base_path)
-trajectory_root = base_path / "output" / "Trajectories"
+data_root = Path(data_root)
+output_root = Path(output_root)
+trajectory_root = output_root / "Trajectories"
 regimes = sorted(p.name for p in trajectory_root.iterdir() if p.is_dir())
 print(f"Regimes: {regimes}")
 ```
@@ -83,7 +85,7 @@ print(f"Regimes: {regimes}")
 
 ```python
 release_area = gpd.read_file(
-    base_path / "data" / "Fucus_location_shp" / "REDLIST_SIS_Macrophytes.shp"
+    data_root / "fucus_redlist_shapefile" / "REDLIST_SIS_Macrophytes.shp"
 )
 release_area = release_area.loc[
     release_area.F_vesiculo != 0, ["geometry", "CELLCODE"]
@@ -95,7 +97,7 @@ release_area
 
 ```python
 subbasins = gpd.read_file(
-    base_path / "data" / "HELCOM_subbasins_2022_level2" / "HELCOM_subbasins_2022_level2.shp"
+    data_root / "helcom_subbasins" / "HELCOM_subbasins_2022_level2.shp"
 ).to_crs(crs=ccrs.Geodetic()).rename(dict(level_2="subbasin"), axis=1)
 subbasins
 ```

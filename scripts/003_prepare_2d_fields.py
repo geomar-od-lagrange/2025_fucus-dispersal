@@ -1,10 +1,12 @@
 """Extract 2D surface, bottom, and surface+stokes fields from a single BSH c_file.
 
 Usage:
-    python 003_prepare_2d_fields.py \
-        --c-file /path/to/c_file_fine_2020010100_000_006.nc \
-        --stokes-dir /path/to/stokes/ \
-        --output-dir /path/to/output_2d/
+    python 003_prepare_2d_fields.py \\
+        --c-file /path/to/c_file_fine_2020010100_000_006.nc \\
+        --output-root /path/to/outputs
+
+Stokes files are read from <output-root>/stokes/ (written by 002_download_stokes.py).
+2D output files are written to <output-root>/2d_fields/.
 
 Designed to be parallelized: one invocation per c_file.
 """
@@ -153,22 +155,28 @@ def derive_stokes_path(c_file: Path, stokes_dir: Path) -> Path:
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--c-file", type=Path, required=True,
                         help="BSH c_file (3D, with layer_number)")
-    parser.add_argument("--stokes-dir", type=Path, required=True,
-                        help="Stokes directory (file auto-derived from c_file date)")
-    parser.add_argument("--output-dir", type=Path, required=True,
-                        help="Output directory for 2D files")
+    parser.add_argument(
+        "--output-root", type=Path, default=Path("../output"),
+        help="Heavy-outputs root; stokes files are read from <output-root>/stokes/ "
+             "and 2D outputs are written to <output-root>/2d_fields/ "
+             "(default: %(default)s)",
+    )
     args = parser.parse_args()
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
+    stokes_dir = args.output_root / "stokes"
+    output_dir = args.output_root / "2d_fields"
+    output_dir.mkdir(parents=True, exist_ok=True)
     stem = args.c_file.stem
 
-    out_surf = args.output_dir / f"{stem}_surface.nc"
-    out_bot = args.output_dir / f"{stem}_bottom.nc"
-    out_stokes = args.output_dir / f"{stem}_surface_stokes.nc"
+    out_surf = output_dir / f"{stem}_surface.nc"
+    out_bot = output_dir / f"{stem}_bottom.nc"
+    out_stokes = output_dir / f"{stem}_surface_stokes.nc"
 
     # Skip if all outputs exist
     if out_surf.exists() and out_bot.exists() and out_stokes.exists():
@@ -216,7 +224,7 @@ def main():
 
     # Surface + Stokes — sum in BSH convention, mask, then roll
     if not out_stokes.exists():
-        stokes_file = derive_stokes_path(args.c_file, args.stokes_dir)
+        stokes_file = derive_stokes_path(args.c_file, stokes_dir)
         if not stokes_file.exists():
             print(f"  stokes:  SKIPPED (not yet downloaded: {stokes_file.name})")
             return

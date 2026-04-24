@@ -1,3 +1,6 @@
+> **Done.** Fixed upstream in `hextraj`. No code change needed in this
+> repo; retained as the historical investigation record.
+
 # hextraj: `hex_counts` OOMs on dask-backed inputs
 
 ## Problem
