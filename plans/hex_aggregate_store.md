@@ -95,9 +95,9 @@ is a prerequisite of this work — the coastline drives both
 `dist_to_coast_m` and the wet-region decomposition used to pick the
 resolution. All paths covered by `plans/portable_data_paths.md`.
 
-`mean_depth_m` is computed over always-wet cells only. See `AGENTS.md`
-for H0 semantics — tidal-flat cells can have negative H0 and must not
-be mixed into a depth average.
+`mean_depth_m` is computed over always-wet cells only. See
+`plans/seafloor-location-H0-semantics.md` for H0 semantics — tidal-flat
+cells can have negative H0 and must not be mixed into a depth average.
 
 ## Open questions
 
