@@ -14,3 +14,4 @@ notebooks_executed/*
 .claude/
 tmp_papermill_test/
 min_data/
+data/HELCOM_subbasins_2022_level2/
