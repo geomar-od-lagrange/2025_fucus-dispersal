@@ -26,6 +26,15 @@ Hex projection: Lambert Azimuthal Equal-Area centred on the Baltic
 (matches 024). Stored as parquet-level metadata on every file so
 geometries can be regenerated from `hex_id` alone via `hextraj`.
 
+The key covers the **full BSH model domain** (fine + coarse grids,
+including land cells), not just the wet polygon. A trajectory can't
+escape the BSH lat/lon extent, so every hex `hp.label` can assign is
+pre-populated in the key. Wet vs. dry is captured by `water_area_m2`
+(zero for land hexes) and `mean_depth_m` (NaN for land hexes). This
+lets the counts store assert hard key-completeness: every `release_hex`
+and `target_hex` is guaranteed in the key, and any violation is a data
+integrity bug rather than a "just buffer the key" workaround.
+
 **Open: what resolution.** 10 km works for Baltic-wide maps but is
 coarse for German-waters detail; 4 km resolves the German Bight but
 multiplies Baltic-wide storage. A single resolution has to serve both
@@ -44,8 +53,7 @@ One row per combination of:
 | `age_bin`       | 22 (10-day bins up to 220 days) |
 | `target_hex`    | ~number of visited hexes (depends on resolution) |
 
-Values per row: `n_obs` (hit count, residence proxy) and `n_traj`
-(distinct trajectories touching — reach probability). Subbasin is not
+Values per row: `n_obs` (hit count, residence proxy). Subbasin is not
 a grouping dim; a release hex maps uniquely to a HELCOM subbasin,
 recovered via the key-file join.
 
@@ -73,8 +81,7 @@ metadata is the authoritative grid definition.
 Columns:
 
 - `hex_id` *(int32, PK)* — matches `release_hex` / `target_hex`
-- `geometry` *(WKB)* — hexagon polygon in EPSG:4326
-- `lon_c`, `lat_c` *(float32)* — centroid
+- `geometry` *(geoparquet)* — hexagon polygon in EPSG:4326
 - `area_m2` *(float32)* — full hex area
 - `water_area_m2` *(float32)* — water-filled intersection with the BSH land mask
 - `mean_depth_m` *(float32)* — mean depth over always-wet cells inside the hex
@@ -82,10 +89,20 @@ Columns:
 - `fucus_area_m2` *(float32)* — intersection with REDLIST_SIS_Macrophytes `F_vesiculo != 0`
 - `helcom_subbasin` *(int8, nullable)* — HELCOM level-2 ID by centroid
 
+Centroids are not stored; derive them from `geometry` at query time via
+`gdf.geometry.centroid`.
+
 The list is expected to grow (beaching propensity, coastal-habitat
 indicators, country-EEZ, etc.). Treat the schema as additive —
 rebuild the key file, bump a version in its metadata, counts store
 stays untouched.
+
+Dataset provenance fields (schema version, build-time git SHA, build
+timestamp) are planned for when this logic graduates into `hextraj`
+proper, but are not implemented in the current build — the custom
+metadata only carries `hex_proj`, `subbasin_id_to_name`, `area_crs`
+on the key file and the per-partition scope fields (`regime`,
+`release_year`, `release_doy`, `source_zarr`) on counts.
 
 Source data: BSH H0 (depth, land mask), HELCOM subbasins shapefile,
 REDLIST_SIS_Macrophytes shapefile, and a canonical BSH-model coastline
@@ -136,6 +153,8 @@ don't prematurely discretise.
 
 - Trajectory-level diagnostics (beaching, first-passage, age at
   stranding) — stays on the raw zarrs.
+- Reach probability / per-trajectory distinct-count metrics — can live
+  in a companion store later, recoverable from the raw zarrs.
 - German-waters-only fine grid as a separate store — only needed if the
   unified-resolution decision turns out to be unworkable.
 - Calendar-month / season at observation as a stored dim — derivable
