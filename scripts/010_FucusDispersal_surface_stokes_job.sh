@@ -59,8 +59,10 @@ export repo_root output_root container calc_dt_mins output_dt_mins particles_per
 # preprocessed 2D fieldset is produced by 003_prepare_2d_fields.py.
 for n in $(seq 0 72); do
     doy=$((1 + 5 * n))
+    # Derive both times from year+doy; never feed an ISO datetime back into
+    # `date -d` — its parser silently drops "+N days" after a T-time.
     start_time=$(date -d "${year}-01-01 +$((doy - 1)) days" +%Y-%m-%dT00:15:00)
-    end_time=$(date -d "${start_time} +${simulation_days} days" +%Y-%m-%dT00:15:00)
+    end_time=$(date -d "${year}-01-01 +$((doy - 1 + simulation_days)) days" +%Y-%m-%dT00:15:00)
 
     printf '%s\0' "${start_time} ${end_time} surface_stokes $((RANDOM * 32768 + RANDOM))"
 done | xargs -0 -P ${SLURM_NTASKS} -n 1 bash -c 'run_experiment $1' _
