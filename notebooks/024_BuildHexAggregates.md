@@ -40,6 +40,7 @@ into geometry downstream.
 ```python
 import json
 import os
+import re
 import time
 from pathlib import Path
 
@@ -52,8 +53,31 @@ import xarray as xr
 from shapely.ops import unary_union
 
 from hextraj import HexProj
+```
 
-from helpers import load_trajectories, mask_land_seeded, parse_zarr_stem
+```python
+# Pattern: Fucus_BSH_YYYYMMDD_{regime}_dt{N}min
+# surface_stokes must precede surface so the alternation matches the
+# longer form first.
+_ZARR_STEM_RE = re.compile(
+    r"^Fucus_BSH_(\d{8})_(surface_stokes|surface|bottom)_dt\d+min$"
+)
+
+
+def parse_zarr_stem(path):
+    """Parse a trajectory zarr filename into ``(release_date, regime)``.
+
+    Authoritative format (notebook 010): ``Fucus_BSH_{YYYYMMDD}_{regime}_dt{N}min.zarr``,
+    where ``{regime}`` is one of ``surface``, ``surface_stokes``, or ``bottom``.
+    """
+    path = Path(path)
+    m = _ZARR_STEM_RE.match(path.stem)
+    if m is None:
+        raise ValueError(
+            f"zarr filename does not match expected pattern "
+            f"'Fucus_BSH_YYYYMMDD_<regime>_…': {path.name!r}"
+        )
+    return pd.Timestamp(m.group(1)), m.group(2)
 ```
 
 # Parameters
@@ -370,7 +394,11 @@ for config in hex_configs:
         t0 = time.time()
 
         ds = xr.open_zarr(zarr_path)
-        ds, _ = mask_land_seeded(ds)
+        # First-step displacement of zero ⇒ trajectory was seeded on land.
+        ds = ds.where(~(
+            (ds.lon.diff("obs").isel(obs=0, drop=True) == 0)
+            & (ds.lat.diff("obs").isel(obs=0, drop=True) == 0)
+        ))
 
         release_ts = pd.Timestamp(ds.time.isel(obs=0).compute().values[0])
         release_doy = int(release_ts.dayofyear)

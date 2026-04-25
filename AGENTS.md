@@ -150,12 +150,31 @@ are cached outputs, not hand-written source. Before editing them, check
 how they were produced and whether changing the source is the right fix
 instead.
 
-**Shared helpers.** `notebooks/helpers.py` holds genuinely shared
-utilities (`load_trajectories`, `mask_land_seeded`,
-`attach_release_metadata`, `QUARTER_LABELS`). Don't factor *duplicated
-setup* — parameter cells, path construction, Dask client boilerplate —
-into `helpers.py`; notebooks should read standalone. Extract to
-`helpers.py` only when the logic is non-trivial and reused verbatim.
+**Notebook-local utilities.** Notebooks own their utilities. Four
+tests gate any extraction:
+
+1. **Default: notebooks own their utilities.** A shared module isn't
+   forbidden, but the bar is really high. Three copies of a 12-line
+   function isn't enough — the candidate must (a) clearly pass the
+   idiom and one-concern tests below, and (b) be duplicated in enough
+   places that copies actively drift or bug fixes touch N callsites.
+   Cross-notebook duplication is the default state; standalone
+   reading is worth that price.
+2. **Idiom test before `def`-ing.** Would a reader recognize the body
+   as an idiom faster than the call? `sorted(path.glob("*.zarr")) +
+   xr.concat(...)` reads as itself; the call `load_trajectories(path)`
+   is a layer of indirection over an idiom. ~12 lines of STRtree +
+   NaN handling earn a name; 2–3 lines of xarray idioms don't. When
+   in doubt, inline.
+3. **One concern per function.** Don't bundle unrelated assignments
+   under one name. If you're reaching for `attach_metadata`,
+   `prepare_dataset`, `setup_*`, you're probably bundling — split
+   into one function per real concern, or inline both.
+4. **Don't mutate coords for presentation.** If labels only matter at
+   plot time, set them at plot time (`FacetGrid.set_title`,
+   `ax.set_xticklabels`). Mutating a possibly-dask-backed coord via
+   `.values` + comprehension is eager and brittle, and the dataset
+   doesn't need to know about your tick labels.
 
 ### Notebooks
 

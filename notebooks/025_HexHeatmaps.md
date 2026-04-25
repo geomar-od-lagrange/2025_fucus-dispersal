@@ -39,8 +39,6 @@ import pyarrow.parquet as pq
 import matplotlib.pyplot as plt
 from shapely.geometry import box
 from cartopy.io.shapereader import natural_earth
-
-from helpers import QUARTER_LABELS
 ```
 
 # Parameters
@@ -289,6 +287,7 @@ by_quarter = (
     .rename("count").reset_index()
 )
 
+quarter_labels = {1: "JFM", 2: "AMJ", 3: "JAS", 4: "OND"}
 ncols, nrows = 2, 2
 fig, axes = plt.subplots(
     nrows=nrows, ncols=ncols,
@@ -298,7 +297,7 @@ fig, axes = plt.subplots(
     ),
     layout="constrained",
 )
-for ax, (q_int, q_label) in zip(axes.flat, QUARTER_LABELS.items()):
+for ax, (q_int, q_label) in zip(axes.flat, quarter_labels.items()):
     q_counts = by_quarter[by_quarter["quarter"] == q_int]
     if q_counts.empty:
         ax.set_visible(False)

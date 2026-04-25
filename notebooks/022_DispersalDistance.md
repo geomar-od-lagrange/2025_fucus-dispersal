@@ -24,16 +24,34 @@ import dask
 import numpy as np
 import xarray as xr
 import geopandas as gpd
+import shapely
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 from pathlib import Path
+```
 
-from helpers import (
-    attach_release_metadata,
-    load_trajectories,
-    mask_land_seeded,
-    relabel_quarter,
-)
+```python
+def assign_release_subbasin(ds, subbasins):
+    # Lazy per (trajectory,) chunk; STRtree built once, looked up per-chunk.
+    # The full-sweep concat reaches 60M+ trajectories — eager would OOM.
+    tree = shapely.STRtree(subbasins.geometry.values)
+    names = subbasins["subbasin"].to_numpy()
+
+    def _lookup(lon, lat):
+        out = np.full(lon.shape, None, dtype=object)
+        valid = ~(np.isnan(lon) | np.isnan(lat))
+        if valid.any():
+            pts = shapely.points(lon[valid], lat[valid])
+            out[valid] = names[tree.nearest(pts)]
+        return out
+
+    lon0 = ds.lon.isel(obs=0, drop=True)
+    lat0 = ds.lat.isel(obs=0, drop=True)
+    subbasin = xr.apply_ufunc(
+        _lookup, lon0, lat0,
+        dask="parallelized", output_dtypes=[object],
+    )
+    return ds.assign(subbasin=subbasin)
 ```
 
 # Parameters
@@ -106,9 +124,15 @@ subbasins
 
 ```python
 def load_regime(regime):
-    ds, _ = load_trajectories(trajectory_root / regime)
-    ds, _ = mask_land_seeded(ds)
-    return attach_release_metadata(ds, subbasins)
+    zarr_files = sorted((trajectory_root / regime).glob("**/*.zarr"))
+    ds = xr.concat([xr.open_zarr(z) for z in zarr_files], dim="trajectory")
+    # First-step displacement of zero ⇒ trajectory was seeded on land.
+    ds = ds.where(~(
+        (ds.lon.diff("obs").isel(obs=0, drop=True) == 0)
+        & (ds.lat.diff("obs").isel(obs=0, drop=True) == 0)
+    ))
+    ds = ds.assign(release_quarter=ds.time.isel(obs=0, drop=True).dt.quarter)
+    return assign_release_subbasin(ds, subbasins)
 
 regime_dsets = {r: load_regime(r) for r in regimes}
 regime_dsets
@@ -171,7 +195,6 @@ da_quarter_lazy = _grouped_mean("release_quarter")
 da_global, da_de, da_sb, da_quarter = dask.compute(
     da_global_lazy, da_de_lazy, da_sb_lazy, da_quarter_lazy,
 )
-da_quarter = relabel_quarter(da_quarter)
 ```
 
 # Global

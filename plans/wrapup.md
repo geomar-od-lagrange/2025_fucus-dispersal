@@ -146,29 +146,38 @@ rule: notebooks define their own helpers locally or inline the logic.
 Nothing currently in `helpers.py` is non-trivial enough to justify a
 shared module once the sub-bullets below are addressed.
 
-- [ ] Simplify `attach_release_metadata`'s subbasin lookup to plain
-      nearest-neighbour (drop the within-polygon raster fallback).
-      This is the load-bearing simplification — without it, inlining
-      isn't tolerable.
-- [ ] Audit every callsite of every `helpers` import. The full list
-      observed across notebooks (021–025): `load_trajectories`,
-      `mask_land_seeded`, `attach_release_metadata`, `relabel_quarter`,
-      `parse_zarr_stem`, `QUARTER_LABELS`, plus the internal
-      `_build_subbasin_raster` it composes from. For each callsite,
-      decide: inline at the callsite, or define locally in the
-      notebook that uses it. No callsite stays with a
-      `from helpers import ...`.
-- [ ] `relabel_quarter` and `QUARTER_LABELS` keep their callers
-      (cross-run aggregation, see §1). Inline both: a 4-entry dict
-      literal for `QUARTER_LABELS`; the relabeling logic into the one
-      or two notebook cells that use it.
-- [ ] Delete `notebooks/helpers.py` and its `__pycache__/` once all
-      imports are gone.
-- [ ] Update `CLAUDE.md` (`AGENTS.md` on disk): remove the "Shared
-      helpers" subsection that currently endorses `helpers.py`. Replace
-      with the new rule — no shared helper module; notebooks own their
-      utilities. Without this, future agents will reintroduce the same
-      pattern.
+- [x] Simplify `attach_release_metadata`'s subbasin lookup. **Function
+      deleted entirely** — split into two inline pieces per consumer
+      notebook (020/022/023): a one-line `release_quarter` assignment
+      from `ds.time.dt.quarter`, and a notebook-local
+      `assign_release_subbasin` using shapely `STRtree.nearest` kept
+      lazy via `xr.apply_ufunc(..., dask="parallelized")`. Eager
+      `gpd.sjoin_nearest` was tried first and rejected — would OOM at
+      production scale (60M+ trajectories).
+- [x] Audit every callsite of every `helpers` import. Resolved as
+      follows: `load_trajectories` and `mask_land_seeded` → trivial
+      inline (no def) at each callsite; `attach_release_metadata` →
+      split per above; `relabel_quarter` → deleted (panel titles
+      render as `release_quarter = 1..4`; section headers carry the
+      JFM/AMJ/JAS/OND legend); `parse_zarr_stem` → local `def` in
+      024 (single caller, regex earns the name); `QUARTER_LABELS` →
+      4-entry dict literal at the loop site in 020 and 025.
+- [x] `relabel_quarter` deleted; `QUARTER_LABELS` inlined as
+      per-notebook dict literal `quarter_labels = {1:"JFM", …}` in
+      020:283 and 025:290.
+- [x] Deleted `notebooks/helpers.py` and `notebooks/__pycache__/`.
+- [x] Updated `AGENTS.md` "Notebook-local utilities" subsection
+      (replaces "Shared helpers"). Now four explicit gating tests:
+      (1) shared module not forbidden but bar is really high — three
+      copies of a 12-line function isn't enough; (2) idiom test
+      before def-ing; (3) one concern per function; (4) don't mutate
+      coords for presentation.
+
+Phase B execution scope vs. Phase G full-sweep verification: Phase B
+landed the helpers replacement and a smoke-test against existing
+demo zarrs is left for Phase G (mixed-format zarrs from pre-Phase A
+runs would confuse `parse_zarr_stem`; cleanest verify is against a
+freshly-swept output tree).
 
 ## 4. Notebook 020 readability cleanup
 

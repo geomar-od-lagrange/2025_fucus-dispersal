@@ -25,17 +25,35 @@ import dask
 import numpy as np
 import xarray as xr
 import geopandas as gpd
+import shapely
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 from xhistogram.xarray import histogram as xhist
 from pathlib import Path
+```
 
-from helpers import (
-    attach_release_metadata,
-    load_trajectories,
-    mask_land_seeded,
-    relabel_quarter,
-)
+```python
+def assign_release_subbasin(ds, subbasins):
+    # Lazy per (trajectory,) chunk; STRtree built once, looked up per-chunk.
+    # The full-sweep concat reaches 60M+ trajectories — eager would OOM.
+    tree = shapely.STRtree(subbasins.geometry.values)
+    names = subbasins["subbasin"].to_numpy()
+
+    def _lookup(lon, lat):
+        out = np.full(lon.shape, None, dtype=object)
+        valid = ~(np.isnan(lon) | np.isnan(lat))
+        if valid.any():
+            pts = shapely.points(lon[valid], lat[valid])
+            out[valid] = names[tree.nearest(pts)]
+        return out
+
+    lon0 = ds.lon.isel(obs=0, drop=True)
+    lat0 = ds.lat.isel(obs=0, drop=True)
+    subbasin = xr.apply_ufunc(
+        _lookup, lon0, lat0,
+        dask="parallelized", output_dtypes=[object],
+    )
+    return ds.assign(subbasin=subbasin)
 ```
 
 # Parameters
@@ -112,10 +130,16 @@ subbasins
 
 ```python
 trajectory_path = output_root / "Trajectories" / experiment_type
-ds, zarr_files = load_trajectories(trajectory_path)
+zarr_files = sorted(trajectory_path.glob("**/*.zarr"))
 print(f"{len(zarr_files)} trajectory files for {experiment_type}")
-ds, _ = mask_land_seeded(ds)
-ds = attach_release_metadata(ds, subbasins)
+ds = xr.concat([xr.open_zarr(z) for z in zarr_files], dim="trajectory")
+# First-step displacement of zero ⇒ trajectory was seeded on land.
+ds = ds.where(~(
+    (ds.lon.diff("obs").isel(obs=0, drop=True) == 0)
+    & (ds.lat.diff("obs").isel(obs=0, drop=True) == 0)
+))
+ds = ds.assign(release_quarter=ds.time.isel(obs=0, drop=True).dt.quarter)
+ds = assign_release_subbasin(ds, subbasins)
 ds
 ```
 
@@ -235,7 +259,6 @@ h_by_quarter_lazy = hist_by(ds.release_quarter, quarters, "release_quarter", lon
 h_baltic, h_de, h_by_sb, h_by_quarter = dask.compute(
     h_baltic_lazy, h_de_lazy, h_by_sb_lazy, h_by_quarter_lazy,
 )
-h_by_quarter = relabel_quarter(h_by_quarter)
 ```
 
 # Whole Baltic
