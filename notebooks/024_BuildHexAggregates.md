@@ -54,21 +54,21 @@ from hextraj import HexProj
 ```
 
 ```python
-# Pattern: Fucus_BSH_YYYYMMDD_{regime}_dt{N}min_seed{S}
+# Pattern: Fucus_BSH_YYYYMMDDTHHMMSS_{regime}_dt{N}min_seed{S}
 # surface_stokes must precede surface so the alternation matches the
-# longer form first. Multiple seeds for the same (date, regime) are
+# longer form first. Multiple seeds for the same (release_time, regime) are
 # expected — independent reseeded resubmissions for sample-size
 # expansion — and aggregated additively on the n_obs counts.
 _ZARR_STEM_RE = re.compile(
-    r"^Fucus_BSH_(\d{8})_(surface_stokes|surface|bottom)_dt\d+min_seed\d+$"
+    r"^Fucus_BSH_(\d{8}T\d{6})_(surface_stokes|surface|bottom)_dt\d+min_seed\d+$"
 )
 
 
 def parse_zarr_stem(path):
-    """Parse a trajectory zarr filename into ``(release_date, regime)``.
+    """Parse a trajectory zarr filename into ``(release_time, regime)``.
 
     Authoritative format (notebook 010):
-    ``Fucus_BSH_{YYYYMMDD}_{regime}_dt{N}min_seed{S}.zarr``, where
+    ``Fucus_BSH_{YYYYMMDDTHHMMSS}_{regime}_dt{N}min_seed{S}.zarr``, where
     ``{regime}`` is ``surface``, ``surface_stokes``, or ``bottom``.
     """
     path = Path(path)
@@ -76,7 +76,7 @@ def parse_zarr_stem(path):
     if m is None:
         raise ValueError(
             f"zarr filename does not match expected pattern "
-            f"'Fucus_BSH_YYYYMMDD_<regime>_…_seed<S>': {path.name!r}"
+            f"'Fucus_BSH_YYYYMMDDTHHMMSS_<regime>_…_seed<S>': {path.name!r}"
         )
     return pd.Timestamp(m.group(1)), m.group(2)
 ```

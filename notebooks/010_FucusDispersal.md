@@ -41,8 +41,11 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 RNG_seed = 123
 
 # Particle release time (ISO format). Particles enter the simulation at
-# this instant; the fieldset must contain this timestamp.
-start_time = "2019-01-01"
+# this instant; the fieldset must contain this timestamp. BSH currents are
+# on a 15-min grid with the first sample of filename-hour HH at HH:15:00,
+# so doy=1 releases use T00:15:00 to land on the first available sample
+# (relevant for 2016, where no prior-year file exists).
+start_time = "2019-01-01T00:15:00"
 
 # Simulation end time (ISO format). pset.execute terminates here. The
 # fieldset must contain timestamps up to end_time unless
@@ -99,7 +102,7 @@ path_trajectories = output_root / "Trajectories"
 
 start_time = datetime.fromisoformat(start_time)
 end_time = datetime.fromisoformat(end_time)
-release_date_str = start_time.strftime("%Y%m%d")
+release_time_str = start_time.strftime("%Y%m%dT%H%M%S")
 
 calc_dt = timedelta(minutes=calc_dt_mins)
 output_dt = timedelta(minutes=output_dt_mins)
@@ -279,7 +282,7 @@ pset = ParticleSet(
 # Output layout: output_root/Trajectories/<regime>/<release_year>/<filename>.
 # Downstream notebooks (020-025) discover regimes by iterdir on the
 # Trajectories directory and load all zarrs underneath each regime.
-output_filename = f"Fucus_BSH_{release_date_str}_{regime}_dt{output_dt_mins}min_seed{RNG_seed}.zarr"
+output_filename = f"Fucus_BSH_{release_time_str}_{regime}_dt{output_dt_mins}min_seed{RNG_seed}.zarr"
 output_path = path_trajectories / regime / str(start_time.year) / output_filename
 print(f"Output path: {output_path}")
 

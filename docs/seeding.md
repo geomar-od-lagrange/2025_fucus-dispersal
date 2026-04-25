@@ -58,12 +58,17 @@ is wanted without changing the release date or regime.
 ## Output layout per run
 
 ```
-output_root/Trajectories/<regime>/<year>/Fucus_BSH_<YYYYMMDD>_<regime>_dt<N>min_seed<S>.zarr
+output_root/Trajectories/<regime>/<year>/Fucus_BSH_<YYYYMMDDTHHMMSS>_<regime>_dt<N>min_seed<S>.zarr
 ```
+
+The release timestamp is the full instant of release, padded to second
+resolution. Releases land on BSH's 15-min sample grid, so doy=1 is
+`T00:15:00`; the first sample of every BSH filename-hour HH is at
+HH:15:00.
 
 Downstream notebooks discover regimes / release_years via
 `iterdir()` / `glob("**/*.zarr")`; multiple seed-suffixed zarrs per
-`(date, regime)` are read together with no special handling.
+`(release_time, regime)` are read together with no special handling.
 
 ## Cross-references
 

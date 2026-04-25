@@ -29,6 +29,7 @@ run_experiment() {
     local end_time="$2"
     local regime="$3"
     local rng_seed="$4"
+    local start_stem="${start_time//[-:]/}"
 
     srun --ntasks=1 --exact \
         singularity run -B /sfs -B /gxfs_work -B $PWD:/work --pwd /work \
@@ -36,7 +37,7 @@ run_experiment() {
         ". /opt/conda/etc/profile.d/conda.sh && conda activate base \
         && papermill --cwd notebooks/ \
             notebooks/010_FucusDispersal.ipynb \
-            notebooks_executed/TrajectoryCalc/Fucus_${start_time}_${regime}.ipynb \
+            notebooks_executed/TrajectoryCalc/Fucus_${start_stem}_${regime}.ipynb \
             -p start_time ${start_time} \
             -p end_time ${end_time} \
             -p regime ${regime} \
@@ -58,8 +59,8 @@ export repo_root output_root container calc_dt_mins output_dt_mins particles_per
 # preprocessed 2D fieldset is produced by 003_prepare_2d_fields.py.
 for n in $(seq 0 72); do
     doy=$((1 + 5 * n))
-    start_time=$(date -d "${year}-01-01 +$((doy - 1)) days" +%Y-%m-%d)
-    end_time=$(date -d "${start_time} +${simulation_days} days" +%Y-%m-%d)
+    start_time=$(date -d "${year}-01-01 +$((doy - 1)) days" +%Y-%m-%dT00:15:00)
+    end_time=$(date -d "${start_time} +${simulation_days} days" +%Y-%m-%dT00:15:00)
 
     printf '%s\0' "${start_time} ${end_time} surface_stokes $((RANDOM * 32768 + RANDOM))"
 done | xargs -0 -P ${SLURM_NTASKS} -n 1 bash -c 'run_experiment $1' _
