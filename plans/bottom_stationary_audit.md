@@ -14,7 +14,7 @@ few layers above were bit-exact zero.
 registers particles that start in those zero-velocity bottom cells as
 "land", even though they are clearly water.
 
-Open question before we change `scripts/003_prepare_2d_fields.py:load_bottom`:
+Open question before we change `notebooks/003_prepare_2d_fields.py:load_bottom`:
 are these always-immobile bottom cells a persistent structural feature of
 the extracted 2D field, or a transient thing at t=0? The audit scans a
 whole year of `output/2d_fields` to settle it.
@@ -49,7 +49,7 @@ defaults `fine 2019`.
 3. Branch on the result:
    - **If the count is large and stable** (≫0, comparable to the
      single-file number): the no-slip wall is a structural feature. Fix
-     `load_bottom` in `scripts/003_prepare_2d_fields.py` to pick the
+     `load_bottom` in `notebooks/003_prepare_2d_fields.py` to pick the
      deepest layer that is non-NaN **and** not `(0, 0)` — sketch was
      discussed in chat. Re-run 003 for one year to confirm the wet-but-
      dead count drops, then roll out to all years and re-run the
@@ -66,6 +66,6 @@ defaults `fine 2019`.
 
 - `scripts/debug_bottom_stationary.py` — scanner.
 - `scripts/debug_bottom_stationary_job.sh` — sbatch wrapper.
-- `scripts/003_prepare_2d_fields.py:27-44` — `load_bottom`, candidate
+- `notebooks/003_prepare_2d_fields.py:27-44` — `load_bottom`, candidate
   site for the fix.
 - `notebooks/021_TimeStats.md` — land-seed heuristic consumer.

@@ -23,7 +23,7 @@ process_file() {
         singularity run -B /sfs -B /gxfs_work -B ${repo_root}:/work --pwd /work \
         ${container} bash -c \
         ". /opt/conda/etc/profile.d/conda.sh && conda activate base \
-        && python scripts/003_prepare_2d_fields.py \
+        && python notebooks/003_prepare_2d_fields.py \
             --c-file ${c_file} \
             --output-root ${output_root}"
 }

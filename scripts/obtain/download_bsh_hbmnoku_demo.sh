@@ -17,7 +17,7 @@
 # Static files (lonlat, H0, sigma) are NOT downloaded here — they are derived
 # artifacts from the per-timestep output and live under
 # data/bsh_hbmnoku_static/static_file_{fine,coarse}/. The wet-cell coastline
-# geojsons next to them are produced by scripts/004_extract_coastline.py.
+# geojsons next to them are produced by notebooks/004_extract_coastline.py.
 # If a future rebuild needs to regenerate the statics from the downloaded
 # files, add a separate derivation step.
 #

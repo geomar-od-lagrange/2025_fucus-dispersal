@@ -15,7 +15,7 @@ cd /tmp/stokes_env_$$
 pixi add copernicusmarine
 
 # Run download (writes to ${output_root}/stokes/)
-pixi run python ${repo_root}/scripts/002_download_stokes.py \
+pixi run python ${repo_root}/notebooks/002_download_stokes.py \
     --output-root ${output_root} \
     --start-year 2016 \
     --end-year 2025
