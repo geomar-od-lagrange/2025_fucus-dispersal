@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=010_FucusSurface
-#SBATCH --ntasks=100
+#SBATCH --ntasks=73
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=60G
 #SBATCH --time=24:00:00
