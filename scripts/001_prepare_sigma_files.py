@@ -39,7 +39,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--bsh-root",
         type=Path,
-        default=Path("../data/bsh_minimal"),
+        default=Path("../data/bsh_hbmnoku_static"),
         help="BSH store root (contains static_file_fine/, static_file_coarse/, …)",
     )
     parser.add_argument(

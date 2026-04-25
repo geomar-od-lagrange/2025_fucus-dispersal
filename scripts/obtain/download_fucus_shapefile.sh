@@ -6,13 +6,13 @@
 # The MADS portal calls an ArcGIS GP service to produce a zip on demand; this
 # script replicates that flow for non-interactive use.
 #
-# Output: ./data/fucus_redlist_shapefile/<shapefile components>
+# Output: ./data/helcom_fucus_redlist/<shapefile components>
 # Idempotent: skips the download if the .shp is already present.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-OUT_DIR="${REPO_ROOT}/data/fucus_redlist_shapefile"
+OUT_DIR="${REPO_ROOT}/data/helcom_fucus_redlist"
 RECORD_UUID="5848c347-dd45-4135-bbb0-228be9ddeffb"
 GP_URL="https://maps.helcom.fi/arcgis/rest/services/MADS/tools/GPServer/getAndCompressDataSource/execute"
 

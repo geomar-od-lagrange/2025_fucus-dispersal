@@ -69,7 +69,7 @@ particles_per_cell = 100
 # Allow Parcels to extrapolate beyond the fieldset's time bounds. False
 # (production default) raises if a particle reaches a time outside the
 # loaded fields. Set True only for short verification runs against the
-# one-day demo subset under data/bsh_minimal/.
+# one-day demo subset under data/bsh_hbmnoku_demo/.
 allow_time_extrapolation = False
 
 # Roots: data twin checkout (inputs) and heavy-output store (outputs).
@@ -211,7 +211,7 @@ nested_fieldset = FieldSet(U_nested_field, V_nested_field)
 
 ```python
 gdf_release_area = gpd.read_file(
-    data_root / "derived" / "fucus_release_points.geojson"
+    data_root / "helcom_fucus_redlist" / "fucus_release_points.geojson"
 )
 
 n_release_cells = len(gdf_release_area)

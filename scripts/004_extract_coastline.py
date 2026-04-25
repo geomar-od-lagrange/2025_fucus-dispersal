@@ -7,12 +7,12 @@ transforms back to lon/lat, and writes the combined MultiPolygon as GeoJSON.
 Usage:
     python 004_extract_coastline.py \\
         --bsh-root /path/to/bsh_operationalmodel_data \\
-        --output-geojson /path/to/data/bsh_coastline/coastline.geojson
+        --output-geojson /path/to/data/bsh_hbmnoku_static/coastline.geojson
 
     # Exclude tidal flats (H0 < 0) for an "always wet" coastline:
     python 004_extract_coastline.py \\
         --bsh-root /path/to/bsh_operationalmodel_data \\
-        --output-geojson /path/to/data/bsh_coastline/coastline_always_wet.geojson \\
+        --output-geojson /path/to/data/bsh_hbmnoku_static/coastline_always_wet.geojson \\
         --min-h0 0
 """
 

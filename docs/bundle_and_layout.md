@@ -12,7 +12,7 @@ cell.
 |---|---|---|
 | `data_root` | `"../data"` | Redistributed inputs from the data twin submodule. |
 | `output_root` | `"../output"` | Heavy outputs, produced by the pipeline. |
-| `bsh_root` | `"../data/bsh_minimal"` | BSH HBMnoku store — the demo default points at the bundled minimal subset; NESH runs override to the full multi-year store. |
+| `bsh_root` | `"../data/bsh_hbmnoku_static"` | BSH HBMnoku store — the demo default points at the bundled static subset (statics + coastlines); NESH runs override to the full multi-year store. |
 
 Each notebook's parameters cell holds only the roots it consumes. Every
 job script passes them on the papermill command line, resolved to
@@ -22,16 +22,18 @@ absolute NESH paths.
 
 `./data/` is a git submodule pointing at
 <https://git.geomar.de/od-lagrange/2025_fucus_dispersal_data>, with
-source-prefixed subdirs:
+top-level dirs named `<source>_<dataset>` and derived blobs co-located
+with their source:
 
 ```
 data/
-  helcom_subbasins/           # HELCOM level-2 polygons
-  fucus_redlist_shapefile/    # REDLIST_SIS_Macrophytes.*
-  bsh_coastline/              # wet-cell coastline geojsons (derived via scripts/004)
-  bsh_minimal/                # BSH HBMnoku demo subset: statics + full-day c/h/t/z
+  helcom_subbasins_2022/      # HELCOM level-2 polygons
+  helcom_fucus_redlist/       # REDLIST_SIS_Macrophytes.* + the derived
+                              # fucus_release_points.geojson (baked by 000)
+  bsh_hbmnoku_static/         # BSH static grids (lonlat, H0) + wet-cell
+                              # coastline geojsons (derived via scripts/004)
+  bsh_hbmnoku_demo/           # BSH HBMnoku demo subset: full-day c/h/t/z
   cmems_stokes_sample/        # 1-day CMEMS Stokes drift sample
-  derived/                    # one-shot precomputed inputs (fucus_release_points.geojson)
   ATTRIBUTION.md              # per-dataset attribution blocks
   README.md
 ```
@@ -66,12 +68,13 @@ sources. The recipe chain:
 scripts/obtain/download_helcom_subbasins.sh     # maps.helcom.fi MADS GP service
 scripts/obtain/download_fucus_shapefile.sh      # same mechanism (MADS)
 scripts/obtain/download_stokes_sample.sh        # via copernicusmarine.subset
-scripts/obtain/download_bsh_minimal.sh          # curl from BSH OpenData (public, no auth)
+scripts/obtain/download_bsh_hbmnoku_demo.sh     # curl from BSH OpenData (public, no auth)
 ```
 
 After the obtain chain, `fetch_data.sh` invokes notebook 000 via
-jupytext to bake the `derived/` geojson. The same chain is what the
-twin's CI runs to keep its LFS blobs in sync with the recipe.
+jupytext to bake the Fucus release-points geojson alongside the
+shapefile in `helcom_fucus_redlist/`. The same chain is what the twin's
+CI runs to keep its LFS blobs in sync with the recipe.
 
 All four obtain steps work from any networked machine — no NESH mount
 required. The CMEMS step additionally needs `copernicusmarine`
@@ -105,11 +108,11 @@ Notebook numbering is linear, with 10-step gaps for inserts.
 
 | Stage | File | Purpose |
 |---|---|---|
-| 000 | `notebooks/000_FucusStartLocations.md` | One-shot bake: Fucus shapefile → `data/derived/fucus_release_points.geojson`. Driven by `scripts/fetch_data.sh`. |
+| 000 | `notebooks/000_FucusStartLocations.md` | One-shot bake: Fucus shapefile → `data/helcom_fucus_redlist/fucus_release_points.geojson`. Driven by `scripts/fetch_data.sh`. |
 | 001 | `scripts/001_prepare_sigma_files.py` | BSH sigma file cleanup. |
 | 002 | `scripts/002_download_stokes.py` | Full-year Stokes drift download. |
 | 003 | `scripts/003_prepare_2d_fields.py` | BSH → 2D surface + bottom current / T / S fields. |
-| 004 | `scripts/004_extract_coastline.py` | Extract BSH wet-cell coastline from H0 (the bundled result lives in the twin's `bsh_coastline/`). |
+| 004 | `scripts/004_extract_coastline.py` | Extract BSH wet-cell coastline from H0 (the bundled result lives in the twin's `bsh_hbmnoku_static/`). |
 | 010 | `notebooks/010_FucusDispersal.md` | Parcels runs, swept over `(year, doy, regime, velocity_factor)` via papermill. |
 | 020 | `notebooks/020_RawTrajectories.md` | Raw trajectory lines. |
 | 021 | `notebooks/021_TimeStats.md` | Per-trajectory time stats. |

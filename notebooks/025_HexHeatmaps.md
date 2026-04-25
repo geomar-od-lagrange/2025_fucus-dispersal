@@ -173,7 +173,7 @@ coast_de = _coast_gdf.clip(box(de_lon_min, de_lat_min, de_lon_max, de_lat_max))
 # readable on Baltic-wide panels. Buffer out then in (in lon/lat);
 # 0.05 deg ≈ 5.5 km at mid-latitudes.
 subbasins = gpd.read_file(
-    data_root / "helcom_subbasins/HELCOM_subbasins_2022_level2.shp"
+    data_root / "helcom_subbasins_2022/HELCOM_subbasins_2022_level2.shp"
 ).to_crs(epsg=4326).rename(columns={"level_2": "subbasin"})
 subbasins_smoothed = subbasins.assign(
     geometry=subbasins.geometry.buffer(0.05).buffer(-0.05)

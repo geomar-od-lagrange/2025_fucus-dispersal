@@ -53,7 +53,7 @@ sh_border = administrative_borders.set_index("NAME").loc[["Schleswig-Holstein"]]
 ```
 
 ```python
-subbasins_lvl2_file = data_root / "helcom_subbasins" / "HELCOM_subbasins_2022_level2.shp"
+subbasins_lvl2_file = data_root / "helcom_subbasins_2022" / "HELCOM_subbasins_2022_level2.shp"
 gdf_subbasins_area = gpd.read_file(subbasins_lvl2_file).to_crs(crs=ccrs.Geodetic())
 ```
 

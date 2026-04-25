@@ -111,7 +111,7 @@ print(f"Regimes: {regimes}")
 
 ```python
 release_area = gpd.read_file(
-    data_root / "fucus_redlist_shapefile" / "REDLIST_SIS_Macrophytes.shp"
+    data_root / "helcom_fucus_redlist" / "REDLIST_SIS_Macrophytes.shp"
 )
 release_area = release_area.loc[
     release_area.F_vesiculo != 0, ["geometry", "CELLCODE"]
@@ -123,7 +123,7 @@ release_area
 
 ```python
 subbasins = gpd.read_file(
-    data_root / "helcom_subbasins" / "HELCOM_subbasins_2022_level2.shp"
+    data_root / "helcom_subbasins_2022" / "HELCOM_subbasins_2022_level2.shp"
 ).to_crs(crs=ccrs.Geodetic()).rename(dict(level_2="subbasin"), axis=1)
 subbasins
 ```

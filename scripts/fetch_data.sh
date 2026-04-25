@@ -29,8 +29,8 @@ bash "${SCRIPT_DIR}/obtain/download_fucus_shapefile.sh"
 echo "=== fetch_data: CMEMS Stokes sample ==="
 bash "${SCRIPT_DIR}/obtain/download_stokes_sample.sh"
 
-echo "=== fetch_data: BSH minimal subset (via BSH OpenData) ==="
-bash "${SCRIPT_DIR}/obtain/download_bsh_minimal.sh"
+echo "=== fetch_data: BSH HBMnoku demo subset (via BSH OpenData) ==="
+bash "${SCRIPT_DIR}/obtain/download_bsh_hbmnoku_demo.sh"
 
 echo "=== fetch_data: bake derived release points ==="
 pixi run jupytext --sync --execute notebooks/000_FucusStartLocations.md

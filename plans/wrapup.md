@@ -134,7 +134,7 @@ Additionally landed during Phase A but not in the original plan:
       tuple, names the `<regime>/<year>/` output layout.
 - [x] Smoke-test verified at production particle count
       (87,200 trajectories, 3 days): notebook runs end-to-end against
-      the demo subset (`data/bsh_minimal/`) with
+      the demo subset (`data/bsh_hbmnoku_demo/`) with
       `allow_time_extrapolation=True`. Filename, layout, and kernel
       attribute (`JITParticleAdvectionRK4`) all match the new schema.
 
@@ -225,14 +225,16 @@ not duplicated here unless the notebook has a distinctive instance.
 
 ### 5a. `notebooks/000_FucusStartLocations.md`
 
-- [ ] Comment the lone `data_root` parameter (role: read root of the
+- [x] Comment the lone `data_root` parameter (role: read root of the
       data twin checkout).
-- [ ] Add a layout-assumption comment naming the
-      `fucus_redlist_shapefile/REDLIST_SIS_Macrophytes.shp` path the
+- [x] Add a layout-assumption comment naming the
+      `helcom_fucus_redlist/REDLIST_SIS_Macrophytes.shp` path the
       notebook reads.
-- [ ] Revisit the `data_root / "derived"` write target once §7's
+- [x] Revisit the `data_root / "derived"` write target once §7's
       `data/` rename lands — `derived/` is being dropped as a
-      category.
+      category. (Resolved: writes to
+      `helcom_fucus_redlist/fucus_release_points.geojson`,
+      co-located with its source shapefile.)
 
 ### 5b. `notebooks/021_TimeStats.md`
 
@@ -521,23 +523,23 @@ These are process / cleanup / governance notes, not methodology — no
 
 These are the first things a visitor sees; tidy before announcing.
 
-- [ ] Rename `data/` subdirs to `<source>_<dataset>` form (source
+- [x] Rename `data/` subdirs to `<source>_<dataset>` form (source
       first, then specific dataset). Walk every existing dir and
       decide on its merits — don't preserve a name just because
       something already uses it. Drop `data/derived/` as a category;
       either co-locate the derived blob with its source dir or give
       it its own clearly-named dir.
-- [ ] Update consumers in lock-step: every script / notebook reading
+- [x] Update consumers in lock-step: every script / notebook reading
       `data/...` paths, the `obtain/*.sh` recipes, `fetch_data.sh`,
       and `ATTRIBUTION.md`. Grep before, grep after. (`helpers.py`
       is gone after §3, so no path constants live there any more.)
-- [ ] Mirror the rename in the data twin repo
+- [x] Mirror the rename in the data twin repo
       (`git.geomar.de/od-lagrange/2025_fucus_dispersal_data`) and
       bump the submodule pointer in the same PR.
-- [ ] `README.md`: introduce the term "twin" explicitly when first
+- [x] `README.md`: introduce the term "twin" explicitly when first
       mentioning the data submodule, so newcomers see the project
       vocabulary before they encounter it elsewhere.
-- [ ] `scripts/000_FucusStartLocations_job.sh`: drop. Stage 000
+- [x] `scripts/000_FucusStartLocations_job.sh`: drop. Stage 000
       doesn't need a job script — it's quick local prep. Delete the
       `.sh`, leave the `.md` / `.ipynb` notebook in place.
 - [ ] Walk every other `scripts/0??_*_job.sh`: confirm each is still

@@ -23,7 +23,7 @@ year="${1:-2019}"
 
 repo_root=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
-# Full BSH store on NESH (provides H0 for the hex key; not the bsh_minimal demo subset).
+# Full BSH store on NESH (provides H0 for the hex key; not the bsh_hbmnoku_demo subset).
 bsh_root=/gxfs_work/geomar/smomw400/bsh_operationalmodel_data
 
 export SCHEDULER_FILE=${repo_root}/.scheduler_${SLURM_JOB_ID}.json

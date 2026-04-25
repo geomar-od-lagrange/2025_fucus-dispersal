@@ -7,13 +7,13 @@
 # short-lived URL to the resulting zip.  This script replicates that flow so
 # it works non-interactively without accepting the browser terms dialog.
 #
-# Output: ./data/helcom_subbasins/<shapefile components>
+# Output: ./data/helcom_subbasins_2022/<shapefile components>
 # Idempotent: skips the download if the .shp is already present.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-OUT_DIR="${REPO_ROOT}/data/helcom_subbasins"
+OUT_DIR="${REPO_ROOT}/data/helcom_subbasins_2022"
 RECORD_UUID="d4b6296c-fd19-462c-94d2-4c81b9313d77"
 GP_URL="https://maps.helcom.fi/arcgis/rest/services/MADS/tools/GPServer/getAndCompressDataSource/execute"
 

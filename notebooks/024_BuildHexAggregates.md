@@ -85,8 +85,10 @@ def parse_zarr_stem(path):
 data_root = "../data"
 # Read root of trajectory zarrs and write root for the hex-aggregate store.
 output_root = "../output"
-# Read root of BSH H0 / static inputs (defines the hex domain).
-bsh_root = "../data/bsh_minimal"
+# Read root of BSH H0 / static inputs (defines the hex domain). Demo
+# default points at the twin's static subset; NESH runs override to the
+# full BSH store.
+bsh_root = "../data/bsh_hbmnoku_static"
 
 # Hex radius (corner-to-centre distance) in metres. Sweep this via
 # papermill to build stores at multiple radii.
@@ -161,15 +163,15 @@ BSH wet-region polygons and Fucus shapefile are independent of the hex
 grid; load them once.
 
 ```python
-wet_gdf = gpd.read_file(data_root / "bsh_coastline/coastline.geojson")
+wet_gdf = gpd.read_file(data_root / "bsh_hbmnoku_static/coastline.geojson")
 always_wet_gdf = gpd.read_file(
-    data_root / "bsh_coastline/coastline_always_wet.geojson"
+    data_root / "bsh_hbmnoku_static/coastline_always_wet.geojson"
 )
 wet_union = unary_union(wet_gdf.geometry)
 always_wet_union = unary_union(always_wet_gdf.geometry)
 
 fucus_gdf = (
-    gpd.read_file(data_root / "fucus_redlist_shapefile/REDLIST_SIS_Macrophytes.shp")
+    gpd.read_file(data_root / "helcom_fucus_redlist/REDLIST_SIS_Macrophytes.shp")
     .loc[lambda df: df.F_vesiculo != 0, ["geometry"]]
     .to_crs(epsg=4326)
 )
@@ -179,7 +181,7 @@ fucus_union_3035 = (
 
 subbasins = (
     gpd.read_file(
-        data_root / "helcom_subbasins/HELCOM_subbasins_2022_level2.shp"
+        data_root / "helcom_subbasins_2022/HELCOM_subbasins_2022_level2.shp"
     )
     .to_crs(epsg=4326)
     .rename(columns={"level_2": "subbasin"})

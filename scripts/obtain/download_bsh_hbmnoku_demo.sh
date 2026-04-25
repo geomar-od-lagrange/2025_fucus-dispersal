@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Download a minimal subset of BSH operational model output from BSH OpenData
-# into ./data/bsh_minimal/.
+# Download a minimal demo subset of BSH HBMnoku operational model output from
+# BSH OpenData into ./data/bsh_hbmnoku_demo/.
 #
 # Public source, no authentication: https://gdi.bsh.de/data/OpenData/OperationalModel/
 # Files are released under dl-de/by-2-0 — attribution per ATTRIBUTION.md.
@@ -15,16 +15,18 @@
 #   z_file — 2D sea-surface elevation — needed for dry/wet analysis + sigma derivation
 #
 # Static files (lonlat, H0, sigma) are NOT downloaded here — they are derived
-# artifacts from the per-timestep output and already live under
-# data/bsh_minimal/static_file_{fine,coarse}/. If a future rebuild needs to
-# regenerate them from the downloaded files, add a separate derivation step.
+# artifacts from the per-timestep output and live under
+# data/bsh_hbmnoku_static/static_file_{fine,coarse}/. The wet-cell coastline
+# geojsons next to them are produced by scripts/004_extract_coastline.py.
+# If a future rebuild needs to regenerate the statics from the downloaded
+# files, add a separate derivation step.
 #
 # Idempotent: an individual file is skipped if already present at the destination.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-OUT_BASE="${REPO_ROOT}/data/bsh_minimal"
+OUT_BASE="${REPO_ROOT}/data/bsh_hbmnoku_demo"
 BSH_OPENDATA="https://gdi.bsh.de/data/OpenData/OperationalModel"
 
 DATE="20200101"
@@ -49,4 +51,4 @@ for res in fine coarse; do
     done
 done
 
-echo "BSH minimal subset downloaded to: ${OUT_BASE}"
+echo "BSH HBMnoku demo subset downloaded to: ${OUT_BASE}"

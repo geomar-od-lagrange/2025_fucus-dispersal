@@ -118,10 +118,14 @@ Inputs live in the **data twin repo** at
 <https://git.geomar.de/od-lagrange/2025_fucus_dispersal_data>, wired in
 as a git submodule at `./data/`. Clone with
 `git clone --recurse-submodules` or run `scripts/fetch_data.sh` after a
-plain clone. The submodule carries HELCOM polygons, the Fucus shapefile,
-BSH coastline geojsons, a BSH H0 slice, a minimal BSH demo subset, and
-a Stokes sample — all under the attributions listed in
-`ATTRIBUTION.md`.
+plain clone. Top-level layout (`<source>_<dataset>`):
+`helcom_subbasins_2022/` (HELCOM polygons),
+`helcom_fucus_redlist/` (Fucus shapefile + the derived release-points
+geojson baked by 000), `bsh_hbmnoku_static/` (BSH static grids
+including H0 in `static_file_{fine,coarse}/` plus the wet-cell
+coastline geojsons), `bsh_hbmnoku_demo/` (one-day BSH HBMnoku c/h/t/z
+demo subset), and `cmems_stokes_sample/` (one-day Stokes drift) — all
+under the attributions listed in `ATTRIBUTION.md`.
 
 `scripts/obtain/*.sh` is the canonical recipe for each input from
 upstream public sources (HELCOM, MADS/SYKE, Copernicus, BSH). These are

@@ -17,11 +17,14 @@ jupyter:
 
 One-shot preprocess: read the Fucus REDLIST shapefile, filter to
 *F. vesiculosus* occurrences, reproject to EPSG:4326, and write the
-result to `data/derived/fucus_release_points.geojson`. Run once; the
+result next to its source under
+`helcom_fucus_redlist/fucus_release_points.geojson`. Run once; the
 output is committed to the data twin so downstream notebooks read it
 directly without re-running this step.
 
 ```python tags=["parameters"]
+# Read root of the data twin checkout (HELCOM polygons, Fucus shapefile,
+# BSH static + coastlines, CMEMS Stokes sample).
 data_root = "../data"
 ```
 
@@ -30,14 +33,15 @@ from pathlib import Path
 import geopandas as gpd
 
 data_root = Path(data_root)
-derived_dir = data_root / "derived"
-derived_dir.mkdir(parents=True, exist_ok=True)
 ```
 
 ```python
-gdf = gpd.read_file(data_root / "fucus_redlist_shapefile" / "REDLIST_SIS_Macrophytes.shp")
+# Layout assumption: the Fucus REDLIST shapefile lives under
+# data_root/helcom_fucus_redlist/REDLIST_SIS_Macrophytes.shp, and the
+# derived release-points geojson is co-located with it in the same dir.
+gdf = gpd.read_file(data_root / "helcom_fucus_redlist" / "REDLIST_SIS_Macrophytes.shp")
 gdf = gdf.loc[gdf.F_vesiculo != 0].to_crs(epsg=4326)
-out_path = derived_dir / "fucus_release_points.geojson"
+out_path = data_root / "helcom_fucus_redlist" / "fucus_release_points.geojson"
 gdf.to_file(out_path, driver="GeoJSON")
 print(f"Written: {out_path}")
 ```
