@@ -1,3 +1,5 @@
+> Implemented as [../../docs/2d_field_extraction.md](../../docs/2d_field_extraction.md). Original plan retained as historical record.
+
 # 2D Field Extraction Plan
 
 Extract 2D velocity fields from the 3D BSH sigma-coordinate data. All experiment types use 2D fields — sigma level selection happens in preprocessing, not at runtime.

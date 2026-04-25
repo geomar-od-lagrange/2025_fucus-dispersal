@@ -1,3 +1,5 @@
+> Implemented as [../docs/h0_semantics.md](../docs/h0_semantics.md). Original plan retained as historical record.
+
 # AGENTS.md
 
 Project-specific facts that don't live in the code itself and that are

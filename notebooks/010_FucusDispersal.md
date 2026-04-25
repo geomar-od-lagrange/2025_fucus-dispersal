@@ -109,6 +109,10 @@ print(f"start: {start_time} | end: {end_time}")
 
 # Load 2D velocity fields
 
+Layout assumption: 2D-field NetCDFs sit at
+``output_root/2d_fields/c_file_{fine,coarse}_<YYYYMMDDHH>_<regime>.nc``,
+one per BSH 6-hour window per grid per regime.
+
 ```python
 current_files_fine = sorted(path_2d_fields.glob(f"c_file_fine_*_{regime}.nc"))
 current_files_coarse = sorted(path_2d_fields.glob(f"c_file_coarse_*_{regime}.nc"))
@@ -272,7 +276,10 @@ pset = ParticleSet(
 ```
 
 ```python
-output_filename = f"Fucus_BSH_{release_date_str}_{regime}_dt{output_dt_mins}min.zarr"
+# Output layout: output_root/Trajectories/<regime>/<release_year>/<filename>.
+# Downstream notebooks (020-025) discover regimes by iterdir on the
+# Trajectories directory and load all zarrs underneath each regime.
+output_filename = f"Fucus_BSH_{release_date_str}_{regime}_dt{output_dt_mins}min_seed{RNG_seed}.zarr"
 output_path = path_trajectories / regime / str(start_time.year) / output_filename
 print(f"Output path: {output_path}")
 

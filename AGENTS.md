@@ -62,6 +62,14 @@ Use **pixi** for environment management. Run all commands with `pixi run
 <command>` directly — this repo does not use `[tasks]` in `pixi.toml`.
 Prefer conda packages; use pypi only when no suitable conda package exists.
 
+**Dev-tool installs.** For tools that don't touch the project env
+(git-lfs is the canonical example), recommend `pixi global install
+<tool>` from conda-forge. Don't suggest `pip`, `brew`, or `apt` — not
+even as "or" fallbacks — in README, docs, or chat replies. Tools that
+*do* need project dependencies (jupytext, papermill, jupyter, python)
+stay in the project env; invoke them via `pixi run <tool>` so they see
+the kernel and the full dep tree.
+
 **Always invoke through `pixi run`.** Don't resolve a python executable
 once (e.g. `pixi run which python`) and then call that binary directly
 in subsequent commands. Conda packages like GDAL, proj, and cartopy
@@ -108,10 +116,6 @@ filename.
   (`key.parquet` + `counts/` partitions).
 - `notebooks/025_*.md` — hex heatmaps driven by the aggregate store.
 
-Naming is currently mid-migration (see `plans/bundle_and_layout.md` for
-the target). Ordering may drift during the prod-prep refactor; when in
-doubt, defer to the plan.
-
 ## Data access
 
 Inputs live in the **data twin repo** at
@@ -141,16 +145,11 @@ The papermill parameter is the single contract — visible in each notebook's
 parameters cell. Never commit output data, and don't leak `output/` into
 the repo directory.
 
-**BSH H0 semantics.** `H0` is *minus z of the sea floor* on a z-up axis
-with `z = 0` at MSL — **not** water depth. Always-wet cells have `H0 > 0`
-and `H0` coincides with depth; tidal-flat cells can have `H0 < 0`.
-Anywhere you want depth, filter to `H0 > 0` first (or use the
-always-wet mask). Mixing tidal flats into a mean will pull results
-toward zero or flip their sign.
+**BSH H0 semantics.** See [docs/h0_semantics.md](docs/h0_semantics.md).
 
 - Subset with `.sel()` / `.isel()`; keep loads lazy until needed.
 - For CMEMS data, prefer `copernicusmarine.open_dataset` (or the
-  existing `scripts/002_download_stokes.py` for bulk pulls) with
+  existing `notebooks/002_download_stokes.py` for bulk pulls) with
   minimal arguments.
 
 ## Conventions
@@ -162,6 +161,16 @@ notebooks under `notebooks_executed/`, derived geojsons, zarr stores)
 are cached outputs, not hand-written source. Before editing them, check
 how they were produced and whether changing the source is the right fix
 instead.
+
+**Trust derivations; let downstream raise.** Don't add a "plausibility
+check" that re-reads the source to verify a value precomputed for
+performance — that defeats the precompute. The error path catches
+mismatches.
+
+**Inline at the consumer.** Don't pre-allocate arrays that are sliced
+once each. Move the draw, lookup, or computation into the loop body
+where it's used — pre-allocation implies a shared contract that
+doesn't exist.
 
 **Notebook-local utilities.** Notebooks own their utilities. Four
 tests gate any extraction:
@@ -199,8 +208,8 @@ workflow: creating, syncing, executing, and fixing notebooks.
 parameters cell, not the filename.
 
 **Execution from the repo root.** Always invoke papermill with
-`--cwd notebooks/` so `from helpers import …` resolves and relative
-paths in the notebook (`data/foo.shp`) resolve under the repo.
+`--cwd notebooks/` so relative paths in the notebook (`../data/foo.shp`,
+`../output/...`) resolve against the notebook's directory.
 
 - The `.md` is the source of truth — always edit it, never the `.ipynb`.
   Commit **both** the `.md` and the freshly-executed `.ipynb` so rendered
@@ -256,11 +265,8 @@ kwargs that override defaults until a real need shows up.** Concretely:
 
 When a default genuinely doesn't read, prefer reshaping the data
 (faceting, hue) before reaching for explicit styling. If you do override
-a default, leave a one-line comment explaining why.
-
-Some existing notebooks (notably the hex heatmaps) still carry overrides
-from before this convention. They'll be pruned during the viz cleanup
-tracked in `plans/bundle_and_layout.md` §4.
+a default, leave a one-line comment explaining why and document the
+rationale in [docs/visualisations.md](docs/visualisations.md).
 
 ### Documentation
 
@@ -269,6 +275,13 @@ code. Each doc should make sense on its own without referencing previous
 implementations, changelogs, or development history. Explain design choices by
 comparing alternatives and their trade-offs, not by narrating what changed.
 Git history is the changelog; docs describe what *is*, not what *was*.
+
+**Keep docs concise.** Lead with what the code does (file path + a
+small table or a few-line code block), pair with a short *why* recap.
+Default 50–150 lines per doc; hit 200+ only if the topic is genuinely
+large. Cut alternatives narratives to "Considered X, rejected because
+Y" one-liners. Front-matter docs that bloat past this drift fast and
+bury the implementation pointer that matters.
 
 `plans/*.md` describe intent before implementation. When a plan is
 implemented: write a corresponding `docs/` file, move the plan to
@@ -288,3 +301,11 @@ All redistributed data carries per-dataset terms listed in
 licence first and extend `ATTRIBUTION.md` (and the data twin's copy) in
 the same PR. Code licence (MIT) applies only to code, not to data;
 `README.md` makes the distinction explicit.
+
+**Keep `ATTRIBUTION.md` minimal.** One short block per dataset: source,
+catalog/DOI URL, and the literal attribution string the licence
+requires. ≤5 lines per dataset. Skip introductions, licence-name/URL/
+text, derivative-works reasoning, species/column lists, contact emails
+(unless contact *is* the authoritative attribution channel — BSH's
+`opmod@bsh.de` is the one current exception). Detailed licence
+reasoning belongs in `plans/`, not the front-matter file.

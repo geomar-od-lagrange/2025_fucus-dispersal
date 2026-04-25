@@ -1,3 +1,5 @@
+> Implemented as [../../docs/stokes_drift.md](../../docs/stokes_drift.md). Original plan retained as historical record.
+
 # Stokes Drift Plan
 
 Depends on: `2d_field_extraction.md` (2D surface fields must exist first)

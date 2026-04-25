@@ -432,13 +432,13 @@ target `docs/` file and the plan(s) to mine; the plans then move to
 `plans/done/` (or stay there) with a one-liner pointing at the new
 doc.
 
-- [ ] `docs/h0_semantics.md` — BSH H0 sign convention (z-up,
+- [x] `docs/h0_semantics.md` — BSH H0 sign convention (z-up,
       MSL-zero, tidal flats can be `H0 < 0`); always-wet mask.
       **Source**: `plans/seafloor-location-H0-semantics.md` is
       already in docs-format — practically a move-and-rename. Trim
       the duplicate H0 paragraph in CLAUDE.md down to a one-line
       pointer at the doc.
-- [ ] `docs/2d_field_extraction.md` — surface and bottom 2D-field
+- [x] `docs/2d_field_extraction.md` — surface and bottom 2D-field
       extraction from the 3D BSH sigma grid; I/O reduction (~3 TB/yr
       → ~120 GB/yr); why sigma-layer selection happens at preprocess
       rather than at runtime; the resulting file structure consumed
@@ -451,7 +451,7 @@ doc.
       `plans/done/2d_field_extraction.md` plus the bottom-cell
       zero-velocity finding from `plans/bottom_stationary_audit.md`
       (the audit *finding*, not the audit *process*).
-- [ ] **Not** a separate doc: the T-point/F-point grid-registration
+- [x] **Not** a separate doc: the T-point/F-point grid-registration
       story and the C-grid corner-trapping story are *historical*.
       Both were investigated against the 3D-sigma pipeline retired
       by the "Go 2d" refactor (commit `5ebd46b`, 2026-04-15); their
@@ -462,37 +462,37 @@ doc.
       `docs/2d_field_extraction.md` is enough; documenting the
       fixes themselves would mislead future readers into thinking
       they ship.
-- [ ] `docs/stokes_drift.md` — CMEMS Baltic Wave Hindcast
+- [x] `docs/stokes_drift.md` — CMEMS Baltic Wave Hindcast
       (`BALTICSEA_MULTIYEAR_WAV_003_015`, variables `VSDX`/`VSDY`,
       2 km hourly), why not the global WAVERYS, regridding onto the
       BSH grid, summation with Eulerian currents. **Source**:
       `plans/done/stokes_drift.md` is most of the way there;
       modernise the access recipe to match
-      `scripts/002_download_stokes.py`.
-- [ ] `docs/seeding.md` — release-point sourcing from the Fucus
+      `notebooks/002_download_stokes.py`.
+- [x] `docs/seeding.md` — release-point sourcing from the Fucus
       shapefile; per-cell uniform sampling; n-particles bookkeeping;
       RNG contract; the 73-releases-per-year × N-years sweep design
       (doys `1 + 5n` for `n ∈ [0, 72]`, see §1). **Source**: derive
       from 000 + 010 source after §1/§5a are done — no plan covers
       this end-to-end yet.
-- [ ] `docs/hexbinning_and_connectivity.md` — unified hex grid for
+- [x] `docs/hexbinning_and_connectivity.md` — unified hex grid for
       source and target, equal-area projection centred on Baltic,
       `key.parquet` + `counts/` schema, the symmetric source↔sink
       self-join that makes `ostrea`-style queries work.
       **Source**: `plans/hex_aggregate_store.md` is already
       methodology-shaped — practically a rewrite-as-doc. Cross-link
       with §5e's `hex_radius` parameterisation.
-- [ ] `docs/distance_calculation.md` — distance-vs-time metric
+- [x] `docs/distance_calculation.md` — distance-vs-time metric
       definition (great-circle vs cumulative path vs from-release),
       edge cases (NaN-padded obs, land-seeded particles excluded).
       **Source**: derive from 022 source after §5c is done — no
       plan covers this.
-- [ ] `docs/visualisations.md` — per-plot-type rationale: what each
+- [x] `docs/visualisations.md` — per-plot-type rationale: what each
       notebook (020–025) shows, scope decisions, where overrides
       are justified. Styling *rules* stay in CLAUDE.md.
       **Source**: trim `plans/visualisations.md` to the
       per-plot-type sections; promote those to docs.
-- [ ] After the new docs land: delete `docs/bundle_and_layout.md`. Do
+- [x] After the new docs land: delete `docs/bundle_and_layout.md`. Do
       *not* leave a stub or redirect; git history is the changelog.
 
 ### Plans that stay in `plans/done/` as historical record
@@ -553,43 +553,65 @@ These are the first things a visitor sees; tidy before announcing.
 These are the rules §5's per-notebook items make concrete. Restate them
 here as a final cross-notebook audit so nothing slips through.
 
-- [ ] **Parameters cell**: every parameter commented, primitives only,
+- [x] **Parameters cell**: every parameter commented, primitives only,
       RNG seeding (`np.random.default_rng(seed)`) as the first
       post-params cell where the notebook uses randomness. Notebooks
       that don't use randomness skip the seed cell rather than adding
-      a no-op one.
-- [ ] **Imports at the top**: no late `import …` cells. The repeated
+      a no-op one. (Verified in 000/010/020/021/022/023/024/025.
+      Fix: 020's `output_root` comment said "write root for derived
+      stores" — corrected to "Read root of trajectory zarrs".)
+- [x] **Imports at the top**: no late `import …` cells. The repeated
       `# Dask cluster` block in 021/022/023/024 is the recurring
-      offender — hoist its imports.
-- [ ] **Warning filters at the top**: configure once near the imports;
+      offender — hoist its imports. (No-op: §5 hoists already landed.
+      Re-grep confirmed every `import`/`from` in 0??_*.md sits in the
+      header import block.)
+- [x] **Warning filters at the top**: configure once near the imports;
       no `with warnings.catch_warnings()` blocks scattered through
       cells. If a notebook currently has none, leave it alone.
-- [ ] **No `helpers` import** anywhere (§3 removes the file; this is
-      the cross-cutting check).
-- [ ] **Consistent extent prefixes**: pairs of related extent
+      (010 and 020 set filters at the top; rest have none. No
+      `with warnings.catch_warnings()` anywhere.)
+- [x] **No `helpers` import** anywhere (§3 removes the file; this is
+      the cross-cutting check). (Re-grepped: zero hits.)
+- [x] **Consistent extent prefixes**: pairs of related extent
       variables both prefixed (`baltic_*` / `de_*`); no bare
       `lon_min` / `lat_min` paired with prefixed `de_lon_min`. Hits
-      currently in 020, 022, 023, 025.
-- [ ] **Variable names match current behaviour**: notable rename to
+      currently in 020, 022, 023, 025. (No-op: §5 renames already
+      landed. Function-local trailing-underscore unpacks
+      `lon_min_, lon_max_, lat_min_, lat_max_ = extent` in
+      `single_map`/`log_density_plot` are scope-local and don't
+      pair with module-scope vars.)
+- [x] **Variable names match current behaviour**: notable rename to
       apply: `experiment_type` → `regime` in `023_Heatmaps`. Look for
       similar lies elsewhere (e.g. `*_file` for in-memory stores,
-      `last_modeling_date` for end-time semantics).
-- [ ] **No styling overrides without a doc-justified reason**: no
+      `last_modeling_date` for end-time semantics). (No-op: §5d
+      already renamed. Re-grep finds no further lies; the remaining
+      `*_file` matches are all real file paths or parcels API kwargs.)
+- [x] **No styling overrides without a doc-justified reason**: no
       `color="tab:..."` literals, no `cmap=` / `figsize=` / `linewidth=`
       overrides except where `docs/visualisations.md` explicitly
-      argues for them.
-- [ ] **Layout assumptions are commented**: any `iterdir()` /
+      argues for them. (Phase F gates the doc-justify pass; per the
+      Phase E fence, new unjustified overrides get `# TODO(phase-f)`
+      markers, not deletions. Marked: 020 line 211 trajectory-line
+      `linewidth=0.5`. Existing 025 markers untouched. Aspect-driven
+      `figsize=(panel_height_in*aspect, panel_height_in)` in
+      020/023/025 is treated as accepted layout sizing — 025's
+      figsize calls also carry no TODO.)
+- [x] **Layout assumptions are commented**: any `iterdir()` /
       glob walk / hard-coded sub-path encodes a layout — name the
       assumption in a one-liner so failures point at the contract,
       not the autodetect mechanics. Hits in 020, 021, 022, 023, 024,
-      025.
-- [ ] **Notebooks read standalone**: parameter cells, path
+      025. (Existing markdown blocks above each `iterdir` cover
+      020/021/022/023/024. Added: 010 `# Load 2D velocity fields`
+      glob and 010's output-path layout block now name the contracts
+      explicitly.)
+- [x] **Notebooks read standalone**: parameter cells, path
       construction, and the Dask-cluster boilerplate are *expected* to
       be duplicated per notebook. Do not re-factor the
       `SCHEDULER_FILE`-or-local-`Client` snippet into a helper — that
       is the test case for §3's policy reversal. If it needs
       documenting, add a snippet to `docs/` rather than a Python
-      module.
+      module. (Verified: cluster boilerplate is duplicated verbatim
+      in 020/021/022/023/024 and helpers.py is gone.)
 
 ## 9. Final verification before flipping to prod
 
@@ -605,9 +627,31 @@ here as a final cross-notebook audit so nothing slips through.
       in the twin still listed; no licence-incompatible additions
       since the last audit (cross-check against
       `plans/data_licensing_public_bundle.md`).
+- [ ] Review `AGENTS.md` shape after F + G have landed. Look for
+      content trimmable to pointers (rules-vs-reference split),
+      `Conventions › Notebooks` bullets that duplicate the jupytext
+      skill, and stale references after the rename + docs extraction.
+      Decide whether a structural pass earns its keep or the file
+      reads fine post-trim. No new sub-plan unless the answer is yes.
 - [ ] Once green: move this file to `plans/done/wrapup.md` with a
       one-liner pointing at the new method docs as the durable
       record.
+
+## 10. Implementation gaps discovered during prod-prep
+
+- [ ] **Stokes drift WAVERYS fallback for German Bight.** The
+      Baltic high-res CMEMS Stokes product (`cmems_mod_bal_wav_my_PT1H-i`)
+      starts at ~9 °E; the BSH fine grid extends west to ~6.2 °E.
+      Current `interpolate_stokes` zeros the strip via
+      `kwargs={"fill_value": 0.0}`, so `surface_stokes` particles in
+      the German Bight (SH North Sea coast, Heligoland Bight) silently
+      degrade to BSH-only physics. Fix: pull the global WAVERYS
+      product (`cmems_mod_glo_wav_my_0.2deg_PT3H-i`) in
+      `notebooks/002_download_stokes.py` alongside the Baltic high-res
+      pull, and update `notebooks/003_prepare_2d_fields.py`
+      `interpolate_stokes` to layer Baltic-where-defined / WAVERYS-as-
+      fallback. ATTRIBUTION.md and `docs/stokes_drift.md` already
+      reflect the planned design. Implementation is the gap.
 
 ## Open questions (collect here as they arise)
 

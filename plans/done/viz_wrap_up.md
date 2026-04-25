@@ -1,3 +1,5 @@
+> Subsumed by `plans/wrapup.md` §4 / §5. Original plan retained as historical record.
+
 # Viz wrap-up
 
 Simplifications across `notebooks/020_RawTrajectories`, `021_TimeStats`,

@@ -1,3 +1,5 @@
+> Implemented as [../docs/hexbinning_and_connectivity.md](../docs/hexbinning_and_connectivity.md). Original plan retained as historical record.
+
 # Hex-aggregated dispersal store
 
 ## Purpose

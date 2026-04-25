@@ -1,3 +1,5 @@
+> Implemented as [../docs/visualisations.md](../docs/visualisations.md). Original plan retained as historical record.
+
 # Visualisations
 
 Plot types as top-level sections. Scopes under each. Types without

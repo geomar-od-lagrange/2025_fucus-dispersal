@@ -67,7 +67,7 @@ def assign_release_subbasin(ds, subbasins):
 ```python tags=["parameters"]
 # Read root of the data twin (HELCOM polygons, Fucus shapefile).
 data_root = "../data"
-# Read root of trajectory zarrs and write root for derived stores.
+# Read root of trajectory zarrs (output_root/Trajectories/<regime>/...).
 output_root = "../output"
 
 # Number of trajectories sampled per panel (subbasin or quarter).
@@ -205,6 +205,7 @@ for regime in regimes:
         idx = rng.choice(avail, size=min(n_traj_subset, avail.size), replace=False)
         ds_plot = ds.isel(trajectory=idx).compute()
         for i in range(ds_plot.sizes["trajectory"]):
+            # TODO(phase-f): justify linewidth in docs/visualisations.md.
             ax.plot(
                 ds_plot.lon.isel(trajectory=i),
                 ds_plot.lat.isel(trajectory=i),
