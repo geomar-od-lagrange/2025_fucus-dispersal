@@ -102,8 +102,11 @@ def apply_land_mask_at_edges(u, v, land_mask):
 # before interpolation onto BSH faces. Determined empirically: N=5
 # covers 100% of BSH potentially-wet cells (H0 not NaN) inside each
 # wave-model file's bounding box, against both Baltic high-res (2 km)
-# and WAVERYS (0.2°). The two grids are fixed, so this never changes;
-# raise it only if the wave-model files swap to coarser products.
+# and WAVERYS (0.2°). KNOWN PHYSICS LIMITATION: spread crosses thin
+# land barriers (e.g. the Curonian Spit, ~1–3 km), which can push
+# open-ocean Stokes into sheltered lagoons where actual fetch resets
+# and real Stokes is small. See docs/stokes_drift.md for the open
+# concern; kept at N=5 for now pending further thought.
 SPREAD_N_ITER = 5
 
 

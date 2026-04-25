@@ -56,6 +56,47 @@ chain in [2d_field_extraction.md](2d_field_extraction.md). Considered
 in-kernel runtime sum; rejected for I/O cost and harder face-alignment
 validation.
 
+Stokes is also shut off per-timestep where BSH says the face is
+blocked (`u_surf == 0` or NaN) so tidal flats correctly receive Stokes
+when wet and zero Stokes when dry, and the Stokes contribution doesn't
+push particles through no-slip walls.
+
+## Open concern: spread bridges thin land barriers
+
+The 3×3 rolling-mean spread (N=5 iterations, in
+`_spread_into_nan` / `_interp_stokes_to_bsh`) bridges land barriers
+narrower than the spread reach. With Baltic high-res at 2 km grid and
+N=5, the spread crosses ~10 km of wave-model land — wide enough to
+push open-ocean Stokes across thin barriers like the Curonian Spit
+(~1–3 km wide) into the sheltered Curonian Lagoon, where actual fetch
+resets and real Stokes is small.
+
+Real wave physics: Stokes drift depends on wind-driven wave growth
+along an unobstructed fetch. Thin land barriers reset fetch on their
+leeward side; the sheltered water body sees small Stokes regardless
+of conditions on the open side.
+
+The Baltic high-res wave model encodes this physics — it returns NaN
+inside such enclosed lagoons. Our current spread overrides that
+silence and propagates open-ocean values inward.
+
+Possible mitigations (none implemented):
+
+- **Reduce N to 1** so the spread only catches the BSH-vs-wave-model
+  coastline 1-cell drift, minimising barrier crossing. Costs ~12 % of
+  near-coast BSH cells losing Stokes entirely (those farther than one
+  wave-model cell from the wave-model coast).
+- **Treat Baltic-bbox interior NaN as zero** in the layering step
+  (rather than falling back to WAVERYS, which is too coarse to resolve
+  the barriers anyway). Pairs naturally with reduced N.
+- **Geodesic spread** that respects the wave-model land/water
+  topology, not crossing through cells that were originally land in
+  the wave-model file. More complex; requires a connected-components
+  analysis.
+
+Pending further thought; kept at N=5 with the per-timestep face mask
+as the production setting for now.
+
 ## Cross-references
 
 - [2d_field_extraction.md](2d_field_extraction.md) — preprocessor;

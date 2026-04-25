@@ -25,6 +25,7 @@ xarray = ">=2025.1.0"
 xhistogram = ">=0.3.2"
 parcels = ">=3,<4"
 zarr = ">=2.18,<3"
+copernicusmarine = ">=2"
 
 [pypi-dependencies]
 hextraj = { version = ">=2026.4.23.3", extras = ["full"] }

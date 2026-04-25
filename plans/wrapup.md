@@ -648,13 +648,30 @@ here as a final cross-notebook audit so nothing slips through.
       Baltic high-res and WAVERYS (`cmems_mod_glo_wav_my_0.2deg_PT3H-i`)
       side by side under `<output-root>/stokes/<product>/<year>/`;
       `notebooks/003_prepare_2d_fields.py` `interpolate_stokes` layers
-      Baltic-where-defined / WAVERYS-as-fallback / 0-elsewhere.
-      End-to-end verification (download a sample day, run 003, sanity
-      check the German Bight strip) deferred to Phase G smoke test.
+      Baltic-where-defined / WAVERYS-as-fallback. Each wave-model
+      field is spread by N=5 iterations of a 3×3 rolling mean before
+      interp (covers 100 % of BSH potentially-wet cells in the
+      wave-model file extent for both grids; fixed empirically against
+      the BSH fine + coarse domains). Stokes is shut off per-timestep
+      where BSH says the face is blocked (`u_surf == 0` or NaN) so
+      tidal flats receive Stokes when wet and zero when dry — likely
+      source of the "near-shore slowdown" beaching artifact in earlier
+      runs. Verified end-to-end against the demo (BSH 2020-01-01 +
+      Baltic high-res + WAVERYS): 003 produces no-NaN 2D fields with
+      Stokes contribution in every lon band 5–15 °E; 010 advects 872
+      particles over 4 h with sensible displacements (max ~13 km).
 
 ## Open questions (collect here as they arise)
 
-*(none open)*
+- **2026-04-25 — Stokes spread bridges thin land barriers.** The N=5
+  3×3 rolling-mean spread in `interpolate_stokes` extends ~10 km on
+  the Baltic 2 km wave-model grid, wide enough to push open-ocean
+  Stokes across barriers like the Curonian Spit (~1–3 km) into the
+  sheltered Curonian Lagoon — unphysical (real fetch resets at the
+  spit). Three candidate mitigations laid out in
+  [docs/stokes_drift.md](../docs/stokes_drift.md) §"Open concern".
+  Kept at N=5 + per-timestep face mask for now; needs further thought
+  before settling on a fix.
 
 ### Resolved
 
