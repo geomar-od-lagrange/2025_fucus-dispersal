@@ -68,10 +68,14 @@ def main():
                         help="Download only this year")
     parser.add_argument("--month", type=int, default=None,
                         help="Download only this month (requires --year)")
+    parser.add_argument("--day", type=int, default=None,
+                        help="Download only this day (requires --year and --month)")
     args = parser.parse_args()
 
     if args.month is not None and args.year is None:
         parser.error("--month requires --year")
+    if args.day is not None and (args.month is None or args.year is None):
+        parser.error("--day requires both --year and --month")
 
     stokes_dir = args.output_root / "stokes"
 
@@ -80,8 +84,10 @@ def main():
     else:
         start_year, end_year = args.start_year, args.end_year
 
-    start = date(start_year, args.month or 1, 1)
-    if args.month:
+    start = date(start_year, args.month or 1, args.day or 1)
+    if args.day:
+        end = start + timedelta(days=1)
+    elif args.month:
         if args.month == 12:
             end = date(start_year + 1, 1, 1)
         else:

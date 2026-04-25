@@ -8,9 +8,9 @@ jupyter:
       format_version: '1.3'
       jupytext_version: 1.19.1
   kernelspec:
-    display_name: min_data (pixi)
+    display_name: Python 3 (ipykernel)
     language: python
-    name: min_data
+    name: python3
 ---
 
 # Hex heatmaps
@@ -125,20 +125,26 @@ def log_density_plot(gdf, ax, extent, title=None, overlay=None, coast=None):
     """Plot hex density, coastline, and optional subbasin overlay on a
     plain (non-cartopy) lon/lat axis. Everything stays in EPSG:4326 so
     hexes, coastline, and overlay share one coordinate system — no
-    drift from mismatched reprojection pipelines."""
-    gdf = gdf.copy()
-    gdf["log_count"] = np.log10(gdf["count"].where(gdf["count"] > 0))
-    # TODO(phase-f): justify cmap, edgecolor="face", linewidth in docs/visualisations.md.
-    gdf.plot(
-        ax=ax,
-        column="log_count",
-        cmap=cmap,
-        legend=False,
-        missing_kwds={"color": "none"},
-        edgecolor="face",
-        linewidth=0.4,
-        zorder=1,
-    )
+    drift from mismatched reprojection pipelines.
+
+    Empty ``gdf`` (e.g. a HELCOM subbasin with no Fucus releases)
+    skips the hex layer; coast and overlay still draw so empty panels
+    render with stable layout instead of raising on geopandas's
+    aspect calc."""
+    if not gdf.empty:
+        gdf = gdf.copy()
+        gdf["log_count"] = np.log10(gdf["count"].where(gdf["count"] > 0))
+        # TODO(phase-f): justify cmap, edgecolor="face", linewidth in docs/visualisations.md.
+        gdf.plot(
+            ax=ax,
+            column="log_count",
+            cmap=cmap,
+            legend=False,
+            missing_kwds={"color": "none"},
+            edgecolor="face",
+            linewidth=0.4,
+            zorder=1,
+        )
     if coast is not None:
         # TODO(phase-f): justify color="black", linewidth in docs/visualisations.md.
         coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
@@ -262,8 +268,10 @@ Quarter is derived from `release_doy` via the calendar (handles
 leap-year boundary asymmetry between Q1/Q2/Q3/Q4 month lengths).
 
 ```python
+# Cast release_doy from its int16 storage type up to int32 before
+# arithmetic — release_year * 1000 + doy easily exceeds int16 range.
 release_dates = pd.to_datetime(
-    (release_year * 1000 + counts["release_doy"]).astype(str),
+    (release_year * 1000 + counts["release_doy"].astype("int32")).astype(str),
     format="%Y%j",
 )
 counts_q = counts.assign(quarter=release_dates.dt.quarter)

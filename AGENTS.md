@@ -104,7 +104,7 @@ for inserts. Region/year belong to the parameters cell, never in the
 filename.
 
 - `scripts/00x_*.py` / `notebooks/00x_*.md` — inputs and preprocessing
-  (sigma cleanup, Stokes download, 2D-field extraction, BSH coastline
+  (Stokes download, 2D-field extraction, BSH coastline
   extraction).
 - `scripts/010_FucusDispersal_{surface,bottom}_job.sh` +
   `notebooks/010_FucusDispersal.md` — Parcels runs, papermill-swept

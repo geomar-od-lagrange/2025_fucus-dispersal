@@ -8,9 +8,9 @@ jupyter:
       format_version: '1.3'
       jupytext_version: 1.19.1
   kernelspec:
-    display_name: min_data (pixi)
+    display_name: Python 3 (ipykernel)
     language: python
-    name: min_data
+    name: python3
 ---
 
 # Bake Fucus release points
