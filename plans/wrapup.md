@@ -27,34 +27,36 @@ The single-start-time regime makes several historical contraptions
 unnecessary. Strip them, then verify a fresh sweep still produces
 sensible trajectories.
 
-- [ ] Remove `velocity_factor` end-to-end: kernel multiplication,
+- [x] Remove `velocity_factor` end-to-end: kernel multiplication,
       particle attribute, papermill parameter, sweep loops in
       `scripts/010_FucusDispersal_*_job.sh`, downstream filename
       conventions, and any aggregation code keyed on it. The
       bottom-focused experiment will get its own kernel handling
       bottom slowdown — no need to keep a generic per-particle scale.
-- [ ] **New zarr filename schema**. Drop `vf{velocity_factor}` and
+- [x] **New zarr filename schema**. Drop `vf{velocity_factor}` and
       rename `{experiment_type}` → `{regime}`. Keep only the fields
       `parse_zarr_stem` needs downstream: release date and regime.
-      Proposed schema (refine on contact): `Fucus_BSH_{release_date_str}_{regime}_dt{output_dt_mins}min.zarr`
+      Landed: `Fucus_BSH_{release_date_str}_{regime}_dt{output_dt_mins}min.zarr`
       — three fields, one parsed by date, one by regime token, one
-      retained for run-config traceability. Update `parse_zarr_stem`
-      in 024 to match. Document the schema where it's defined (010)
-      and where it's parsed (024).
-- [ ] Remove `max_age_kernel` and the `age_sec` / `max_age_sec`
+      retained for run-config traceability. `parse_zarr_stem` in
+      `helpers.py` updated to match (will be inlined in §3).
+- [x] Remove `max_age_kernel` and the `age_sec` / `max_age_sec`
       particle attributes. With a common `release_date`, end-time on
       `pset.execute` is the only kill criterion needed.
-- [ ] Replace `last_modeling_date = release_date + timedelta(days=max_age_days)`
+- [x] Replace `last_modeling_date = release_date + timedelta(days=max_age_days)`
       with explicit `start_time` / `end_time` parameters using names
       consistent with `pset.execute`'s kwargs. Drop the legacy "+6h"
       shift; let the fieldset-bounds exception raise if a user picks a
-      start time that collides with available data.
-- [ ] Revisit whether the custom `AdvectionRK4_2D_BSH` can be replaced
+      start time that collides with available data. (Also added
+      `allow_time_extrapolation` papermill parameter, default `False`,
+      for short verification runs against the demo subset.)
+- [x] Revisit whether the custom `AdvectionRK4_2D_BSH` can be replaced
       by Parcels' standard 2D RK4 once `velocity_factor` is gone. If
-      yes, delete the custom kernel.
-- [ ] Once both kernels are gone, audit particle attribute schema for
+      yes, delete the custom kernel. (Resolved: yes; replaced with
+      `parcels.AdvectionRK4`.)
+- [x] Once both kernels are gone, audit particle attribute schema for
       anything else now unused (`age_sec`, etc.).
-- [ ] **Scope of "single start time"**: the simplification is
+- [x] **Scope of "single start time"**: the simplification is
       *per-execution*, not *per-study*. Production design is 73
       releases/year × N years of papermill-injected 010 runs at
       `release_doy = 1 + 5*n` for `n ∈ [0, 72]` (doys
@@ -68,7 +70,7 @@ sensible trajectories.
       / `023_Heatmaps` / `025_HexHeatmaps` and the `release_year`
       partition in `024_BuildHexAggregates` stay (cross-run
       aggregation).
-- [ ] Update `scripts/010_FucusDispersal_*_job.sh` sweep loops to
+- [x] Update `scripts/010_FucusDispersal_*_job.sh` sweep loops to
       `n ∈ [0, 72]` (73 doys ≤ 361). Drop any `doy == 366` branch
       from sweep generators.
 
@@ -77,35 +79,64 @@ sensible trajectories.
 Smaller hygiene items flagged inline. Do these in the same pass as §1
 so the rerun covers both.
 
-- [ ] Comment every parameter in the parameters cell (then propagate
-      the same convention to all other notebooks — see §5).
-- [ ] Move `np.random.seed(RNG_seed)` to the first cell after params,
+- [x] Comment every parameter in the parameters cell (010 done; §5
+      propagates the convention to the other notebooks).
+- [x] Move `np.random.seed(RNG_seed)` to the first cell after params,
       and unify the seeding idiom across notebooks (single
       `np.random.default_rng(seed)` per run, printed for
       reproducibility).
-- [ ] Collapse the release-date / last-modelling-date `print(...)` to
+- [x] Collapse the release-date / last-modelling-date `print(...)` to
       a single line, placed immediately after the dates are defined.
-- [ ] Move construction of `output_filename` to *after* fieldset
+- [x] Move construction of `output_filename` to *after* fieldset
       creation; it belongs adjacent to the `ParticleFile` /
       particleset block, not next to date arithmetic.
-- [ ] Rename `output_particle_file` → `output_store` (it writes to a
+- [x] Rename `output_particle_file` → `output_store` (it writes to a
       `MemoryStore`, not a file).
-- [ ] Inline `file_suffix`.
-- [ ] Inline `def stem(f)`.
-- [ ] Split the timestamp/stem cell: first cell computes the common
-      stems across coarse / fine / static groupings and *warns* if
-      they don't fully overlap; second cell builds the
-      `np.timedelta64` array.
-- [ ] Expand `make_fieldset` body — type the `data_filenames`,
+- [x] Inline `file_suffix`.
+- [x] Inline `def stem(f)`.
+- [x] Split the timestamp/stem cell: first cell computes the common
+      stems across coarse / fine groupings and *warns* if they don't
+      fully overlap; second cell builds the `np.timedelta64` array.
+      (Static-grid alignment not added — current 010 doesn't read
+      static files.) Also dropped the redundant timestamp
+      plausibility check that re-read file metadata to verify the
+      precomputed timestamps; trust the derivation and let the
+      FieldSet raise if it's wrong.
+- [x] Expand `make_fieldset` body — type the `data_filenames`,
       `data_variables`, `data_dimensions` dicts out explicitly instead
-      of three layered `dict(zip(...))` calls. While doing so, verify
-      the `data_filenames = dict(zip(variable_ID, [data_files] * len(variable_ID)))`
-      line is correct (flagged "Is this correct?").
-- [ ] Rewrite the `release_lons, release_lats = zip(*[...])`
-      comprehension explicitly — a list-and-loop or two separate
-      arrays is easier on a human reader than the unpacked-zip idiom.
-- [ ] Fix the NaN-trim comment: particles aren't "deleted" — the
+      of three layered `dict(zip(...))` calls. Verified
+      `data_filenames = dict(zip(variable_ID, [data_files] * len(variable_ID)))`
+      is correct: it produces `{"U": data_files, "V": data_files}`.
+      `allow_time_extrapolation` plumbed through as a parameter.
+- [x] Rewrite the `release_lons, release_lats = zip(*[...])`
+      comprehension explicitly — replaced with a cell-major loop that
+      broadcasts `relative_position_in_cell` across `particles_per_cell`
+      per cell. ~872 iterations instead of ~87K, shapely accessed once
+      per cell. `rng.uniform` calls inlined in the loop body.
+      Smoke-tested at production particle count: release-points cell
+      runs in <50 ms.
+- [x] Fix the NaN-trim comment: particles aren't "deleted" — the
       trailing zarr chunk just didn't fill up completely.
+
+Additionally landed during Phase A but not in the original plan:
+
+- [x] Added `parcels>=3,<4` and pinned `zarr>=2.18,<3` in
+      `pixi.toml` (parcels was missing from the project env; the
+      former `min_data` kernelspec pointed at a deleted submodule
+      env). Both `pixi.toml` and `pixi.lock` updated.
+- [x] Added a one-line comment to the `FieldSet(U_nf, V_nf)` block
+      explaining that `_add_UVfield` re-pairs the two scalar
+      `NestedField`s into a per-layer C-grid `VectorField`, so layer
+      selection at the fine/coarse boundary happens for the (U, V)
+      pair as a unit.
+- [x] Updated `AGENTS.md` pipeline-stages section: two job scripts
+      (`surface`, `bottom`), drops `velocity_factor` from the sweep
+      tuple, names the `<regime>/<year>/` output layout.
+- [x] Smoke-test verified at production particle count
+      (87,200 trajectories, 3 days): notebook runs end-to-end against
+      the demo subset (`data/bsh_minimal/`) with
+      `allow_time_extrapolation=True`. Filename, layout, and kernel
+      attribute (`JITParticleAdvectionRK4`) all match the new schema.
 
 ## 3. Eliminate `notebooks/helpers.py`
 

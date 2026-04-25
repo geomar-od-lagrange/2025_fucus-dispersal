@@ -141,11 +141,12 @@ def relabel_quarter(da, dim="release_quarter"):
     )
 
 
-# Pattern: Fucus_BSH_YYYYMMDD_{regime}_dt{N}min_vf{vf}_seed{seed}
-# Regime is one of the three known experiment types; surface_stokes must be
-# listed before surface so the alternation matches the longer form first.
+# Pattern: Fucus_BSH_YYYYMMDD_{regime}_dt{N}min
+# Regime is one of the three known kernel-forcing variants; surface_stokes
+# must be listed before surface so the alternation matches the longer form
+# first.
 _ZARR_STEM_RE = re.compile(
-    r"^Fucus_BSH_(\d{8})_(surface_stokes|surface|bottom)_"
+    r"^Fucus_BSH_(\d{8})_(surface_stokes|surface|bottom)_dt\d+min$"
 )
 
 
@@ -154,7 +155,7 @@ def parse_zarr_stem(path):
 
     The authoritative filename format (from notebooks/010_FucusDispersal.ipynb) is::
 
-        Fucus_BSH_{YYYYMMDD}_{regime}_dt{N}min_vf{vf}_seed{seed}.zarr
+        Fucus_BSH_{YYYYMMDD}_{regime}_dt{N}min.zarr
 
     where ``{regime}`` is one of ``surface``, ``surface_stokes``, or ``bottom``.
 

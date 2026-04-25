@@ -89,9 +89,10 @@ filename.
 - `scripts/00x_*.py` / `notebooks/00x_*.md` — inputs and preprocessing
   (sigma cleanup, Stokes download, 2D-field extraction, BSH coastline
   extraction).
-- `scripts/010_FucusDispersal_job.sh` + `notebooks/010_FucusDispersal.md`
-  — Parcels runs, papermill-swept across (year, doy, regime,
-  velocity_factor). Writes trajectory zarrs under `output_root/Trajectories/`.
+- `scripts/010_FucusDispersal_{surface,bottom}_job.sh` +
+  `notebooks/010_FucusDispersal.md` — Parcels runs, papermill-swept
+  across (year, doy, regime). Writes trajectory zarrs under
+  `output_root/Trajectories/<regime>/<year>/`.
 - `notebooks/020..023_*.md` — per-trajectory visualisations (raw lines,
   time stats, distance vs. time, density + mean-age heatmaps).
 - `notebooks/024_*.md` — build the hex-aggregated dispersal store
