@@ -9,16 +9,9 @@
 
 repo_root=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
-# Set up temporary pixi env
-pixi init --format pixi /tmp/stokes_env_$$
-cd /tmp/stokes_env_$$
-pixi add copernicusmarine
 
-# Run download (writes to ${output_root}/stokes/)
-pixi run python ${repo_root}/notebooks/002_download_stokes.py \
+cd ${repo_root}
+pixi run python notebooks/002_download_stokes.py \
     --output-root ${output_root} \
     --start-year 2016 \
     --end-year 2025
-
-# Clean up
-rm -rf /tmp/stokes_env_$$
