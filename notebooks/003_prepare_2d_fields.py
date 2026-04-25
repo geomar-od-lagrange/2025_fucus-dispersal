@@ -98,12 +98,39 @@ def apply_land_mask_at_edges(u, v, land_mask):
     return u_out, v_out
 
 
+# Iterations of 3x3 rolling-mean spread applied to wave-model fields
+# before interpolation onto BSH faces. Determined empirically: N=5
+# covers 100% of BSH potentially-wet cells (H0 not NaN) inside each
+# wave-model file's bounding box, against both Baltic high-res (2 km)
+# and WAVERYS (0.2°). The two grids are fixed, so this never changes;
+# raise it only if the wave-model files swap to coarser products.
+SPREAD_N_ITER = 5
+
+
+def _spread_into_nan(arr, n_iter):
+    """Iteratively fill NaN cells with the mean of valid 3x3 neighbours.
+
+    Each iteration extends valid values outward by one cell, leaving
+    original valid cells untouched.
+    """
+    for _ in range(n_iter):
+        rolled = arr.rolling(lat=3, lon=3, center=True, min_periods=1).mean()
+        arr = arr.where(arr.notnull(), rolled)
+    return arr
+
+
 def _interp_stokes_to_bsh(stokes_ds, bsh_lon, bsh_lat, bsh_time, fill_value):
     """Interpolate one Stokes A-grid onto BSH C-grid U/V points and time.
 
     BSH uses NEMO-like C-grid: lon/lat are cell centres on a regular grid.
     U-points sit on the eastern cell edge:  (lon + 0.5*dlon, lat)
     V-points sit on the southern cell edge: (lon, lat - 0.5*dlat)
+
+    Before the interp, wave-model values spread outward into NaN/land
+    cells via ``SPREAD_N_ITER`` iterations of a 3x3 rolling mean — the
+    wave-model coastline rarely matches BSH's, and without spreading
+    the BSH-side interp at the coastline would pull toward zero-filled
+    land and underestimate Stokes there.
     """
     dlon = float(bsh_lon[1] - bsh_lon[0])
     dlat = float(bsh_lat[1] - bsh_lat[0])
@@ -117,14 +144,17 @@ def _interp_stokes_to_bsh(stokes_ds, bsh_lon, bsh_lat, bsh_time, fill_value):
         .rename({"latitude": "lat", "longitude": "lon"})
     )
 
-    u_stokes = stokes_flipped["VSDX"].interp(
+    vsdx = _spread_into_nan(stokes_flipped["VSDX"], n_iter=SPREAD_N_ITER)
+    vsdy = _spread_into_nan(stokes_flipped["VSDY"], n_iter=SPREAD_N_ITER)
+
+    u_stokes = vsdx.interp(
         lon=lon_u, lat=bsh_lat, method="linear",
         kwargs={"fill_value": fill_value},
     ).interp(time=bsh_time, method="nearest")
     # Reassign lon coordinate to match BSH implicit staggering convention
     u_stokes = u_stokes.assign_coords(lon=bsh_lon)
 
-    v_stokes = stokes_flipped["VSDY"].interp(
+    v_stokes = vsdy.interp(
         lon=bsh_lon, lat=lat_v, method="linear",
         kwargs={"fill_value": fill_value},
     ).interp(time=bsh_time, method="nearest")
@@ -248,7 +278,15 @@ def main():
         write_2d(u_out, v_out, out_bot, lon_f[lon_crop], lat_f[lat_crop])
         print(f"  bottom:  {out_bot}  U=[{float(u_out.min()):.3f}, {float(u_out.max()):.3f}]")
 
-    # Surface + Stokes — sum in BSH convention, mask, then roll
+    # Surface + Stokes — layered Stokes with per-timestep face mask.
+    # The spread-and-interp produces Stokes everywhere a wave-model
+    # value can be reached; BSH's per-timestep face state then decides
+    # whether Stokes is allowed at that face *now*. BSH writes 0.0 at
+    # no-slip walls and at faces shut off because a tidal flat is dry —
+    # we explicitly zero Stokes there so particles don't advect through
+    # blocked faces (this was a likely source of "effective beaching"
+    # near shore in earlier runs). Outside-model cells where u_surf is
+    # NaN propagate NaN through the sum; Parcels treats NaN as 0.
     if not out_stokes.exists():
         baltic_file = derive_stokes_path(args.c_file, stokes_dir, "baltic_highres")
         waverys_file = derive_stokes_path(args.c_file, stokes_dir, "waverys")
@@ -256,13 +294,13 @@ def main():
         if missing:
             print(f"  stokes:  SKIPPED (not yet downloaded: {missing})")
             return
-        # Pre-fill internal land NaNs with zero so the linear interp doesn't
-        # leak NaN where the wave model has water but missing values.
-        stokes_baltic = xr.open_dataset(baltic_file).fillna(0.0)
-        stokes_waverys = xr.open_dataset(waverys_file).fillna(0.0)
+        stokes_baltic = xr.open_dataset(baltic_file)
+        stokes_waverys = xr.open_dataset(waverys_file)
         u_stokes, v_stokes = interpolate_stokes(
             stokes_baltic, stokes_waverys, ds.lon, ds.lat, ds.time,
         )
+        u_stokes = u_stokes.where(u_surf.notnull() & (u_surf != 0), 0)
+        v_stokes = v_stokes.where(v_surf.notnull() & (v_surf != 0), 0)
         u_total = u_surf + u_stokes
         v_total = v_surf + v_stokes
         u_total, v_total = apply_land_mask_at_edges(u_total, v_total, land_mask)
