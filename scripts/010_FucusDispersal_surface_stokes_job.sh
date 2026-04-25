@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=010_FucusSurface
+#SBATCH --job-name=010_FucusSurfaceStokes
 #SBATCH --ntasks=100
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=60G
@@ -52,13 +52,16 @@ export -f run_experiment
 export repo_root output_root container calc_dt_mins output_dt_mins particles_per_cell
 
 # 73 releases per year at doy = 1 + 5n for n ∈ [0, 72] (doys 1..361,
-# leap-year-agnostic). One papermill per start_time.
+# leap-year-agnostic). One papermill per start_time. The surface_stokes
+# regime layers BSH surface currents with CMEMS Stokes drift (Baltic
+# high-res + WAVERYS fallback for the German Bight strip); the
+# preprocessed 2D fieldset is produced by 003_prepare_2d_fields.py.
 for n in $(seq 0 72); do
     doy=$((1 + 5 * n))
     start_time=$(date -d "${year}-01-01 +$((doy - 1)) days" +%Y-%m-%d)
     end_time=$(date -d "${start_time} +${simulation_days} days" +%Y-%m-%d)
 
-    printf '%s\0' "${start_time} ${end_time} surface $((RANDOM * 32768 + RANDOM))"
+    printf '%s\0' "${start_time} ${end_time} surface_stokes $((RANDOM * 32768 + RANDOM))"
 done | xargs -0 -P ${SLURM_NTASKS} -n 1 bash -c 'run_experiment $1' _
 
 jobinfo
