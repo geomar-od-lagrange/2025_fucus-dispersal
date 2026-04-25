@@ -639,19 +639,18 @@ here as a final cross-notebook audit so nothing slips through.
 
 ## 10. Implementation gaps discovered during prod-prep
 
-- [ ] **Stokes drift WAVERYS fallback for German Bight.** The
+- [x] **Stokes drift WAVERYS fallback for German Bight.** The
       Baltic high-res CMEMS Stokes product (`cmems_mod_bal_wav_my_PT1H-i`)
-      starts at ~9 °E; the BSH fine grid extends west to ~6.2 °E.
-      Current `interpolate_stokes` zeros the strip via
-      `kwargs={"fill_value": 0.0}`, so `surface_stokes` particles in
-      the German Bight (SH North Sea coast, Heligoland Bight) silently
-      degrade to BSH-only physics. Fix: pull the global WAVERYS
-      product (`cmems_mod_glo_wav_my_0.2deg_PT3H-i`) in
-      `notebooks/002_download_stokes.py` alongside the Baltic high-res
-      pull, and update `notebooks/003_prepare_2d_fields.py`
-      `interpolate_stokes` to layer Baltic-where-defined / WAVERYS-as-
-      fallback. ATTRIBUTION.md and `docs/stokes_drift.md` already
-      reflect the planned design. Implementation is the gap.
+      starts at ~9 °E; the BSH fine grid extends west to ~6.2 °E. Pre-
+      fix, `interpolate_stokes` zeroed the strip and `surface_stokes`
+      particles in the German Bight silently degraded to BSH-only.
+      Implementation: `notebooks/002_download_stokes.py` now pulls both
+      Baltic high-res and WAVERYS (`cmems_mod_glo_wav_my_0.2deg_PT3H-i`)
+      side by side under `<output-root>/stokes/<product>/<year>/`;
+      `notebooks/003_prepare_2d_fields.py` `interpolate_stokes` layers
+      Baltic-where-defined / WAVERYS-as-fallback / 0-elsewhere.
+      End-to-end verification (download a sample day, run 003, sanity
+      check the German Bight strip) deferred to Phase G smoke test.
 
 ## Open questions (collect here as they arise)
 

@@ -5,7 +5,12 @@ Usage:
         --c-file /path/to/c_file_fine_2020010100_000_006.nc \\
         --output-root /path/to/outputs
 
-Stokes files are read from <output-root>/stokes/ (written by 002_download_stokes.py).
+Stokes files (both Baltic high-res and WAVERYS) are read from
+<output-root>/stokes/<product>/<year>/ (written by 002_download_stokes.py).
+The surface_stokes variant layers Baltic high-res over WAVERYS so the
+German Bight strip ~6.2–9 °E (where the Baltic product is undefined)
+gets WAVERYS values rather than zero.
+
 2D output files are written to <output-root>/2d_fields/.
 
 Designed to be parallelized: one invocation per c_file.
@@ -93,8 +98,8 @@ def apply_land_mask_at_edges(u, v, land_mask):
     return u_out, v_out
 
 
-def interpolate_stokes(stokes_ds, bsh_lon, bsh_lat, bsh_time):
-    """Interpolate Stokes A-grid onto BSH C-grid U/V points and time.
+def _interp_stokes_to_bsh(stokes_ds, bsh_lon, bsh_lat, bsh_time, fill_value):
+    """Interpolate one Stokes A-grid onto BSH C-grid U/V points and time.
 
     BSH uses NEMO-like C-grid: lon/lat are cell centres on a regular grid.
     U-points sit on the eastern cell edge:  (lon + 0.5*dlon, lat)
@@ -114,18 +119,38 @@ def interpolate_stokes(stokes_ds, bsh_lon, bsh_lat, bsh_time):
 
     u_stokes = stokes_flipped["VSDX"].interp(
         lon=lon_u, lat=bsh_lat, method="linear",
-        kwargs={"fill_value": 0.0},
+        kwargs={"fill_value": fill_value},
     ).interp(time=bsh_time, method="nearest")
     # Reassign lon coordinate to match BSH implicit staggering convention
     u_stokes = u_stokes.assign_coords(lon=bsh_lon)
 
     v_stokes = stokes_flipped["VSDY"].interp(
         lon=bsh_lon, lat=lat_v, method="linear",
-        kwargs={"fill_value": 0.0},
+        kwargs={"fill_value": fill_value},
     ).interp(time=bsh_time, method="nearest")
     # Reassign lat coordinate to match BSH implicit staggering convention
     v_stokes = v_stokes.assign_coords(lat=bsh_lat)
 
+    return u_stokes, v_stokes
+
+
+def interpolate_stokes(stokes_baltic_ds, stokes_waverys_ds, bsh_lon, bsh_lat, bsh_time):
+    """Layered Stokes onto BSH C-grid: Baltic high-res over WAVERYS over zero.
+
+    Baltic high-res covers ~9–30 °E. Outside its footprint (notably the
+    German Bight strip ~6.2–9 °E that BSH fine grid spans), interpolation
+    fills NaN; we then substitute the WAVERYS global value at those
+    cells. WAVERYS is interpolated with fill_value=0.0 so the rare BSH
+    cells outside its (global) footprint default to no Stokes drift.
+    """
+    u_baltic, v_baltic = _interp_stokes_to_bsh(
+        stokes_baltic_ds, bsh_lon, bsh_lat, bsh_time, fill_value=np.nan,
+    )
+    u_waverys, v_waverys = _interp_stokes_to_bsh(
+        stokes_waverys_ds, bsh_lon, bsh_lat, bsh_time, fill_value=0.0,
+    )
+    u_stokes = u_baltic.where(u_baltic.notnull(), u_waverys)
+    v_stokes = v_baltic.where(v_baltic.notnull(), v_waverys)
     return u_stokes, v_stokes
 
 
@@ -141,17 +166,18 @@ def write_2d(u, v, path, lon_f=None, lat_f=None):
     ds.to_netcdf(path)
 
 
-def derive_stokes_path(c_file: Path, stokes_dir: Path) -> Path:
-    """Derive stokes file path from c_file name.
+def derive_stokes_path(c_file: Path, stokes_dir: Path, product: str) -> Path:
+    """Derive Stokes file path for a given product from c_file name.
 
-    c_file_fine_2020010100_000_006.nc -> stokes_dir/2020/stokes_20200101.nc
+    c_file_fine_2020010100_000_006.nc, product='baltic_highres'
+    -> stokes_dir/baltic_highres/2020/stokes_20200101.nc
     """
     match = re.search(r"(\d{4})(\d{4})\d{2}_", c_file.name)
     if not match:
         raise ValueError(f"Cannot parse date from c_file name: {c_file.name}")
     year = match.group(1)
     date = match.group(1) + match.group(2)
-    return stokes_dir / year / f"stokes_{date}.nc"
+    return stokes_dir / product / year / f"stokes_{date}.nc"
 
 
 def main():
@@ -224,13 +250,18 @@ def main():
 
     # Surface + Stokes — sum in BSH convention, mask, then roll
     if not out_stokes.exists():
-        stokes_file = derive_stokes_path(args.c_file, stokes_dir)
-        if not stokes_file.exists():
-            print(f"  stokes:  SKIPPED (not yet downloaded: {stokes_file.name})")
+        baltic_file = derive_stokes_path(args.c_file, stokes_dir, "baltic_highres")
+        waverys_file = derive_stokes_path(args.c_file, stokes_dir, "waverys")
+        missing = [f.name for f in (baltic_file, waverys_file) if not f.exists()]
+        if missing:
+            print(f"  stokes:  SKIPPED (not yet downloaded: {missing})")
             return
-        stokes_ds = xr.open_dataset(stokes_file).fillna(0.0)
+        # Pre-fill internal land NaNs with zero so the linear interp doesn't
+        # leak NaN where the wave model has water but missing values.
+        stokes_baltic = xr.open_dataset(baltic_file).fillna(0.0)
+        stokes_waverys = xr.open_dataset(waverys_file).fillna(0.0)
         u_stokes, v_stokes = interpolate_stokes(
-            stokes_ds, ds.lon, ds.lat, ds.time,
+            stokes_baltic, stokes_waverys, ds.lon, ds.lat, ds.time,
         )
         u_total = u_surf + u_stokes
         v_total = v_surf + v_stokes

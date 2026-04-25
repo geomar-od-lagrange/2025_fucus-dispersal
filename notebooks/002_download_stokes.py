@@ -1,6 +1,14 @@
-"""Download daily Stokes drift files from CMEMS Baltic Wave Hindcast.
+"""Download daily Stokes drift files from CMEMS for layered surface_stokes forcing.
 
-Downloads VSDX/VSDY for 2016-2025, one file per day.
+Two products are pulled side by side:
+
+- ``baltic_highres`` (``cmems_mod_bal_wav_my_PT1H-i``): 2 km hourly,
+  Baltic + Danish Straits + Kattegat (~9–30 °E). Primary source.
+- ``waverys`` (``cmems_mod_glo_wav_my_0.2deg_PT3H-i``): 0.2° 3-hourly
+  global. Fallback for the German Bight strip ~6.2–9 °E where the
+  Baltic high-res product is undefined.
+
+Files are written under ``<output-root>/stokes/<product>/<year>/stokes_<YYYYMMDD>.nc``.
 Designed to be resumable — skips files that already exist.
 
 Usage:
@@ -16,22 +24,25 @@ from pathlib import Path
 import copernicusmarine
 
 
-DATASET_ID = "cmems_mod_bal_wav_my_PT1H-i"
+PRODUCTS = {
+    "baltic_highres": "cmems_mod_bal_wav_my_PT1H-i",
+    "waverys": "cmems_mod_glo_wav_my_0.2deg_PT3H-i",
+}
 VARIABLES = ["VSDX", "VSDY"]
 
 
-def download_day(day: date, stokes_dir: Path):
-    """Download one day of Stokes drift data. Skips if output exists."""
+def download_day(day: date, product: str, dataset_id: str, stokes_dir: Path):
+    """Download one day of Stokes drift for one product. Skips if output exists."""
     filename = f"stokes_{day:%Y%m%d}.nc"
-    filepath = stokes_dir / f"{day.year}" / filename
+    filepath = stokes_dir / product / f"{day.year}" / filename
 
     if filepath.exists():
-        return False  # already downloaded
+        return False
 
     filepath.parent.mkdir(parents=True, exist_ok=True)
     next_day = day + timedelta(days=1)
     copernicusmarine.subset(
-        dataset_id=DATASET_ID,
+        dataset_id=dataset_id,
         variables=VARIABLES,
         start_datetime=f"{day}T00:00:00",
         end_datetime=f"{next_day}T00:00:00",
@@ -48,8 +59,8 @@ def main():
     )
     parser.add_argument(
         "--output-root", type=Path, default=Path("../output"),
-        help="Heavy-outputs root; Stokes files are written to <output-root>/stokes/ "
-             "(default: %(default)s)",
+        help="Heavy-outputs root; Stokes files are written under "
+             "<output-root>/stokes/<product>/ (default: %(default)s)",
     )
     parser.add_argument("--start-year", type=int, default=2016)
     parser.add_argument("--end-year", type=int, default=2025)
@@ -78,24 +89,31 @@ def main():
     else:
         end = date(end_year + 1, 1, 1)
 
+    n_downloaded = {p: 0 for p in PRODUCTS}
+    n_skipped = {p: 0 for p in PRODUCTS}
+    n_failed = {p: 0 for p in PRODUCTS}
     day = start
-    n_downloaded = 0
-    n_skipped = 0
-    n_failed = 0
     while day < end:
-        try:
-            downloaded = download_day(day, stokes_dir)
-            if downloaded:
-                n_downloaded += 1
-                print(f"Downloaded {day}")
-            else:
-                n_skipped += 1
-        except Exception as e:
-            n_failed += 1
-            print(f"FAILED {day}: {e}")
+        for product, dataset_id in PRODUCTS.items():
+            try:
+                downloaded = download_day(day, product, dataset_id, stokes_dir)
+                if downloaded:
+                    n_downloaded[product] += 1
+                    print(f"Downloaded {product} {day}")
+                else:
+                    n_skipped[product] += 1
+            except Exception as e:
+                n_failed[product] += 1
+                print(f"FAILED {product} {day}: {e}")
         day += timedelta(days=1)
 
-    print(f"\nDone. Downloaded: {n_downloaded}, skipped: {n_skipped}, failed: {n_failed}")
+    print()
+    print("Summary:")
+    for product in PRODUCTS:
+        print(
+            f"  {product}: downloaded={n_downloaded[product]}, "
+            f"skipped={n_skipped[product]}, failed={n_failed[product]}"
+        )
 
 
 if __name__ == "__main__":
