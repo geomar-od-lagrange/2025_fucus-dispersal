@@ -1,5 +1,10 @@
 # Data licensing for a public companion repo
 
+> Implementation landed as the curated input bundle in the data twin
+> (`<https://git.geomar.de/od-lagrange/2025_fucus_dispersal_data>`)
+> plus the per-dataset attributions in `ATTRIBUTION.md` at the repo
+> root. Original licensing audit retained as historical record.
+
 ## Goal
 
 Bundle a minimal reproducibility set — HELCOM subbasin shapes, the Fucus

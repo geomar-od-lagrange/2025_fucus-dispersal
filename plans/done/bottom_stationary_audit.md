@@ -1,5 +1,13 @@
 # Bottom-field stationarity audit
 
+> Implemented as part of [docs/2d_field_extraction.md](../../docs/2d_field_extraction.md)
+> §"Bottom: face-by-face deepest fluid". The audit's hypothesis was
+> confirmed at the single-file level and the proposed fix to
+> `load_bottom` (deepest layer non-NaN AND non-zero) is in production
+> in `notebooks/003_prepare_2d_fields.py`. The full-year scan
+> described below was never run; the implementation it motivated
+> nonetheless landed. Original audit retained as historical record.
+
 ## Why this exists
 
 The 021 TimeStats notebook showed bottom runs dropping more "land-seeded"

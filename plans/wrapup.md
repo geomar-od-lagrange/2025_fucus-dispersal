@@ -500,12 +500,13 @@ doc.
 These are process / cleanup / governance notes, not methodology — no
 `docs/` promotion:
 
-- `plans/data_licensing_public_bundle.md` (compliance audit, lands
-  here once green per §9).
-- `plans/experiment_tracking.md` (superseded by §1's filename
-  simplification — archive once the new schema ships).
-- `plans/viz_wrap_up.md` (subsumed by §4/§5 — archive once §4/§5
-  close).
+- `plans/done/data_licensing_public_bundle.md` (compliance audit;
+  implementation is `ATTRIBUTION.md` plus the curated twin bundle).
+- `plans/done/bottom_stationary_audit.md` (audit hypothesis confirmed,
+  fix in `notebooks/003_prepare_2d_fields.py` `load_bottom`).
+- `plans/done/experiment_tracking.md` (superseded by §1's filename
+  simplification).
+- `plans/done/viz_wrap_up.md` (subsumed by §4/§5).
 - `plans/done/010_notebook_cleanup.md`, `bundle_and_layout.md`,
   `job_script_review.md`, `next_steps.md`, `notebook_review.md`,
   `portable_data_paths.md`, `rollout.md`, `simplification.md`,
