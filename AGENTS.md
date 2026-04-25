@@ -62,6 +62,15 @@ Use **pixi** for environment management. Run all commands with `pixi run
 <command>` directly — this repo does not use `[tasks]` in `pixi.toml`.
 Prefer conda packages; use pypi only when no suitable conda package exists.
 
+**Always invoke through `pixi run`.** Don't resolve a python executable
+once (e.g. `pixi run which python`) and then call that binary directly
+in subsequent commands. Conda packages like GDAL, proj, and cartopy
+ship `etc/conda/activate.d/*.sh` scripts that set `PROJ_DATA` /
+`GDAL_DATA` and similar; bypassing `pixi run` skips those hooks and
+produces cryptic env-setup failures that look like missing data files.
+Same applies to `jupyter`, `jupytext`, `papermill`, `python` itself —
+prefix every invocation with `pixi run`.
+
 **Shell.** Always work from the repo root. Don't `cd` into subdirectories
 between commands — pass relative paths to tools (e.g.
 `pixi run jupytext --sync --execute notebooks/foo.md`) or use a subshell

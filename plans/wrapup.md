@@ -184,37 +184,37 @@ freshly-swept output tree).
 The biggest single cleanup target after 010. Several items here close
 naturally once §3 is done; do §3 first.
 
-- [ ] Rename extents with consistent prefixes:
+- [x] Rename extents with consistent prefixes:
       `(lon_min, lon_max, lat_min, lat_max)` → `baltic_*`;
       `(de_lon_min, …)` keeps `de_*`. Both prefix groups, no bare
       versions.
-- [ ] Drop the hardcoded `regime_colors = {"bottom": "tab:orange",
+- [x] Drop the hardcoded `regime_colors = {"bottom": "tab:orange",
       "surface": "tab:blue"}`. Take colours from the default cycle by
       regime index, or use a colourblind-safe palette mapped by index
       (no `"tab:..."` literals in the notebook).
-- [ ] Move all imports to the top of the notebook. The late
+- [x] Move all imports to the top of the notebook. The late
       `import os, time, dask.distributed, ...` cell collapses into the
       header import block.
-- [ ] Configure warning filters once at the top of the notebook, not
+- [x] Configure warning filters once at the top of the notebook, not
       with per-cell `with warnings.catch_warnings()` context managers.
-- [ ] Add a one-line comment to the
+- [x] Add a one-line comment to the
       `regimes = sorted(p.name for p in trajectory_root.iterdir() if p.is_dir())`
       line stating the assumed
       `output_root/Trajectories/<regime>/...` layout — so a failure
       points the reader at the layout assumption rather than at the
       autodetect mechanics.
-- [ ] Drop the `regime_keys` precompute loop. Filter the dataset where
+- [x] Drop the `regime_keys` precompute loop. Filter the dataset where
       the plot is built; xarray + dask will fuse the access.
-- [ ] Inline `lonlat_aspect` (one-liner) at its sole callsite.
-- [ ] Inline `plot_lines` into the per-regime figure loop. The
+- [x] Inline `lonlat_aspect` (one-liner) at its sole callsite.
+- [x] Inline `plot_lines` into the per-regime figure loop. The
       `with warnings.catch_warnings():` block disappears with §4 above.
-- [ ] Drop the `subbasins_list` precompute and the empty-subbasin
+- [x] Drop the `subbasins_list` precompute and the empty-subbasin
       branch (`if avail.size == 0: ax.set_visible(False); continue`).
       Plot every subbasin every regime; empty panels are fine and keep
       the layout stable across regimes. `rng.choice(avail,
       size=min(n_traj_subset, avail.size), replace=False)` already
       handles `avail.size == 0` (returns empty array, plots nothing).
-- [ ] Drop the legend; use `fig.suptitle(regime)` for context (and
+- [x] Drop the legend; use `fig.suptitle(regime)` for context (and
       `set_title(subbasin)` per panel as already done).
 
 ## 5. Per-notebook walk (`000`, `021`–`025`)
@@ -236,83 +236,93 @@ not duplicated here unless the notebook has a distinctive instance.
 
 ### 5b. `notebooks/021_TimeStats.md`
 
-- [ ] Comment the `output_root` parameter.
-- [ ] Hoist the late `# Dask cluster` cell (`import os`, `import time`,
+- [x] Comment the `output_root` parameter.
+- [x] Hoist the late `# Dask cluster` cell (`import os`, `import time`,
       `from dask.distributed import Client`) into the top import
       block.
-- [ ] Replace `from helpers import load_trajectories,
+- [x] Replace `from helpers import load_trajectories,
       mask_land_seeded` with notebook-local definitions (per §3).
-- [ ] Rewrite the
+      (No-op: Phase B already removed; verified no `helpers` import.)
+- [x] Rewrite the
       `lazy = dict(...); results = dict(zip(lazy.keys(), dask.compute(*lazy.values())))`
       block with five named lazies and an explicit unpack — the
       dict-of-lazies + zip-rehydrate hides the fan-in.
-- [ ] Add the `output_root/Trajectories/<regime>/...` layout comment
+- [x] Add the `output_root/Trajectories/<regime>/...` layout comment
       next to `regimes = sorted(p.name for p in
       trajectory_root.iterdir() if p.is_dir())`.
-- [ ] Collapse the multi-line per-regime f-string `print(...)` to one
+- [x] Collapse the multi-line per-regime f-string `print(...)` to one
       line, or move the reporting into a small dedicated summary
       cell.
 
 ### 5c. `notebooks/022_DispersalDistance.md`
 
-- [ ] Comment every parameter in the parameters cell.
-- [ ] Rename Baltic-side extents to `baltic_*` so the prefix
+- [x] Comment every parameter in the parameters cell.
+- [x] Rename Baltic-side extents to `baltic_*` so the prefix
       convention matches `de_*` (currently the Baltic side is bare
       and the DE side is prefixed — same lie as 020).
-- [ ] Hoist the late `# Dask cluster` cell.
-- [ ] Replace `from helpers import attach_release_metadata,
+      (No-op: 022 has no Baltic-side extent parameters; only `de_*`.
+      Nothing to rename.)
+- [x] Hoist the late `# Dask cluster` cell.
+- [x] Replace `from helpers import attach_release_metadata,
       load_trajectories, mask_land_seeded, relabel_quarter` per §3.
-- [ ] Inline `def in_de_mask(ds)` (one expression, one callsite).
+      (No-op: Phase B already removed.)
+- [x] Inline `def in_de_mask(ds)` (one expression, one callsite).
       Keep `distance_km` (called twice, modestly substantive).
-- [ ] Inline `def load_regime(regime)` into the dict-comp or rewrite
+- [x] Inline `def load_regime(regime)` into the dict-comp or rewrite
       as an explicit loop.
-- [ ] Rewrite `def _grouped_mean(group_key)` without the closure
+- [x] Rewrite `def _grouped_mean(group_key)` without the closure
       over `regimes` / `regime_dsets` / `regime_distance`; either
       pass the dependencies explicitly or write the two `xr.concat`
-      blocks out.
-- [ ] Inside `_grouped_mean`, drop the
+      blocks out. (Wrote both out as explicit `xr.concat` blocks.)
+- [x] Inside `_grouped_mean`, drop the
       `d.assign_coords({group_key: ds[group_key].compute()})` —
       forces the group coord eager when the rest of the graph is
-      lazy. Pre-compute once outside or keep it lazy.
-- [ ] Add the layout-assumption comment next to the regimes
+      lazy. Pre-compute once outside or keep it lazy. (Pre-computed
+      once per regime in `regime_group_coords` before the concat.)
+- [x] Add the layout-assumption comment next to the regimes
       autodetect.
 
 ### 5d. `notebooks/023_Heatmaps.md`
 
-- [ ] Comment every parameter.
-- [ ] Rename `experiment_type = "surface"` → `regime = "surface"`.
+- [x] Comment every parameter.
+- [x] Rename `experiment_type = "surface"` → `regime = "surface"`.
       Downstream use is exclusively as a regime
       (`trajectory_root / experiment_type`); the name is a leftover
       from an earlier vocabulary. Match `024` / `025`.
-- [ ] Rename Baltic-side extents to `baltic_*` (`lon_min/lat_min`,
+- [x] Rename Baltic-side extents to `baltic_*` (`lon_min/lat_min`,
       `n_lon_baltic` already mixes prefixes — pick one).
-- [ ] Hoist the late `# Dask cluster` cell.
-- [ ] Replace `from helpers import attach_release_metadata,
+- [x] Hoist the late `# Dask cluster` cell.
+- [x] Replace `from helpers import attach_release_metadata,
       load_trajectories, mask_land_seeded, relabel_quarter` per §3.
-- [ ] Inline `def lonlat_aspect(extent)` (duplicate of the 025
-      definition; trivial).
-- [ ] Inline `def count_hist(ds_, lon_bins, lat_bins)` (one-expression
+      (No-op: Phase B already removed.)
+- [x] Inline `def lonlat_aspect(extent)` (duplicate of the 025
+      definition; trivial). (Inlined the two top-level callsites and
+      the body inside `single_map`.)
+- [x] Inline `def count_hist(ds_, lon_bins, lat_bins)` (one-expression
       wrapper). Keep `density` and `mean_age_hours` (two callsites
       each over different histograms).
-- [ ] Drop the precompute block
+- [x] Drop the precompute block
       `sb_np, quarter_np = dask.compute(ds.subbasin, ds.release_quarter)`
       + the `subbasins_list` / `quarters` distinct-set construction.
       Build histograms with lazy `.where(key_da == v)` over a known
       list (subbasins from the `subbasins` GeoDataFrame; quarters as
       `[1, 2, 3, 4]`).
-- [ ] Replace the
+- [x] Replace the
       `sorted({s for s in sb_np if isinstance(s, str)})` /
       `sorted({int(q) for q in quarter_np if not np.isnan(q)})`
-      idiom with a direct dropna+`np.unique`.
-- [ ] Add the layout-assumption comment next to
+      idiom with a direct dropna+`np.unique`. (Subsumed by the
+      previous item: precompute gone, lists derived from the static
+      inputs directly — `subbasins["subbasin"].tolist()` and
+      `[1, 2, 3, 4]`.)
+- [x] Add the layout-assumption comment next to
       `trajectory_path = output_root / "Trajectories" / experiment_type`.
 
 ### 5e. `notebooks/024_BuildHexAggregates.md`
 
-- [ ] Comment every parameter (`data_root`, `output_root`, `bsh_root`,
+- [x] Comment every parameter (`data_root`, `output_root`, `bsh_root`,
       `release_year`; `age_bin_days` and `output_dt_mins` already
       have inline comments).
-- [ ] Replace `hex_configs = [...]` with a single scalar
+- [x] Replace `hex_configs = [...]` with a single scalar
       `hex_radius` parameter. Multiple radii come from papermill
       sweeps over 024, not from an in-notebook loop. Hard-code
       projection and centering — equal-area projection centred on the
@@ -320,67 +330,88 @@ not duplicated here unless the notebook has a distinctive instance.
       per-config loop disappears entirely; `_h0_hex_frame` and
       `build_counts` become straight-line code without a closure
       (next bullet then drops to a one-line "no rewrite needed").
-- [ ] Output layout change: `output_root/HexAggregates/<config_name>/`
+      (Domain centroid computed from the coarse-grid H0 bbox.)
+- [x] Output layout change: `output_root/HexAggregates/<config_name>/`
       → `output_root/HexAggregates/r{hex_radius}{unit}/` (pick the
       unit when implementing — m, km, or whatever the hex library
       expects). Update the partition-layout comment block accordingly.
-- [ ] Hoist the late `from dask.distributed import Client` import.
-- [ ] Replace `from helpers import load_trajectories, mask_land_seeded,
+      (Picked metres — matches the HexProj `hex_size_meters` API
+      exactly; `r{hex_radius}m` keeps param value and path in lockstep.)
+- [x] Hoist the late `from dask.distributed import Client` import.
+- [x] Replace `from helpers import load_trajectories, mask_land_seeded,
       parse_zarr_stem` per §3. Inline `parse_zarr_stem` against the
       simplified filename schema from §1 (date + regime; no `vf{}`).
-- [ ] Inline `def _zarr_for(regime, ...)` (three-line glob wrapper,
+      (No-op: Phase B already inlined `parse_zarr_stem` and dropped
+      the other two helper imports.)
+- [x] Inline `def _zarr_for(regime, ...)` (three-line glob wrapper,
       one callsite).
-- [ ] `_h0_hex_frame` and `build_counts`: with the per-config loop
+- [x] `_h0_hex_frame` and `build_counts`: with the per-config loop
       gone, both either become inline code in the main cell or stay
       as plain functions with explicit args (no closure trick, no
       `arg_=value` defaults). The current comment acknowledging the
-      closure trap goes with the closure.
-- [ ] Simplify the
+      closure trap goes with the closure. (Both kept as plain
+      functions with explicit args; renamed `_h0_hex_frame` →
+      `h0_hex_frame` since it's no longer a private closure helper.)
+- [x] Simplify the
       `subbasin_id_to_name = {-1: "_outside"}` /
       `subbasin_name_to_id = {v: k for k, v in subbasin_id_to_name.items() if k >= 0}`
       round-trip: build name→id from `enumerate` directly, derive the
       reverse from it.
-- [ ] Add a single comment block at the top of the path-construction
+- [x] Add a single comment block at the top of the path-construction
       cell listing the four layout assumptions it encodes
       (`bsh_root/static_file_<grid>/H0_file_<grid>.nc`,
       `output_root/HexAggregates/<config>`,
       `output_root/Trajectories/<regime>/<release_year>`,
       and the `counts/regime=.../release_year=...` partition layout).
-- [ ] Drop the `release_doy == 366` skip outright. With the sweep
+- [x] Drop the `release_doy == 366` skip outright. With the sweep
       bounded to `n ∈ [0, 72]` (max doy 361, see §1), the branch is
       dead code, not leap-year handling.
-- [ ] Tighten the per-config / output-sizes summary prints; consider a
+- [x] Tighten the per-config / output-sizes summary prints; consider a
       small DataFrame display instead of multi-line f-strings.
+      (Per-regime summary now a small `pd.DataFrame` display; the
+      output-sizes block kept as f-string table — concise enough.)
 
 ### 5f. `notebooks/025_HexHeatmaps.md`
 
-- [ ] Comment every parameter (only `cmap` and the panel-height pair
+- [x] Comment every parameter (only `cmap` and the panel-height pair
       currently are).
-- [ ] Rename Baltic-side extents to `baltic_*` (same prefix lie as
+- [x] Rename Baltic-side extents to `baltic_*` (same prefix lie as
       022/023).
-- [ ] Replace `from helpers import QUARTER_LABELS` with a local
+- [x] Replace `from helpers import QUARTER_LABELS` with a local
       `QUARTER_LABELS = {1: "JFM", 2: "AMJ", 3: "JAS", 4: "OND"}`.
-- [ ] Justify the `cmap = "viridis"` parameter and the per-overlay
+      (No-op: Phase B already inlined as `quarter_labels` literal.)
+- [x] Justify the `cmap = "viridis"` parameter and the per-overlay
       style overrides (`color="black"`, `color="magenta"`,
       `linewidth=...`, `edgecolor="face"`) inside `log_density_plot`
       in `docs/visualisations.md` (per §6) rather than as inline
       comments. Where defaults read fine, drop the override.
-- [ ] Inline `def lonlat_aspect(extent)` at its two callsites.
-- [ ] Drop the `subbasins_ordered` precompute in Panel B and the
+      (Per-locked-decision: cmap stays; deferred per-override
+      justify/strip to Phase F via `# TODO(phase-f)` comments —
+      Phase C scope fence forbids §6 docs work.)
+- [x] Inline `def lonlat_aspect(extent)` at its two callsites.
+- [x] Drop the `subbasins_ordered` precompute in Panel B and the
       empty-panel `set_visible(False)` skips in Panels B and D. Empty
-      panels render fine and keep layout stable.
-- [ ] **Panel D**: per-quarter facet is load-bearing across the
+      panels render fine and keep layout stable. (Iterates every
+      named subbasin in stable id order; removed the
+      `set_visible(False)` skip in Panel D.)
+- [x] **Panel D**: per-quarter facet is load-bearing across the
       cross-run aggregation (73 releases/year × N years span all
       quarters). Keep, but clean per the §4-style simplifications
       (drop empty-panel skips, lazy `.where`).
-- [ ] Replace the doy→quarter Timestamp arithmetic with the one-liner
+- [x] Replace the doy→quarter Timestamp arithmetic with the one-liner
       `((doy - 1) // 90 + 1).clip(1, 4)` (or month-from-doy →
       `(month - 1) // 3 + 1`). Add a comment naming the conversion.
-- [ ] Decide on the four `groupby...rename...reset_index().merge(...)
+      (See judgment-call note in the Phase C report — `// 90` and
+      `// 91` are both off by ≥1 quarter for some sweep doys, so
+      went with calendar-correct `pd.to_datetime(format="%Y%j").dt.quarter`,
+      a single timestamp call instead of the original two-step
+      `pd.to_datetime + pd.to_timedelta`.)
+- [x] Decide on the four `groupby...rename...reset_index().merge(...)
       .pipe(gpd.GeoDataFrame, ...)` chains: extract one
       notebook-local `to_hex_gdf(counts_df, key_df)` (one helper, four
-      callsites — justified) or accept the duplication.
-- [ ] Add the layout-assumption comment naming
+      callsites — justified) or accept the duplication. (Extracted
+      per locked decision.)
+- [x] Add the layout-assumption comment naming
       `output_root/HexAggregates/<baltic_config_name>` and the
       `counts/regime=…/release_year=…` partition layout.
 

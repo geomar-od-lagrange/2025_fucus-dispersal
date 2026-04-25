@@ -20,17 +20,22 @@ panel, one colour per regime. Scopes: per HELCOM release subbasin,
 German waters, per release quarter (JFM/AMJ/JAS/OND).
 
 ```python
+import os
+import time
 import warnings
 
-import dask
 import numpy as np
 import xarray as xr
 import geopandas as gpd
 import shapely
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 import cartopy.crs as ccrs
+from dask.distributed import Client
 from pathlib import Path
+
+# RuntimeWarnings come from per-trajectory NaN tails (chunks that
+# didn't fill up); the polyline plot tolerates them.
+warnings.simplefilter("ignore", RuntimeWarning)
 ```
 
 ```python
@@ -60,25 +65,24 @@ def assign_release_subbasin(ds, subbasins):
 # Parameters
 
 ```python tags=["parameters"]
+# Read root of the data twin (HELCOM polygons, Fucus shapefile).
 data_root = "../data"
+# Read root of trajectory zarrs and write root for derived stores.
 output_root = "../output"
 
+# Number of trajectories sampled per panel (subbasin or quarter).
 n_traj_subset = 300
 
-lon_min, lon_max = 5, 32
-lat_min, lat_max = 53, 66
+# Baltic-wide map extent (degrees E / degrees N).
+baltic_lon_min, baltic_lon_max = 5, 32
+baltic_lat_min, baltic_lat_max = 53, 66
+# German-waters zoom map extent (degrees E / degrees N).
 de_lon_min, de_lon_max = 8, 15
 de_lat_min, de_lat_max = 53.2, 55.5
 
+# Per-panel height in inches (panel widths are aspect-derived).
 baltic_panel_height_in = 2
 de_panel_height_in = 1.5
-
-# Regime colours.
-regime_colors = {
-    "bottom": "tab:orange",
-    "surface": "tab:blue",
-    "surface_stokes": "tab:green",
-}
 ```
 
 # Global RNG
@@ -96,10 +100,6 @@ by the multi-task SLURM job). Otherwise spin up a local cluster on the
 current node.
 
 ```python
-import os
-import time
-from dask.distributed import Client
-
 scheduler_file = os.environ.get("SCHEDULER_FILE")
 if scheduler_file:
     for _ in range(60):
@@ -138,10 +138,17 @@ subbasins
 
 # Load all regimes and attach metadata
 
+Layout assumption: ``output_root/Trajectories/<regime>/<release_year>/*.zarr``.
+``regimes`` is the list of immediate subdirectories.
+
 ```python
 trajectory_root = output_root / "Trajectories"
 regimes = sorted(p.name for p in trajectory_root.iterdir() if p.is_dir())
 print(f"Regimes: {regimes}")
+
+# One colour per regime, taken from the matplotlib default cycle by index.
+cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+regime_color = {r: cycle[i] for i, r in enumerate(regimes)}
 
 regime_dsets = {}
 for regime in regimes:
@@ -158,98 +165,58 @@ for regime in regimes:
     regime_dsets[regime] = ds
 ```
 
-# Precompute per-trajectory scope keys per regime
-
-`release_quarter` / `subbasin` are lazy 1-D `(trajectory,)` arrays.
-Compute them once per regime so the per-panel loops below don't re-walk
-the graph.
+# Map extents and aspects
 
 ```python
-regime_keys = {}
-for regime, ds in regime_dsets.items():
-    quarter_np, subbasin_np = dask.compute(ds.release_quarter, ds.subbasin)
-    regime_keys[regime] = dict(
-        quarter=quarter_np.values,
-        subbasin=subbasin_np.values,
-    )
-```
-
-# Plot helpers
-
-```python
-def lonlat_aspect(extent):
-    """Displayed width / height ratio for a lon/lat ``extent`` with an
-    aspect that keeps 1 deg lon at ``lat_mean`` visually equal to 1 deg
-    lat. Matches ``ax.set_aspect(1 / cos(lat_mean))`` below."""
-    lon_min_, lon_max_, lat_min_, lat_max_ = extent
-    lat_mean = 0.5 * (lat_min_ + lat_max_)
-    return ((lon_max_ - lon_min_) * np.cos(np.radians(lat_mean))) / (
-        lat_max_ - lat_min_
-    )
-
-
-baltic_extent = [lon_min, lon_max, lat_min, lat_max]
+baltic_extent = [baltic_lon_min, baltic_lon_max, baltic_lat_min, baltic_lat_max]
 de_extent = [de_lon_min, de_lon_max, de_lat_min, de_lat_max]
-baltic_aspect = lonlat_aspect(baltic_extent)
-de_aspect = lonlat_aspect(de_extent)
-
-
-def plot_lines(ds_plot, ax, color, lw=None):
-    if ds_plot.sizes["trajectory"] == 0:
-        return
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        for i in range(ds_plot.sizes["trajectory"]):
-            ax.plot(
-                ds_plot.lon.isel(trajectory=i),
-                ds_plot.lat.isel(trajectory=i),
-                color=color, linewidth=lw, alpha=0.3,
-                transform=ccrs.PlateCarree(),
-            )
+# Aspect ratio that keeps 1° lon at lat_mean visually equal to 1° lat
+# (matches ax.set_aspect(1 / cos(lat_mean))).
+baltic_aspect = (
+    (baltic_lon_max - baltic_lon_min) * np.cos(np.radians(0.5 * (baltic_lat_min + baltic_lat_max)))
+) / (baltic_lat_max - baltic_lat_min)
+de_aspect = (
+    (de_lon_max - de_lon_min) * np.cos(np.radians(0.5 * (de_lat_min + de_lat_max)))
+) / (de_lat_max - de_lat_min)
 ```
 
 # Per HELCOM release subbasin
 
-Subbasin list comes from the union over regimes (they should agree, but
-the union is robust to a regime missing a subbasin entirely).
+One figure per regime, one panel per HELCOM subbasin. Empty panels
+(subbasin with no release in this regime) are kept blank to keep the
+layout stable across regimes.
 
 ```python
-subbasins_list = sorted({
-    s
-    for regime in regimes
-    for s in regime_keys[regime]["subbasin"]
-    if isinstance(s, str)
-})
-
 ncols = 4
-nrows = int(np.ceil(len(subbasins_list) / ncols))
+nrows = int(np.ceil(len(subbasins) / ncols))
 for regime in regimes:
     ds = regime_dsets[regime]
+    # subbasin is a (trajectory,)-shaped coord — small, materialise once
+    # per regime so the per-panel filter is a numpy comparison.
+    subbasin_np = ds.subbasin.compute().values
     fig, axes = plt.subplots(
         nrows=nrows, ncols=ncols,
         figsize=(baltic_panel_height_in * baltic_aspect * ncols, baltic_panel_height_in * nrows),
         layout="constrained",
         subplot_kw=dict(projection=ccrs.PlateCarree()),
     )
-    for ax, basin in zip(axes.flat, subbasins_list):
-        mask = regime_keys[regime]["subbasin"] == basin
-        avail = np.flatnonzero(mask)
-        if avail.size == 0:
-            ax.set_visible(False)
-            continue
+    for ax, basin in zip(axes.flat, subbasins["subbasin"].tolist()):
+        avail = np.flatnonzero(subbasin_np == basin)
         idx = rng.choice(avail, size=min(n_traj_subset, avail.size), replace=False)
         ds_plot = ds.isel(trajectory=idx).compute()
-        plot_lines(ds_plot, ax, color=regime_colors[regime], lw=0.5)
+        for i in range(ds_plot.sizes["trajectory"]):
+            ax.plot(
+                ds_plot.lon.isel(trajectory=i),
+                ds_plot.lat.isel(trajectory=i),
+                color=regime_color[regime], linewidth=0.5, alpha=0.3,
+                transform=ccrs.PlateCarree(),
+            )
         ax.set_extent(baltic_extent, crs=ccrs.PlateCarree())
         ax.coastlines()
         ax.set_title(basin)
-    for ax in axes.flat[len(subbasins_list):]:
+    for ax in axes.flat[len(subbasins):]:
         ax.set_visible(False)
     fig.suptitle(regime)
-    fig.legend(
-        handles=[Line2D([], [], color=regime_colors[r], label=r, linewidth=1.5) for r in regimes],
-        loc="lower center", ncol=len(regimes),
-    )
     plt.show()
 ```
 
@@ -266,14 +233,16 @@ for ax, regime in zip(axes, regimes):
     ds = regime_dsets[regime]
     idx = rng.choice(ds.sizes["trajectory"], size=min(n_traj_subset, ds.sizes["trajectory"]), replace=False)
     ds_plot = ds.isel(trajectory=idx).compute()
-    plot_lines(ds_plot, ax, color=regime_colors[regime])
+    for i in range(ds_plot.sizes["trajectory"]):
+        ax.plot(
+            ds_plot.lon.isel(trajectory=i),
+            ds_plot.lat.isel(trajectory=i),
+            color=regime_color[regime], alpha=0.3,
+            transform=ccrs.PlateCarree(),
+        )
     ax.set_extent(de_extent, crs=ccrs.PlateCarree())
     ax.coastlines()
     ax.set_title(regime)
-fig.legend(
-    handles=[Line2D([], [], color=regime_colors[r], label=r, linewidth=1.5) for r in regimes],
-    loc="lower center", ncol=len(regimes),
-)
 plt.show()
 ```
 
@@ -283,6 +252,9 @@ plt.show()
 quarter_labels = {1: "JFM", 2: "AMJ", 3: "JAS", 4: "OND"}
 nrows = len(quarter_labels)
 ncols = len(regimes)
+regime_quarter_np = {
+    regime: regime_dsets[regime].release_quarter.compute().values for regime in regimes
+}
 fig, axes = plt.subplots(
     nrows=nrows, ncols=ncols,
     figsize=(baltic_panel_height_in * baltic_aspect * ncols, baltic_panel_height_in * nrows),
@@ -293,23 +265,21 @@ for row, (q_int, q_label) in enumerate(quarter_labels.items()):
     for col, regime in enumerate(regimes):
         ax = axes[row, col]
         ds = regime_dsets[regime]
-        mask = regime_keys[regime]["quarter"] == q_int
-        avail = np.flatnonzero(mask)
-        if avail.size == 0:
-            ax.set_visible(False)
-            continue
+        avail = np.flatnonzero(regime_quarter_np[regime] == q_int)
         idx = rng.choice(avail, size=min(n_traj_subset, avail.size), replace=False)
         ds_plot = ds.isel(trajectory=idx).compute()
-        plot_lines(ds_plot, ax, color=regime_colors[regime])
+        for i in range(ds_plot.sizes["trajectory"]):
+            ax.plot(
+                ds_plot.lon.isel(trajectory=i),
+                ds_plot.lat.isel(trajectory=i),
+                color=regime_color[regime], alpha=0.3,
+                transform=ccrs.PlateCarree(),
+            )
         ax.set_extent(baltic_extent, crs=ccrs.PlateCarree())
         ax.coastlines()
         if row == 0:
             ax.set_title(regime)
         if col == 0:
             ax.set_ylabel(q_label)
-fig.legend(
-    handles=[Line2D([], [], color=regime_colors[r], label=r, linewidth=1.5) for r in regimes],
-    loc="lower center", ncol=len(regimes),
-)
 plt.show()
 ```

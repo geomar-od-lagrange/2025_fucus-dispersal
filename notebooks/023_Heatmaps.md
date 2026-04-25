@@ -21,6 +21,9 @@ Scopes: whole Baltic, per HELCOM release subbasin, German waters,
 per release quarter (JFM/AMJ/JAS/OND).
 
 ```python
+import os
+import time
+
 import dask
 import numpy as np
 import xarray as xr
@@ -29,6 +32,7 @@ import shapely
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 from xhistogram.xarray import histogram as xhist
+from dask.distributed import Client
 from pathlib import Path
 ```
 
@@ -59,22 +63,29 @@ def assign_release_subbasin(ds, subbasins):
 # Parameters
 
 ```python tags=["parameters"]
+# Read root of the data twin (HELCOM polygons, Fucus shapefile).
 data_root = "../data"
+# Read root of trajectory zarrs.
 output_root = "../output"
-experiment_type = "surface"
+# Which regime's trajectory zarrs to read; one regime per run.
+regime = "surface"
 
+# Trajectory output cadence (minutes per obs); used for age conversion.
 output_dt_mins = 60
 
-lon_min, lon_max = 5, 32
-lat_min, lat_max = 53, 66
-# Baltic-wide: 200 lon bins across the Baltic.
-n_lon_baltic = 200
+# Baltic-wide map extent (degrees E / degrees N) and bin width (degrees).
+baltic_lon_min, baltic_lon_max = 5, 32
+baltic_lat_min, baltic_lat_max = 53, 66
+dlon_baltic = 0.135
+dlat_baltic = 0.135
 
+# German-waters zoom map extent and bin width.
 de_lon_min, de_lon_max = 8, 15
 de_lat_min, de_lat_max = 53.2, 55.5
 dlon_de = 0.125
 dlat_de = 0.125
 
+# Per-panel height in inches (panel widths are aspect-derived).
 baltic_panel_height_in = 2
 de_panel_height_in = 1.5
 ```
@@ -86,10 +97,6 @@ by the multi-task SLURM job). Otherwise spin up a local cluster on the
 current node.
 
 ```python
-import os
-import time
-from dask.distributed import Client
-
 scheduler_file = os.environ.get("SCHEDULER_FILE")
 if scheduler_file:
     for _ in range(60):
@@ -128,10 +135,12 @@ subbasins
 
 # Load trajectories and attach metadata
 
+Layout assumption: ``output_root/Trajectories/<regime>/<release_year>/*.zarr``.
+
 ```python
-trajectory_path = output_root / "Trajectories" / experiment_type
+trajectory_path = output_root / "Trajectories" / regime
 zarr_files = sorted(trajectory_path.glob("**/*.zarr"))
-print(f"{len(zarr_files)} trajectory files for {experiment_type}")
+print(f"{len(zarr_files)} trajectory files for {regime}")
 ds = xr.concat([xr.open_zarr(z) for z in zarr_files], dim="trajectory")
 # First-step displacement of zero ⇒ trajectory was seeded on land.
 ds = ds.where(~(
@@ -143,29 +152,30 @@ ds = assign_release_subbasin(ds, subbasins)
 ds
 ```
 
-# Bins and histogram helpers
+# Bins and extents
 
 ```python
-# Baltic-wide: exactly n_lon_baltic bins; same degree-resolution in lat.
-lon_bins = np.linspace(lon_min, lon_max, n_lon_baltic + 1)
-dlon_baltic = (lon_max - lon_min) / n_lon_baltic
-n_lat_baltic = int(np.ceil((lat_max - lat_min) / dlon_baltic))
-lat_bins = np.linspace(lat_min, lat_max, n_lat_baltic + 1)
-
+lon_bins = np.arange(baltic_lon_min, baltic_lon_max + dlon_baltic, dlon_baltic)
+lat_bins = np.arange(baltic_lat_min, baltic_lat_max + dlat_baltic, dlat_baltic)
 de_lon_bins = np.arange(de_lon_min, de_lon_max + dlon_de, dlon_de)
 de_lat_bins = np.arange(de_lat_min, de_lat_max + dlat_de, dlat_de)
 
 age_hours_per_obs = output_dt_mins / 60
+
+baltic_extent = [baltic_lon_min, baltic_lon_max, baltic_lat_min, baltic_lat_max]
+de_extent = [de_lon_min, de_lon_max, de_lat_min, de_lat_max]
+# Aspect ratio that keeps 1° lon at lat_mean visually equal to 1° lat.
+baltic_aspect = (
+    (baltic_lon_max - baltic_lon_min) * np.cos(np.radians(0.5 * (baltic_lat_min + baltic_lat_max)))
+) / (baltic_lat_max - baltic_lat_min)
+de_aspect = (
+    (de_lon_max - de_lon_min) * np.cos(np.radians(0.5 * (de_lat_min + de_lat_max)))
+) / (de_lat_max - de_lat_min)
 ```
 
-```python
-def count_hist(ds_, lon_bins, lat_bins):
-    return xhist(
-        ds_.lon, ds_.lat,
-        bins=[lon_bins, lat_bins],
-        dim=["trajectory"],
-    ).rename(dict(lon_bin="lon", lat_bin="lat"))
+# Histogram reductions
 
+```python
 def density(h):
     # Suppress exactly-zero cells so land renders as figure background,
     # not the lowest colormap colour.
@@ -177,22 +187,7 @@ def mean_age_hours(h):
     return (((h * h.obs).sum("obs") / totals) * age_hours_per_obs).where(totals > 0)
 ```
 
-```python
-def lonlat_aspect(extent):
-    """Displayed width / height ratio for a lon/lat ``extent`` with an
-    aspect that keeps 1 deg lon at ``lat_mean`` visually equal to 1 deg
-    lat."""
-    lon_min_, lon_max_, lat_min_, lat_max_ = extent
-    lat_mean = 0.5 * (lat_min_ + lat_max_)
-    return ((lon_max_ - lon_min_) * np.cos(np.radians(lat_mean))) / (
-        lat_max_ - lat_min_
-    )
-
-baltic_extent = [lon_min, lon_max, lat_min, lat_max]
-de_extent = [de_lon_min, de_lon_max, de_lat_min, de_lat_max]
-baltic_aspect = lonlat_aspect(baltic_extent)
-de_aspect = lonlat_aspect(de_extent)
-```
+# Plot helpers
 
 ```python
 def facet_map(da, col, col_wrap=None):
@@ -208,9 +203,12 @@ def facet_map(da, col, col_wrap=None):
     return fg
 
 def single_map(da, extent, panel_height_in):
-    width = lonlat_aspect(extent) * panel_height_in
+    lon_min_, lon_max_, lat_min_, lat_max_ = extent
+    aspect = ((lon_max_ - lon_min_) * np.cos(np.radians(0.5 * (lat_min_ + lat_max_)))) / (
+        lat_max_ - lat_min_
+    )
     fig, ax = plt.subplots(
-        figsize=(width, panel_height_in),
+        figsize=(aspect * panel_height_in, panel_height_in),
         subplot_kw=dict(projection=ccrs.PlateCarree()),
         layout="constrained",
     )
@@ -220,39 +218,38 @@ def single_map(da, extent, panel_height_in):
     return fig
 ```
 
-# Precompute per-trajectory scope keys
-
-`subbasin`, `release_quarter` are lazy 1-D `(trajectory,)` arrays.
-Materialise their unique values once so the per-scope histograms below
-can be built as a single lazy graph.
-
-```python
-sb_np, quarter_np = dask.compute(ds.subbasin, ds.release_quarter)
-sb_np = sb_np.values
-quarter_np = quarter_np.values
-
-subbasins_list = sorted({s for s in sb_np if isinstance(s, str)})
-quarters = sorted({int(q) for q in quarter_np if not np.isnan(q)})
-```
-
 # Compute histograms (one shared dask pass)
 
 Histograms live in bin space (small); compute them all in one
 `dask.compute(*)` so the trajectory graph is only walked once. Per-scope
 histograms loop over group values with a lazy `.where()` mask — the
-subbasin/year/quarter coords stay dask-backed and chunk-aligned with
+subbasin/release_quarter coords stay dask-backed and chunk-aligned with
 `ds.lon`/`ds.lat`, so the mask fuses block-wise on the workers instead
 of forcing client-side fancy indexing along the concat dim.
 
+Subbasins come from the HELCOM polygons; quarters are literally
+`[1, 2, 3, 4]`. No pre-pass over the trajectory data is needed.
+
 ```python
-def hist_by(key_da, values, name, lon_bins, lat_bins):
+def hist_by(key_da, values, name, lon_bins_, lat_bins_):
     parts = [
-        count_hist(ds.where(key_da == v), lon_bins, lat_bins) for v in values
+        xhist(
+            ds.lon.where(key_da == v), ds.lat.where(key_da == v),
+            bins=[lon_bins_, lat_bins_], dim=["trajectory"],
+        ).rename(dict(lon_bin="lon", lat_bin="lat"))
+        for v in values
     ]
     return xr.concat(parts, dim=name).assign_coords({name: values})
 
-h_baltic_lazy = count_hist(ds, lon_bins, lat_bins)
-h_de_lazy = count_hist(ds, de_lon_bins, de_lat_bins)
+subbasins_list = subbasins["subbasin"].tolist()
+quarters = [1, 2, 3, 4]
+
+h_baltic_lazy = xhist(
+    ds.lon, ds.lat, bins=[lon_bins, lat_bins], dim=["trajectory"],
+).rename(dict(lon_bin="lon", lat_bin="lat"))
+h_de_lazy = xhist(
+    ds.lon, ds.lat, bins=[de_lon_bins, de_lat_bins], dim=["trajectory"],
+).rename(dict(lon_bin="lon", lat_bin="lat"))
 h_by_sb_lazy = hist_by(ds.subbasin, subbasins_list, "subbasin", lon_bins, lat_bins)
 h_by_quarter_lazy = hist_by(ds.release_quarter, quarters, "release_quarter", lon_bins, lat_bins)
 
