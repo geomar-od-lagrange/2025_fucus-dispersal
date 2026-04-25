@@ -1,0 +1,564 @@
+# Pre-prod wrapup
+
+Final pass before the repo and study go public. This plan is a living
+punch-list: as more remarks land in `remarks.md` and inline TODOs across
+the tree, fold them into the appropriate section below. Once everything
+here is closed, write the matching `docs/*.md` files, move this plan to
+`plans/done/`, and we're prod-ready.
+
+Sources of remarks folded in so far:
+
+- `remarks.md` (top-level, 5 items as of 2026-04-25)
+- Inline TODOs in `notebooks/010_FucusDispersal.ipynb` (16 items)
+- Inline TODOs in `notebooks/020_RawTrajectories.ipynb` (13 items)
+- Inline TODOs in `notebooks/helpers.py` (2 items, including a policy
+  reversal that drives §3 below)
+- Inline FB on `docs/bundle_and_layout.md`
+- A two-stage agent pass (A: theme rubric from the annotations above;
+  B: rubric applied to un-annotated notebooks `000`, `021`–`025`)
+  whose findings populate §5 below.
+
+More remarks may still land; extend the sections below in place
+rather than starting a new plan.
+
+## 1. Particle-physics simplification (010)
+
+The single-start-time regime makes several historical contraptions
+unnecessary. Strip them, then verify a fresh sweep still produces
+sensible trajectories.
+
+- [ ] Remove `velocity_factor` end-to-end: kernel multiplication,
+      particle attribute, papermill parameter, sweep loops in
+      `scripts/010_FucusDispersal_*_job.sh`, downstream filename
+      conventions, and any aggregation code keyed on it. The
+      bottom-focused experiment will get its own kernel handling
+      bottom slowdown — no need to keep a generic per-particle scale.
+- [ ] **New zarr filename schema**. Drop `vf{velocity_factor}` and
+      rename `{experiment_type}` → `{regime}`. Keep only the fields
+      `parse_zarr_stem` needs downstream: release date and regime.
+      Proposed schema (refine on contact): `Fucus_BSH_{release_date_str}_{regime}_dt{output_dt_mins}min.zarr`
+      — three fields, one parsed by date, one by regime token, one
+      retained for run-config traceability. Update `parse_zarr_stem`
+      in 024 to match. Document the schema where it's defined (010)
+      and where it's parsed (024).
+- [ ] Remove `max_age_kernel` and the `age_sec` / `max_age_sec`
+      particle attributes. With a common `release_date`, end-time on
+      `pset.execute` is the only kill criterion needed.
+- [ ] Replace `last_modeling_date = release_date + timedelta(days=max_age_days)`
+      with explicit `start_time` / `end_time` parameters using names
+      consistent with `pset.execute`'s kwargs. Drop the legacy "+6h"
+      shift; let the fieldset-bounds exception raise if a user picks a
+      start time that collides with available data.
+- [ ] Revisit whether the custom `AdvectionRK4_2D_BSH` can be replaced
+      by Parcels' standard 2D RK4 once `velocity_factor` is gone. If
+      yes, delete the custom kernel.
+- [ ] Once both kernels are gone, audit particle attribute schema for
+      anything else now unused (`age_sec`, etc.).
+- [ ] **Scope of "single start time"**: the simplification is
+      *per-execution*, not *per-study*. Production design is 73
+      releases/year × N years of papermill-injected 010 runs at
+      `release_doy = 1 + 5*n` for `n ∈ [0, 72]` (doys
+      `{1, 6, 11, …, 361}`, leap-year-agnostic), each producing one
+      zarr with one `release_date`, one `release_quarter`, one
+      `release_year`. Downstream notebooks aggregate across runs, so
+      `release_quarter` and `release_year` remain genuine aggregation
+      dimensions. Conclusion: `max_age_kernel`, `age_sec`,
+      `last_modeling_date`, and the custom RK4 still go (per-run
+      simplifications); per-quarter facets in `022_DispersalDistance`
+      / `023_Heatmaps` / `025_HexHeatmaps` and the `release_year`
+      partition in `024_BuildHexAggregates` stay (cross-run
+      aggregation).
+- [ ] Update `scripts/010_FucusDispersal_*_job.sh` sweep loops to
+      `n ∈ [0, 72]` (73 doys ≤ 361). Drop any `doy == 366` branch
+      from sweep generators.
+
+## 2. Notebook 010 readability cleanup
+
+Smaller hygiene items flagged inline. Do these in the same pass as §1
+so the rerun covers both.
+
+- [ ] Comment every parameter in the parameters cell (then propagate
+      the same convention to all other notebooks — see §5).
+- [ ] Move `np.random.seed(RNG_seed)` to the first cell after params,
+      and unify the seeding idiom across notebooks (single
+      `np.random.default_rng(seed)` per run, printed for
+      reproducibility).
+- [ ] Collapse the release-date / last-modelling-date `print(...)` to
+      a single line, placed immediately after the dates are defined.
+- [ ] Move construction of `output_filename` to *after* fieldset
+      creation; it belongs adjacent to the `ParticleFile` /
+      particleset block, not next to date arithmetic.
+- [ ] Rename `output_particle_file` → `output_store` (it writes to a
+      `MemoryStore`, not a file).
+- [ ] Inline `file_suffix`.
+- [ ] Inline `def stem(f)`.
+- [ ] Split the timestamp/stem cell: first cell computes the common
+      stems across coarse / fine / static groupings and *warns* if
+      they don't fully overlap; second cell builds the
+      `np.timedelta64` array.
+- [ ] Expand `make_fieldset` body — type the `data_filenames`,
+      `data_variables`, `data_dimensions` dicts out explicitly instead
+      of three layered `dict(zip(...))` calls. While doing so, verify
+      the `data_filenames = dict(zip(variable_ID, [data_files] * len(variable_ID)))`
+      line is correct (flagged "Is this correct?").
+- [ ] Rewrite the `release_lons, release_lats = zip(*[...])`
+      comprehension explicitly — a list-and-loop or two separate
+      arrays is easier on a human reader than the unpacked-zip idiom.
+- [ ] Fix the NaN-trim comment: particles aren't "deleted" — the
+      trailing zarr chunk just didn't fill up completely.
+
+## 3. Eliminate `notebooks/helpers.py`
+
+**Policy reversal.** The previous rule ("extract to `helpers.py` only
+when the logic is non-trivial and reused verbatim") is dropped. The new
+rule: notebooks define their own helpers locally or inline the logic.
+Nothing currently in `helpers.py` is non-trivial enough to justify a
+shared module once the sub-bullets below are addressed.
+
+- [ ] Simplify `attach_release_metadata`'s subbasin lookup to plain
+      nearest-neighbour (drop the within-polygon raster fallback).
+      This is the load-bearing simplification — without it, inlining
+      isn't tolerable.
+- [ ] Audit every callsite of every `helpers` import. The full list
+      observed across notebooks (021–025): `load_trajectories`,
+      `mask_land_seeded`, `attach_release_metadata`, `relabel_quarter`,
+      `parse_zarr_stem`, `QUARTER_LABELS`, plus the internal
+      `_build_subbasin_raster` it composes from. For each callsite,
+      decide: inline at the callsite, or define locally in the
+      notebook that uses it. No callsite stays with a
+      `from helpers import ...`.
+- [ ] `relabel_quarter` and `QUARTER_LABELS` keep their callers
+      (cross-run aggregation, see §1). Inline both: a 4-entry dict
+      literal for `QUARTER_LABELS`; the relabeling logic into the one
+      or two notebook cells that use it.
+- [ ] Delete `notebooks/helpers.py` and its `__pycache__/` once all
+      imports are gone.
+- [ ] Update `CLAUDE.md` (`AGENTS.md` on disk): remove the "Shared
+      helpers" subsection that currently endorses `helpers.py`. Replace
+      with the new rule — no shared helper module; notebooks own their
+      utilities. Without this, future agents will reintroduce the same
+      pattern.
+
+## 4. Notebook 020 readability cleanup
+
+The biggest single cleanup target after 010. Several items here close
+naturally once §3 is done; do §3 first.
+
+- [ ] Rename extents with consistent prefixes:
+      `(lon_min, lon_max, lat_min, lat_max)` → `baltic_*`;
+      `(de_lon_min, …)` keeps `de_*`. Both prefix groups, no bare
+      versions.
+- [ ] Drop the hardcoded `regime_colors = {"bottom": "tab:orange",
+      "surface": "tab:blue"}`. Take colours from the default cycle by
+      regime index, or use a colourblind-safe palette mapped by index
+      (no `"tab:..."` literals in the notebook).
+- [ ] Move all imports to the top of the notebook. The late
+      `import os, time, dask.distributed, ...` cell collapses into the
+      header import block.
+- [ ] Configure warning filters once at the top of the notebook, not
+      with per-cell `with warnings.catch_warnings()` context managers.
+- [ ] Add a one-line comment to the
+      `regimes = sorted(p.name for p in trajectory_root.iterdir() if p.is_dir())`
+      line stating the assumed
+      `output_root/Trajectories/<regime>/...` layout — so a failure
+      points the reader at the layout assumption rather than at the
+      autodetect mechanics.
+- [ ] Drop the `regime_keys` precompute loop. Filter the dataset where
+      the plot is built; xarray + dask will fuse the access.
+- [ ] Inline `lonlat_aspect` (one-liner) at its sole callsite.
+- [ ] Inline `plot_lines` into the per-regime figure loop. The
+      `with warnings.catch_warnings():` block disappears with §4 above.
+- [ ] Drop the `subbasins_list` precompute and the empty-subbasin
+      branch (`if avail.size == 0: ax.set_visible(False); continue`).
+      Plot every subbasin every regime; empty panels are fine and keep
+      the layout stable across regimes. `rng.choice(avail,
+      size=min(n_traj_subset, avail.size), replace=False)` already
+      handles `avail.size == 0` (returns empty array, plots nothing).
+- [ ] Drop the legend; use `fig.suptitle(regime)` for context (and
+      `set_title(subbasin)` per panel as already done).
+
+## 5. Per-notebook walk (`000`, `021`–`025`)
+
+Per-notebook punch-lists from the rubric pass. Each item is concrete
+and cell-anchored. Items that overlap §1–§4 / §7–§8 conventions are
+not duplicated here unless the notebook has a distinctive instance.
+
+### 5a. `notebooks/000_FucusStartLocations.md`
+
+- [ ] Comment the lone `data_root` parameter (role: read root of the
+      data twin checkout).
+- [ ] Add a layout-assumption comment naming the
+      `fucus_redlist_shapefile/REDLIST_SIS_Macrophytes.shp` path the
+      notebook reads.
+- [ ] Revisit the `data_root / "derived"` write target once §7's
+      `data/` rename lands — `derived/` is being dropped as a
+      category.
+
+### 5b. `notebooks/021_TimeStats.md`
+
+- [ ] Comment the `output_root` parameter.
+- [ ] Hoist the late `# Dask cluster` cell (`import os`, `import time`,
+      `from dask.distributed import Client`) into the top import
+      block.
+- [ ] Replace `from helpers import load_trajectories,
+      mask_land_seeded` with notebook-local definitions (per §3).
+- [ ] Rewrite the
+      `lazy = dict(...); results = dict(zip(lazy.keys(), dask.compute(*lazy.values())))`
+      block with five named lazies and an explicit unpack — the
+      dict-of-lazies + zip-rehydrate hides the fan-in.
+- [ ] Add the `output_root/Trajectories/<regime>/...` layout comment
+      next to `regimes = sorted(p.name for p in
+      trajectory_root.iterdir() if p.is_dir())`.
+- [ ] Collapse the multi-line per-regime f-string `print(...)` to one
+      line, or move the reporting into a small dedicated summary
+      cell.
+
+### 5c. `notebooks/022_DispersalDistance.md`
+
+- [ ] Comment every parameter in the parameters cell.
+- [ ] Rename Baltic-side extents to `baltic_*` so the prefix
+      convention matches `de_*` (currently the Baltic side is bare
+      and the DE side is prefixed — same lie as 020).
+- [ ] Hoist the late `# Dask cluster` cell.
+- [ ] Replace `from helpers import attach_release_metadata,
+      load_trajectories, mask_land_seeded, relabel_quarter` per §3.
+- [ ] Inline `def in_de_mask(ds)` (one expression, one callsite).
+      Keep `distance_km` (called twice, modestly substantive).
+- [ ] Inline `def load_regime(regime)` into the dict-comp or rewrite
+      as an explicit loop.
+- [ ] Rewrite `def _grouped_mean(group_key)` without the closure
+      over `regimes` / `regime_dsets` / `regime_distance`; either
+      pass the dependencies explicitly or write the two `xr.concat`
+      blocks out.
+- [ ] Inside `_grouped_mean`, drop the
+      `d.assign_coords({group_key: ds[group_key].compute()})` —
+      forces the group coord eager when the rest of the graph is
+      lazy. Pre-compute once outside or keep it lazy.
+- [ ] Add the layout-assumption comment next to the regimes
+      autodetect.
+
+### 5d. `notebooks/023_Heatmaps.md`
+
+- [ ] Comment every parameter.
+- [ ] Rename `experiment_type = "surface"` → `regime = "surface"`.
+      Downstream use is exclusively as a regime
+      (`trajectory_root / experiment_type`); the name is a leftover
+      from an earlier vocabulary. Match `024` / `025`.
+- [ ] Rename Baltic-side extents to `baltic_*` (`lon_min/lat_min`,
+      `n_lon_baltic` already mixes prefixes — pick one).
+- [ ] Hoist the late `# Dask cluster` cell.
+- [ ] Replace `from helpers import attach_release_metadata,
+      load_trajectories, mask_land_seeded, relabel_quarter` per §3.
+- [ ] Inline `def lonlat_aspect(extent)` (duplicate of the 025
+      definition; trivial).
+- [ ] Inline `def count_hist(ds_, lon_bins, lat_bins)` (one-expression
+      wrapper). Keep `density` and `mean_age_hours` (two callsites
+      each over different histograms).
+- [ ] Drop the precompute block
+      `sb_np, quarter_np = dask.compute(ds.subbasin, ds.release_quarter)`
+      + the `subbasins_list` / `quarters` distinct-set construction.
+      Build histograms with lazy `.where(key_da == v)` over a known
+      list (subbasins from the `subbasins` GeoDataFrame; quarters as
+      `[1, 2, 3, 4]`).
+- [ ] Replace the
+      `sorted({s for s in sb_np if isinstance(s, str)})` /
+      `sorted({int(q) for q in quarter_np if not np.isnan(q)})`
+      idiom with a direct dropna+`np.unique`.
+- [ ] Add the layout-assumption comment next to
+      `trajectory_path = output_root / "Trajectories" / experiment_type`.
+
+### 5e. `notebooks/024_BuildHexAggregates.md`
+
+- [ ] Comment every parameter (`data_root`, `output_root`, `bsh_root`,
+      `release_year`; `age_bin_days` and `output_dt_mins` already
+      have inline comments).
+- [ ] Replace `hex_configs = [...]` with a single scalar
+      `hex_radius` parameter. Multiple radii come from papermill
+      sweeps over 024, not from an in-notebook loop. Hard-code
+      projection and centering — equal-area projection centred on the
+      BSH domain centroid — in a code cell below params. The
+      per-config loop disappears entirely; `_h0_hex_frame` and
+      `build_counts` become straight-line code without a closure
+      (next bullet then drops to a one-line "no rewrite needed").
+- [ ] Output layout change: `output_root/HexAggregates/<config_name>/`
+      → `output_root/HexAggregates/r{hex_radius}{unit}/` (pick the
+      unit when implementing — m, km, or whatever the hex library
+      expects). Update the partition-layout comment block accordingly.
+- [ ] Hoist the late `from dask.distributed import Client` import.
+- [ ] Replace `from helpers import load_trajectories, mask_land_seeded,
+      parse_zarr_stem` per §3. Inline `parse_zarr_stem` against the
+      simplified filename schema from §1 (date + regime; no `vf{}`).
+- [ ] Inline `def _zarr_for(regime, ...)` (three-line glob wrapper,
+      one callsite).
+- [ ] `_h0_hex_frame` and `build_counts`: with the per-config loop
+      gone, both either become inline code in the main cell or stay
+      as plain functions with explicit args (no closure trick, no
+      `arg_=value` defaults). The current comment acknowledging the
+      closure trap goes with the closure.
+- [ ] Simplify the
+      `subbasin_id_to_name = {-1: "_outside"}` /
+      `subbasin_name_to_id = {v: k for k, v in subbasin_id_to_name.items() if k >= 0}`
+      round-trip: build name→id from `enumerate` directly, derive the
+      reverse from it.
+- [ ] Add a single comment block at the top of the path-construction
+      cell listing the four layout assumptions it encodes
+      (`bsh_root/static_file_<grid>/H0_file_<grid>.nc`,
+      `output_root/HexAggregates/<config>`,
+      `output_root/Trajectories/<regime>/<release_year>`,
+      and the `counts/regime=.../release_year=...` partition layout).
+- [ ] Drop the `release_doy == 366` skip outright. With the sweep
+      bounded to `n ∈ [0, 72]` (max doy 361, see §1), the branch is
+      dead code, not leap-year handling.
+- [ ] Tighten the per-config / output-sizes summary prints; consider a
+      small DataFrame display instead of multi-line f-strings.
+
+### 5f. `notebooks/025_HexHeatmaps.md`
+
+- [ ] Comment every parameter (only `cmap` and the panel-height pair
+      currently are).
+- [ ] Rename Baltic-side extents to `baltic_*` (same prefix lie as
+      022/023).
+- [ ] Replace `from helpers import QUARTER_LABELS` with a local
+      `QUARTER_LABELS = {1: "JFM", 2: "AMJ", 3: "JAS", 4: "OND"}`.
+- [ ] Justify the `cmap = "viridis"` parameter and the per-overlay
+      style overrides (`color="black"`, `color="magenta"`,
+      `linewidth=...`, `edgecolor="face"`) inside `log_density_plot`
+      in `docs/visualisations.md` (per §6) rather than as inline
+      comments. Where defaults read fine, drop the override.
+- [ ] Inline `def lonlat_aspect(extent)` at its two callsites.
+- [ ] Drop the `subbasins_ordered` precompute in Panel B and the
+      empty-panel `set_visible(False)` skips in Panels B and D. Empty
+      panels render fine and keep layout stable.
+- [ ] **Panel D**: per-quarter facet is load-bearing across the
+      cross-run aggregation (73 releases/year × N years span all
+      quarters). Keep, but clean per the §4-style simplifications
+      (drop empty-panel skips, lazy `.where`).
+- [ ] Replace the doy→quarter Timestamp arithmetic with the one-liner
+      `((doy - 1) // 90 + 1).clip(1, 4)` (or month-from-doy →
+      `(month - 1) // 3 + 1`). Add a comment naming the conversion.
+- [ ] Decide on the four `groupby...rename...reset_index().merge(...)
+      .pipe(gpd.GeoDataFrame, ...)` chains: extract one
+      notebook-local `to_hex_gdf(counts_df, key_df)` (one helper, four
+      callsites — justified) or accept the duplication.
+- [ ] Add the layout-assumption comment naming
+      `output_root/HexAggregates/<baltic_config_name>` and the
+      `counts/regime=…/release_year=…` partition layout.
+
+## 6. Methodology docs (replace `docs/bundle_and_layout.md`)
+
+`bundle_and_layout.md` documents plumbing that decays as the layout
+moves. Drop it. Replace with focused method docs — one per scientific
+or methodological decision a reader of the published study needs.
+
+The criterion for "this deserves a doc": a future reader of the paper
+who reads only the code can't reconstruct the *why*.
+
+**Source-material audit of `plans/` (open and `plans/done/`)** — most
+candidate docs have an existing plan as draft. Each bullet names the
+target `docs/` file and the plan(s) to mine; the plans then move to
+`plans/done/` (or stay there) with a one-liner pointing at the new
+doc.
+
+- [ ] `docs/h0_semantics.md` — BSH H0 sign convention (z-up,
+      MSL-zero, tidal flats can be `H0 < 0`); always-wet mask.
+      **Source**: `plans/seafloor-location-H0-semantics.md` is
+      already in docs-format — practically a move-and-rename. Trim
+      the duplicate H0 paragraph in CLAUDE.md down to a one-line
+      pointer at the doc.
+- [ ] `docs/2d_field_extraction.md` — surface and bottom 2D-field
+      extraction from the 3D BSH sigma grid; I/O reduction (~3 TB/yr
+      → ~120 GB/yr); why sigma-layer selection happens at preprocess
+      rather than at runtime; the resulting file structure consumed
+      by 010. Add one sentence noting that the 2D-field strategy
+      sidesteps the live-3D-interpolation failure modes (corner
+      trapping, sigma-coord registration ambiguity) that the
+      archived `plans/done/corner_*.md` and
+      `plans/done/grid_registration*.md` plans investigated; point
+      readers there for the historical record. **Source**:
+      `plans/done/2d_field_extraction.md` plus the bottom-cell
+      zero-velocity finding from `plans/bottom_stationary_audit.md`
+      (the audit *finding*, not the audit *process*).
+- [ ] **Not** a separate doc: the T-point/F-point grid-registration
+      story and the C-grid corner-trapping story are *historical*.
+      Both were investigated against the 3D-sigma pipeline retired
+      by the "Go 2d" refactor (commit `5ebd46b`, 2026-04-15); their
+      fixes were never wired into the current 2D-field code path.
+      Leave `plans/done/grid_registration*.md` and
+      `plans/done/corner_*.md` archived as research record. The
+      one-sentence motivation pointer in
+      `docs/2d_field_extraction.md` is enough; documenting the
+      fixes themselves would mislead future readers into thinking
+      they ship.
+- [ ] `docs/stokes_drift.md` — CMEMS Baltic Wave Hindcast
+      (`BALTICSEA_MULTIYEAR_WAV_003_015`, variables `VSDX`/`VSDY`,
+      2 km hourly), why not the global WAVERYS, regridding onto the
+      BSH grid, summation with Eulerian currents. **Source**:
+      `plans/done/stokes_drift.md` is most of the way there;
+      modernise the access recipe to match
+      `scripts/002_download_stokes.py`.
+- [ ] `docs/seeding.md` — release-point sourcing from the Fucus
+      shapefile; per-cell uniform sampling; n-particles bookkeeping;
+      RNG contract; the 73-releases-per-year × N-years sweep design
+      (doys `1 + 5n` for `n ∈ [0, 72]`, see §1). **Source**: derive
+      from 000 + 010 source after §1/§5a are done — no plan covers
+      this end-to-end yet.
+- [ ] `docs/hexbinning_and_connectivity.md` — unified hex grid for
+      source and target, equal-area projection centred on Baltic,
+      `key.parquet` + `counts/` schema, the symmetric source↔sink
+      self-join that makes `ostrea`-style queries work.
+      **Source**: `plans/hex_aggregate_store.md` is already
+      methodology-shaped — practically a rewrite-as-doc. Cross-link
+      with §5e's `hex_radius` parameterisation.
+- [ ] `docs/distance_calculation.md` — distance-vs-time metric
+      definition (great-circle vs cumulative path vs from-release),
+      edge cases (NaN-padded obs, land-seeded particles excluded).
+      **Source**: derive from 022 source after §5c is done — no
+      plan covers this.
+- [ ] `docs/visualisations.md` — per-plot-type rationale: what each
+      notebook (020–025) shows, scope decisions, where overrides
+      are justified. Styling *rules* stay in CLAUDE.md.
+      **Source**: trim `plans/visualisations.md` to the
+      per-plot-type sections; promote those to docs.
+- [ ] After the new docs land: delete `docs/bundle_and_layout.md`. Do
+      *not* leave a stub or redirect; git history is the changelog.
+
+### Plans that stay in `plans/done/` as historical record
+
+These are process / cleanup / governance notes, not methodology — no
+`docs/` promotion:
+
+- `plans/data_licensing_public_bundle.md` (compliance audit, lands
+  here once green per §9).
+- `plans/experiment_tracking.md` (superseded by §1's filename
+  simplification — archive once the new schema ships).
+- `plans/viz_wrap_up.md` (subsumed by §4/§5 — archive once §4/§5
+  close).
+- `plans/done/010_notebook_cleanup.md`, `bundle_and_layout.md`,
+  `job_script_review.md`, `next_steps.md`, `notebook_review.md`,
+  `portable_data_paths.md`, `rollout.md`, `simplification.md`,
+  `hextraj_hex_counts_oom.md` (already archived; leave in place).
+- `plans/done/grid_registration.md`,
+  `plans/done/grid_registration_bug.md`,
+  `plans/done/corner_rounding.md`, `plans/done/corner_theory.md`,
+  `plans/done/corner_vortex.md`, `plans/done/corner_*.png` —
+  research record for the 3D-sigma pipeline retired by the
+  "Go 2d" refactor; the investigated fixes were never shipped.
+  Pointed at from `docs/2d_field_extraction.md` motivation
+  paragraph; otherwise leave in place.
+
+## 7. Repo surface presented to public users
+
+These are the first things a visitor sees; tidy before announcing.
+
+- [ ] Rename `data/` subdirs to `<source>_<dataset>` form (source
+      first, then specific dataset). Walk every existing dir and
+      decide on its merits — don't preserve a name just because
+      something already uses it. Drop `data/derived/` as a category;
+      either co-locate the derived blob with its source dir or give
+      it its own clearly-named dir.
+- [ ] Update consumers in lock-step: every script / notebook reading
+      `data/...` paths, the `obtain/*.sh` recipes, `fetch_data.sh`,
+      and `ATTRIBUTION.md`. Grep before, grep after. (`helpers.py`
+      is gone after §3, so no path constants live there any more.)
+- [ ] Mirror the rename in the data twin repo
+      (`git.geomar.de/od-lagrange/2025_fucus_dispersal_data`) and
+      bump the submodule pointer in the same PR.
+- [ ] `README.md`: introduce the term "twin" explicitly when first
+      mentioning the data submodule, so newcomers see the project
+      vocabulary before they encounter it elsewhere.
+- [ ] `scripts/000_FucusStartLocations_job.sh`: drop. Stage 000
+      doesn't need a job script — it's quick local prep. Delete the
+      `.sh`, leave the `.md` / `.ipynb` notebook in place.
+- [ ] Walk every other `scripts/0??_*_job.sh`: confirm each is still
+      load-bearing, names match the current notebook stage numbering,
+      `output_root` plumbing is consistent, no stale `--region` /
+      `--year` flags from the old filename-encoded era. Rewrite where
+      cleaner than patching.
+
+## 8. Conventions to enforce across the whole pipeline
+
+These are the rules §5's per-notebook items make concrete. Restate them
+here as a final cross-notebook audit so nothing slips through.
+
+- [ ] **Parameters cell**: every parameter commented, primitives only,
+      RNG seeding (`np.random.default_rng(seed)`) as the first
+      post-params cell where the notebook uses randomness. Notebooks
+      that don't use randomness skip the seed cell rather than adding
+      a no-op one.
+- [ ] **Imports at the top**: no late `import …` cells. The repeated
+      `# Dask cluster` block in 021/022/023/024 is the recurring
+      offender — hoist its imports.
+- [ ] **Warning filters at the top**: configure once near the imports;
+      no `with warnings.catch_warnings()` blocks scattered through
+      cells. If a notebook currently has none, leave it alone.
+- [ ] **No `helpers` import** anywhere (§3 removes the file; this is
+      the cross-cutting check).
+- [ ] **Consistent extent prefixes**: pairs of related extent
+      variables both prefixed (`baltic_*` / `de_*`); no bare
+      `lon_min` / `lat_min` paired with prefixed `de_lon_min`. Hits
+      currently in 020, 022, 023, 025.
+- [ ] **Variable names match current behaviour**: notable rename to
+      apply: `experiment_type` → `regime` in `023_Heatmaps`. Look for
+      similar lies elsewhere (e.g. `*_file` for in-memory stores,
+      `last_modeling_date` for end-time semantics).
+- [ ] **No styling overrides without a doc-justified reason**: no
+      `color="tab:..."` literals, no `cmap=` / `figsize=` / `linewidth=`
+      overrides except where `docs/visualisations.md` explicitly
+      argues for them.
+- [ ] **Layout assumptions are commented**: any `iterdir()` /
+      glob walk / hard-coded sub-path encodes a layout — name the
+      assumption in a one-liner so failures point at the contract,
+      not the autodetect mechanics. Hits in 020, 021, 022, 023, 024,
+      025.
+- [ ] **Notebooks read standalone**: parameter cells, path
+      construction, and the Dask-cluster boilerplate are *expected* to
+      be duplicated per notebook. Do not re-factor the
+      `SCHEDULER_FILE`-or-local-`Client` snippet into a helper — that
+      is the test case for §3's policy reversal. If it needs
+      documenting, add a snippet to `docs/` rather than a Python
+      module.
+
+## 9. Final verification before flipping to prod
+
+- [ ] Re-execute all `notebooks/0??_*.md` end-to-end via
+      `pixi run jupytext --sync --execute …` (papermill where
+      parameters need injecting). Commit the freshly-rendered
+      `.ipynb` alongside the `.md` so GitHub renders figures.
+- [ ] Smoke-test from a fresh clone:
+      `git clone --recurse-submodules` → `pixi install` →
+      `scripts/fetch_data.sh` no-op → run stages 000 through 025
+      against the BSH demo subset.
+- [ ] `ATTRIBUTION.md` walkthrough: every dataset currently shipped
+      in the twin still listed; no licence-incompatible additions
+      since the last audit (cross-check against
+      `plans/data_licensing_public_bundle.md`).
+- [ ] Once green: move this file to `plans/done/wrapup.md` with a
+      one-liner pointing at the new method docs as the durable
+      record.
+
+## Open questions (collect here as they arise)
+
+*(none open)*
+
+### Resolved
+
+- **2026-04-25 — "Single start time" scope.** Per-execution, not
+  per-study. Production design: 73 releases/year × N years at
+  `release_doy = 1 + 5n` for `n ∈ [0, 72]` (doys `{1, 6, …, 361}`,
+  leap-year-agnostic). Cross-run aggregation keeps `release_quarter`
+  and `release_year` as load-bearing dimensions; quarter facets and
+  year partitions stay. The `release_doy == 366` skip becomes dead
+  code under the bounded sweep and is dropped. Folded into §1, §5e.
+- **2026-04-25 — `hex_configs` shape.** Don't move the list-of-dicts
+  into the parameters cell. Replace with a *scalar* `hex_radius`
+  parameter; multiple radii come from papermill sweeps over 024, not
+  an in-notebook loop. Hard-code equal-area projection centred on the
+  BSH domain centroid in a code cell below params. The per-config
+  loop disappears, `_h0_hex_frame` and `build_counts` lose their
+  closure tricks, and the output layout becomes
+  `HexAggregates/r{hex_radius}{unit}/`. Folded into §5e.
+- **2026-04-25 — Output filename schema.** Simplify. Drop
+  `vf{velocity_factor}`, rename `{experiment_type}` → `{regime}`,
+  retain only what `parse_zarr_stem` actually needs (release date +
+  regime + a stable `dt{output_dt_mins}min` for traceability).
+  Folded into §1, §5e.
