@@ -47,6 +47,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import xarray as xr
+import dask.dataframe as dd
 from dask.distributed import Client
 from shapely.ops import unary_union
 
@@ -336,19 +337,11 @@ print(f"wrote {key_path} ({key_path.stat().st_size / 1e6:.2f} MB)")
 # Per-regime counts
 
 ```python
-def build_counts(regime, hp_, dataset_root_, hex_proj_meta_, rl_year):
-    matches = sorted(
-        (output_root / f"Trajectories/{regime}/{rl_year}").glob("*.zarr")
-    )
-    assert len(matches) == 1, (regime, matches)
-    zarr_path = matches[0]
-    fn_release_date, fn_regime = parse_zarr_stem(zarr_path)
-    assert fn_release_date.year == rl_year, (fn_release_date, rl_year)
-    assert fn_regime == regime, (fn_regime, regime)
+def zarr_to_lazy_frame(zarr_path, hp_, release_doy):
+    """Lazy (release_hex, age_bin, target_hex, release_doy) dask frame for one zarr.
 
-    stages = {}
-    t0 = time.time()
-
+    Filtered to in-domain target hexes and to the configured age window.
+    """
     ds = xr.open_zarr(zarr_path)
     # First-step displacement of zero ⇒ trajectory was seeded on land.
     ds = ds.where(~(
@@ -356,12 +349,6 @@ def build_counts(regime, hp_, dataset_root_, hex_proj_meta_, rl_year):
         & (ds.lat.diff("obs").isel(obs=0, drop=True) == 0)
     ))
 
-    release_ts = pd.Timestamp(ds.time.isel(obs=0).compute().values[0])
-    release_doy = int(release_ts.dayofyear)
-    fn_doy = int(fn_release_date.dayofyear)
-    assert fn_doy == release_doy, (fn_doy, release_doy, regime)
-
-    # Lazy (trajectory, obs) hex labels.
     target_hex = xr.apply_ufunc(
         hp_.label, ds.lon, ds.lat,
         dask="parallelized", output_dtypes=[np.int64],
@@ -380,14 +367,43 @@ def build_counts(regime, hp_, dataset_root_, hex_proj_meta_, rl_year):
         "release_hex": release_hex,
         "age_bin": age_bin_da,
     }).to_dask_dataframe(dim_order=["trajectory", "obs"])
-
-    t1 = time.time()
-    valid_frame = frame[
+    frame = frame[
         (frame.target_hex >= 0) & (frame.age_bin >= 0) & (frame.age_bin <= max_age_bin)
     ]
+    frame = frame.assign(release_doy=np.int16(release_doy))
+    return frame
+
+
+def build_counts(regime, hp_, dataset_root_, hex_proj_meta_, rl_year):
+    # Glob existing zarrs only — NESH jobs sometimes fail, and a missing
+    # release date should reduce coverage, not abort the build.
+    matches = sorted(
+        (output_root / f"Trajectories/{regime}/{rl_year}").glob("*.zarr")
+    )
+    if not matches:
+        print(f"  no zarrs for {regime} {rl_year}, skipping")
+        return None
+
+    parsed = [(p, *parse_zarr_stem(p)) for p in matches]
+    for p, release_ts, fn_regime in parsed:
+        assert release_ts.year == rl_year, (release_ts, rl_year, p)
+        assert fn_regime == regime, (fn_regime, regime, p)
+    release_doys = sorted({int(release_ts.dayofyear) for _, release_ts, _ in parsed})
+    print(f"  {len(matches)} zarrs, release_doys: {release_doys[0]}..{release_doys[-1]} "
+          f"({len(release_doys)} unique)")
+
+    stages = {}
+    t0 = time.time()
+
+    per_zarr_frames = [
+        zarr_to_lazy_frame(p, hp_, release_ts.dayofyear)
+        for p, release_ts, _ in parsed
+    ]
+
+    t1 = time.time()
     counts = (
-        valid_frame
-        .groupby(["release_hex", "age_bin", "target_hex"])
+        dd.concat(per_zarr_frames)
+        .groupby(["release_hex", "age_bin", "target_hex", "release_doy"])
         .size().rename("n_obs").reset_index().compute()
     )
     n_valid = int(counts["n_obs"].sum())
@@ -396,8 +412,8 @@ def build_counts(regime, hp_, dataset_root_, hex_proj_meta_, rl_year):
     counts["release_hex"] = counts["release_hex"].astype(np.int32)
     counts["target_hex"] = counts["target_hex"].astype(np.int32)
     counts["age_bin"] = counts["age_bin"].astype(np.int8)
+    counts["release_doy"] = counts["release_doy"].astype(np.int16)
     counts["n_obs"] = counts["n_obs"].astype(np.int32)
-    counts["release_doy"] = np.int16(release_doy)
 
     t2 = time.time()
     part_dir = dataset_root_ / f"counts/regime={regime}/release_year={rl_year}"
@@ -409,8 +425,6 @@ def build_counts(regime, hp_, dataset_root_, hex_proj_meta_, rl_year):
         "output_dt_mins": output_dt_mins,
         "regime": regime,
         "release_year": int(rl_year),
-        "release_doy": int(release_doy),
-        "source_zarr": zarr_path.name,
     }
     tbl = pa.Table.from_pandas(counts, preserve_index=False)
     tbl = tbl.replace_schema_metadata({
@@ -422,8 +436,8 @@ def build_counts(regime, hp_, dataset_root_, hex_proj_meta_, rl_year):
 
     return {
         "regime": regime,
-        "zarr": zarr_path,
-        "release_doy": release_doy,
+        "n_zarrs": len(matches),
+        "release_doys": release_doys,
         "n_valid": n_valid,
         "counts": counts,
         "part_path": part_path,
@@ -434,20 +448,21 @@ def build_counts(regime, hp_, dataset_root_, hex_proj_meta_, rl_year):
 results = {}
 for regime in regimes:
     print(f"\n--- {regime} ---")
-    results[regime] = build_counts(
-        regime, hp, dataset_root, hex_proj_meta, release_year,
-    )
-    print(f"  {results[regime]['stages']}")
+    r = build_counts(regime, hp, dataset_root, hex_proj_meta, release_year)
+    if r is not None:
+        results[regime] = r
+        print(f"  {r['stages']}")
 ```
 
 # Summary
 
 ```python
 summary_rows = []
-for regime in regimes:
-    r = results[regime]
+for regime, r in results.items():
     summary_rows.append({
         "regime": regime,
+        "n_zarrs": r["n_zarrs"],
+        "n_release_doys": len(r["release_doys"]),
         "rows": len(r["counts"]),
         "sum_n_obs": int(r["counts"]["n_obs"].sum()),
         "part_size_mb": r["part_path"].stat().st_size / 1e6,

@@ -18,7 +18,7 @@ the source of truth for per-trajectory diagnostics.
 | column        | type   | meaning                                              |
 |---------------|--------|------------------------------------------------------|
 | `release_hex` | int32  | hex containing the particle's release point          |
-| `release_doy` | int16  | release day-of-year (one per partition)              |
+| `release_doy` | int16  | release day-of-year of the originating zarr          |
 | `age_bin`     | int8   | floor(particle age / `age_bin_days`) — default 10 d  |
 | `target_hex`  | int32  | hex containing the particle position at this obs     |
 | `n_obs`       | int32  | number of `(trajectory, obs)` pairs in this bin      |
@@ -99,8 +99,12 @@ coarse for the depth join — fine cells contribute where covered;
 coarse fills the rest, avoiding double-counting in the nest overlap.
 
 Counts partitions carry self-identifying scope metadata (`regime`,
-`release_year`, `release_doy`, `source_zarr`) so a lost partition
-rebuilds from its metadata alone.
+`release_year`, plus the projection / binning parameters) so the
+partition reconstructs without touching the rest of the store. Per-zarr
+provenance lives in the `release_doy` column, not the metadata: a
+partition aggregates whatever zarrs were on disk at build time, so
+NESH job failures cause coverage gaps (visible as missing
+`release_doy` values) rather than aborting the build.
 
 ## Cross-references
 
