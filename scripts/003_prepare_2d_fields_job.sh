@@ -9,34 +9,32 @@
 module load gcc12-env/12.3.0
 module load singularity/3.11.5
 
-base_path=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
-bsh_data=/gxfs_work/geomar/smomw400/bsh_operationalmodel_data
-stokes_dir=/gxfs_work/geomar/smomw122/cmems_mod_bal_wav
-output_dir=${base_path}/output/2d_fields
+repo_root=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
+output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
+bsh_root=/gxfs_work/geomar/smomw400/bsh_operationalmodel_data
 container=parcels-container_2024.10.07-7af7fd0.sif
 
-mkdir -p ${output_dir}
+mkdir -p ${output_root}/2d_fields
 
 # Process one c_file: called by xargs with the c_file path as argument
 process_file() {
     local c_file="$1"
     srun --ntasks=1 --exact \
-        singularity run -B /sfs -B /gxfs_work -B ${base_path}:/work --pwd /work \
+        singularity run -B /sfs -B /gxfs_work -B ${repo_root}:/work --pwd /work \
         ${container} bash -c \
         ". /opt/conda/etc/profile.d/conda.sh && conda activate base \
-        && python scripts/003_prepare_2d_fields.py \
+        && python notebooks/003_prepare_2d_fields.py \
             --c-file ${c_file} \
-            --stokes-dir ${stokes_dir} \
-            --output-dir ${output_dir}"
+            --output-root ${output_root}"
 }
 export -f process_file
-export base_path container stokes_dir output_dir
+export repo_root output_root container
 
 # Process all years and resolutions in a single xargs pass.
 # Sorted find output means early years/timestamps come first.
 for year in $(seq 2016 2025); do
     for res in fine coarse; do
-        c_dir="${bsh_data}/c_file_${res}_${year}"
+        c_dir="${bsh_root}/c_file_${res}_${year}"
         [ -d "${c_dir}" ] && find "${c_dir}" -name "*.nc" | sort
     done
 done | xargs -P ${SLURM_NTASKS} -I{} bash -c 'process_file "$@"' _ {}

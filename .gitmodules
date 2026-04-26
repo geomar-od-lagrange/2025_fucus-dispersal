@@ -1,0 +1,3 @@
+[submodule "data"]
+	path = data
+	url = https://git.geomar.de/od-lagrange/2025_fucus_dispersal_data.git
