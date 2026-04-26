@@ -18,8 +18,10 @@ export http_proxy=http://10.0.7.235:3128
 export https_proxy=http://10.0.7.235:3128
 export no_proxy=localhost,127.0.0.1,0.0.0.0,10.0.0.0/8
 
-# Override release year via positional arg, e.g. `sbatch <script> 2020`.
-year="${1:-2019}"
+# One (regime, release_year) per submit, e.g. `sbatch <script> surface 2020`.
+# 024a_BuildHexKey_job.sh must have run first for the matching hex_radius.
+regime="${1:-surface}"
+year="${2:-2019}"
 
 repo_root=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
@@ -48,12 +50,12 @@ ${SRUN_STEP} pixi run bash -c "
 
 sleep 30
 
-# Task 1: papermill. Regimes are discovered inside the notebook.
+# Task 1: papermill, one (regime, year) per job.
 ${SRUN_STEP} pixi run papermill --cwd notebooks/ \
     notebooks/024_BuildHexAggregates.ipynb \
-    notebooks_executed/Visualisations/024_BuildHexAggregates_${year}.ipynb \
-    -p data_root ${repo_root}/data \
+    notebooks_executed/Visualisations/024_BuildHexAggregates_${regime}_${year}.ipynb \
     -p output_root ${output_root} \
+    -p regime ${regime} \
     -p release_year ${year} \
     -k python &
 PAPERMILL_PID=$!

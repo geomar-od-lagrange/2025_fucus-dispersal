@@ -110,10 +110,18 @@ pixi run papermill notebooks/023_Heatmaps.ipynb \
     --cwd notebooks/
 
 echo
-echo "==== 024 BuildHexAggregates ===="
+echo "==== 024a BuildHexKey ===="
+pixi run papermill notebooks/024a_BuildHexKey.ipynb \
+    "${OUTPUT_ROOT}/024a_smoke.ipynb" \
+    -p output_root "${OUTPUT_ROOT}" \
+    --cwd notebooks/
+
+echo
+echo "==== 024 BuildHexAggregates (surface_stokes) ===="
 pixi run papermill notebooks/024_BuildHexAggregates.ipynb \
     "${OUTPUT_ROOT}/024_smoke.ipynb" \
     -p output_root "${OUTPUT_ROOT}" \
+    -p regime surface_stokes \
     -p release_year 2020 \
     --cwd notebooks/
 

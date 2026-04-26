@@ -1,33 +1,48 @@
 # Hex-aggregated dispersal store
 
-`notebooks/024_BuildHexAggregates.md` produces one store per
-`(hex_radius)` build:
+The store splits across two notebooks. The key file is shared by every
+counts file at the same `hex_radius`.
 
 ```
-output_root/HexAggregates/r<hex_radius>m/
-  key.parquet
-  counts/regime=<regime>/release_year=<year>/part.parquet
+output_root/
+  HexAgg_key_r<radius>m.parquet         (notebook 024a — once per radius)
+  HexAgg_key_r<radius>m.json            ( ditto, sidecar metadata     )
+  HexAgg_counts_r<radius>m_<regime>_<year>.parquet
+                                        (notebook 024  — once per (regime, year))
 ```
 
-Compact, query-friendly sister of the multi-TB raw zarrs; substrate
-behind every map in `notebooks/025_HexHeatmaps.md`. Raw zarrs stay
-the source of truth for per-trajectory diagnostics.
+Flat layout deliberately: parallel 024 jobs (multiple regimes/years)
+write disjoint filenames, so they can't race. Compact, query-friendly
+sister of the multi-TB raw zarrs; substrate behind every map in
+`notebooks/025_HexHeatmaps.md`. Raw zarrs stay the source of truth for
+per-trajectory diagnostics.
 
 ## Counts schema
 
-| column        | type   | meaning                                              |
-|---------------|--------|------------------------------------------------------|
-| `release_hex` | int32  | hex containing the particle's release point          |
-| `release_doy` | int16  | release day-of-year of the originating zarr          |
-| `age_bin`     | int8   | floor(particle age / `age_bin_days`) — default 10 d  |
-| `target_hex`  | int32  | hex containing the particle position at this obs     |
-| `n_obs`       | int32  | number of `(trajectory, obs)` pairs in this bin      |
+| column        | meaning                                                          |
+|---------------|------------------------------------------------------------------|
+| `release_hex` | hex containing the particle's release point; `-1` if land-seeded |
+| `release_doy` | release day-of-year of the originating zarr                      |
+| `age_bin`     | floor(particle age / `age_bin_days`) — default 10 d, no upper cap|
+| `target_hex`  | hex containing the particle position at this obs; `-1` if NaN    |
+| `n_obs`       | number of `(trajectory, obs)` pairs in this bin                  |
+
+Dtypes are whatever pandas/dask pick by default (typically `int64`) —
+parquet's RLE/dictionary encoding flattens the size cost, and counts
+files are tiny next to the trajectory zarrs upstream.
 
 `n_obs` is the residence proxy. For a "first-arrival" alternative,
 dedupe `(trajectory_id, target_hex)` at query time against the raw
 zarrs. Subbasin is **not** a grouping dim — recover via the key file.
 
-## Key file (`key.parquet`, geoparquet, one row per hex)
+`-1` is `hextraj.INVALID_HEX_ID`, surfaced when lon/lat is NaN — i.e.
+land-seeded trajectories (zero first-step displacement) and any
+out-of-domain positions. Preserved on disk so the land-seeded fraction
+is queryable (`counts[counts.release_hex == -1].n_obs.sum()`); filter
+with `release_hex >= 0` / `target_hex >= 0` at query time when only
+valid hexes are wanted.
+
+## Key file (geoparquet, one row per hex)
 
 | column            | type             | meaning                                        |
 |-------------------|------------------|------------------------------------------------|
@@ -40,8 +55,25 @@ zarrs. Subbasin is **not** a grouping dim — recover via the key file.
 | `fucus_area_m2`   | float32          | intersection with REDLIST `F_vesiculo != 0`    |
 | `helcom_subbasin` | int8 (nullable)  | HELCOM level-2 ID by centroid; -1 = outside    |
 
-Schema is additive — new attributes mean rebuilding `key.parquet` with
-a bumped version field; counts partitions don't move.
+Schema is additive — new attributes mean rebuilding the key with a
+bumped version field; counts files don't move.
+
+## Sidecar metadata
+
+`HexAgg_key_r<radius>m.json` next to the parquet carries:
+
+- `hex_proj` — `projection_name`, `lon_origin`, `lat_origin`,
+  `hex_size_meters`. `HexProj(**meta["hex_proj"])` rematerialises
+  geometry from any `hex_id`.
+- `area_crs` — `"EPSG:3035"`, the projection used for all area columns.
+- `subbasin_id_to_name` — int → name lookup for the `helcom_subbasin`
+  column. Keys are JSON strings (cast to int on load).
+
+Sidecar instead of parquet schema metadata so the layer that writes
+the parquet (`GeoDataFrame.to_parquet`, `dask.dataframe.to_parquet`)
+doesn't need to grow custom-metadata plumbing. Counts files carry no
+metadata: the filename encodes `hex_radius`, `regime`, `release_year`,
+and the projection comes from the matching key file.
 
 ## Unified hex grid
 
@@ -65,22 +97,20 @@ Hexes live in Lambert Azimuthal Equal-Area centred on the coarse-grid
 BSH bounding box midpoint (computed from H0 at build time). LAEA
 keeps hex areas comparable basin-wide; Mercator was rejected (4× area
 variation), Geodetic was rejected (hexes wouldn't be hexagons). The
-HexProj configuration travels as parquet file-level metadata on
-`key.parquet` and every counts partition — without it `hex_id` values
-are opaque, with it geometries are reproducible via `hextraj`.
+projection lives in the key sidecar — without it `hex_id` values are
+opaque, with it geometries are reproducible via `hextraj`.
 
 `hex_radius` is the production parameter; multiple radii come from
-papermill sweeps of 024.
+papermill sweeps of 024a (key) and 024 (counts).
 
 ## Domain coverage
 
-The key file is built over the full BSH model domain (fine + coarse,
-including land), not the wet polygon. A trajectory cannot escape the
-BSH lat/lon extent, so every `hex_id` `hp.label` can ever assign is
-pre-populated. Wet vs dry is captured by `water_area_m2` (zero for
-land) and `mean_depth_m` (NaN for land); the key never filters them
-out. Counts can therefore assert a hard key-completeness invariant
-(every `release_hex`/`target_hex` is in the key) as a one-line
+The key file covers every hex `hp.label` can ever assign within the
+BSH lat/lon extent (built from the union of fine + coarse H0 cells
+with `H0 > 0`, fine-grid priority for `mean_depth_m`). A trajectory
+cannot escape the BSH grid, so every `release_hex`/`target_hex` is
+pre-populated. Counts therefore assert a hard key-completeness
+invariant (every counts hex_id is in the key) as a one-line
 set-difference check.
 
 ## Source data and provenance
@@ -93,18 +123,16 @@ Key file derives from:
 - HELCOM subbasins shapefile (`HELCOM_subbasins_2022_level2.shp`)
 - REDLIST_SIS_Macrophytes shapefile (`F_vesiculo != 0`)
 
-`mean_depth_m` filters to `H0 > 0` (see
-[h0_semantics.md](h0_semantics.md)). Fine grid takes priority over
-coarse for the depth join — fine cells contribute where covered;
-coarse fills the rest, avoiding double-counting in the nest overlap.
+`mean_depth_m` filters to `H0 > 0` (see [h0_semantics.md](h0_semantics.md));
+fine grid takes priority via `combine_first`, with coarse filling
+where fine has no coverage.
 
-Counts partitions carry self-identifying scope metadata (`regime`,
-`release_year`, plus the projection / binning parameters) so the
-partition reconstructs without touching the rest of the store. Per-zarr
-provenance lives in the `release_doy` column, not the metadata: a
-partition aggregates whatever zarrs were on disk at build time, so
-NESH job failures cause coverage gaps (visible as missing
-`release_doy` values) rather than aborting the build.
+Counts files self-identify via filename. Per-zarr provenance lives in
+the `release_doy` column, not the metadata: a counts file aggregates
+whatever zarrs were on disk at build time, so NESH job failures cause
+coverage gaps (visible as missing `release_doy` values) rather than
+aborting the build. Same `(release_time, regime)` zarrs from
+independent reseeded reruns are summed additively by the groupby.
 
 ## Cross-references
 

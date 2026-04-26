@@ -13,8 +13,17 @@ sbatch --exclude="$EXCLUDE" --ntasks=7 scripts/020_RawTrajectories_job.sh
 sbatch --exclude="$EXCLUDE" --ntasks=7 scripts/021_TimeStats_job.sh
 sbatch --exclude="$EXCLUDE" --ntasks=7 scripts/022_DispersalDistance_job.sh
 
-# 024: build aggregate store (once; pass release year as positional arg).
-sbatch --exclude="$EXCLUDE" --ntasks=9 --cpus-per-task=10 scripts/024_BuildHexAggregates_job.sh
+# 024a: key file (single job, single radius). Must finish before 024.
+KEY=$(sbatch --exclude="$EXCLUDE" --parsable scripts/024a_BuildHexKey_job.sh)
+
+# 024: counts (one job per (regime, year); waits for the key job).
+for regime in surface surface_stokes bottom; do
+    for year in 2019; do
+        sbatch --exclude="$EXCLUDE" --ntasks=9 --cpus-per-task=10 \
+            --dependency=afterok:${KEY} \
+            scripts/024_BuildHexAggregates_job.sh ${regime} ${year}
+    done
+done
 
 # 025: render hex heatmaps (one job per regime).
 sbatch --exclude="$EXCLUDE" scripts/025_HexHeatmaps_job.sh surface

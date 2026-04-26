@@ -16,10 +16,10 @@ jupyter:
 # Hex heatmaps
 
 Particle-density maps on the hex-aggregated dispersal store built by
-notebook 024. Reads `key.parquet` and `counts/` partitions from one
-pre-built store; no trajectory zarrs, no Dask cluster. Panel C is the
-same data as Panel A, viewport-clipped to the German Bight — there is
-one hex size for the whole basin.
+notebooks 024a (key) and 024 (counts). Reads one key file +
+counts file per run; no trajectory zarrs, no Dask cluster. Panel C is
+the same data as Panel A, viewport-clipped to the German Bight — there
+is one hex size for the whole basin.
 
 Four panels per run:
 
@@ -35,7 +35,6 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import pyarrow.parquet as pq
 import matplotlib.pyplot as plt
 from shapely.geometry import box
 from cartopy.io.shapereader import natural_earth
@@ -79,24 +78,24 @@ de_panel_height_in = 4.5
 
 # Path construction and parquet reads
 
-Layout assumption: ``output_root/HexAggregates/<config>/key.parquet``
-plus partitions at ``counts/regime=<regime>/release_year=<year>/part.parquet``.
+Layout: flat files under ``output_root`` —
+``HexAgg_key_r<radius>m.parquet`` (+ ``.json`` sidecar) and
+``HexAgg_counts_r<radius>m_<regime>_<year>.parquet``.
 
 ```python
 data_root = Path(data_root)
 output_root = Path(output_root)
-store = output_root / "HexAggregates" / f"r{hex_radius}m"
 
-key = gpd.read_parquet(store / "key.parquet")
-counts = pd.read_parquet(
-    store / "counts" / f"regime={regime}" / f"release_year={release_year}" / "part.parquet"
+key_path = output_root / f"HexAgg_key_r{hex_radius}m.parquet"
+counts_path = (
+    output_root / f"HexAgg_counts_r{hex_radius}m_{regime}_{release_year}.parquet"
 )
 
-# Read subbasin_id_to_name from the key.parquet file-level metadata.
-_key_meta = json.loads(
-    pq.read_table(store / "key.parquet").schema.metadata[b"hex_aggregate_store"].decode()
-)
-subbasin_id_to_name = {int(k): v for k, v in _key_meta["subbasin_id_to_name"].items()}
+key = gpd.read_parquet(key_path)
+counts = pd.read_parquet(counts_path)
+
+key_meta = json.loads(key_path.with_suffix(".json").read_text())
+subbasin_id_to_name = {int(k): v for k, v in key_meta["subbasin_id_to_name"].items()}
 
 print(f"key: {len(key):,} hexes")
 print(f"counts: {len(counts):,} rows, sum(n_obs)={int(counts.n_obs.sum()):,}")

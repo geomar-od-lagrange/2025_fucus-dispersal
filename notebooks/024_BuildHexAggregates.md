@@ -1,6 +1,7 @@
 ---
 jupyter:
   jupytext:
+    cell_metadata_filter: tags,-all
     formats: md,ipynb
     text_representation:
       extension: .md
@@ -13,26 +14,18 @@ jupyter:
     name: python3
 ---
 
-# Build hex-aggregated dispersal store
+# Build hex-aggregate counts partition
 
-Distil the per-regime trajectory zarrs into the compact aggregate
-store defined in `plans/hex_aggregate_store.md`. One store per run, at
-the configured `hex_radius`; multiple radii come from papermill sweeps,
-not an in-notebook loop. Each store contains:
+Aggregate one `(regime, release_year)` worth of trajectory zarrs into a
+flat `(release_hex, age_bin, target_hex, release_doy) → n_obs` table.
 
-- `key.parquet` — one row per hex in the BSH domain (geometry, area,
-  water area, depth, coast distance, Fucus area, HELCOM subbasin).
-  Built once from static inputs (BSH wet-region geojson, H0 grids,
-  Fucus shapefile, HELCOM level-2 polygons). Land hexes are included
-  with `water_area_m2 = 0` so the key covers every hex `hp.label` can
-  assign to a trajectory position within the domain.
-- `counts/regime=…/release_year=…/part.parquet` — one row per
-  `(release_hex, age_bin, target_hex)` with `n_obs` aggregate. Built
-  per regime × release_year from the zarrs.
+The key file from `024a_BuildHexKey.md` is a hard prerequisite — its
+sidecar JSON carries the `HexProj` parameters used here so labels match
+the key one-for-one.
 
-Units are SI throughout (m², m). The HexProj configuration travels
-as parquet file-level metadata so `hex_id` values can be rematerialised
-into geometry downstream.
+Same `(release_time, regime)` zarrs are aggregated additively (multiple
+seeds = independent reseeded reruns, summed via groupby). Missing
+release-date zarrs are tolerated: the build globs whatever is on disk.
 
 ```python
 import json
@@ -41,43 +34,30 @@ import re
 import time
 from pathlib import Path
 
-import geopandas as gpd
-import numpy as np
-import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
-import xarray as xr
 import dask.dataframe as dd
+import pandas as pd
+import xarray as xr
 from dask.distributed import Client
-from shapely.ops import unary_union
 
 from hextraj import HexProj
+from hextraj.hex_analysis import hex_connectivity_dask
 ```
 
 ```python
-# Pattern: Fucus_BSH_YYYYMMDDTHHMMSS_{regime}_dt{N}min_seed{S}
-# surface_stokes must precede surface so the alternation matches the
-# longer form first. Multiple seeds for the same (release_time, regime) are
-# expected — independent reseeded resubmissions for sample-size
-# expansion — and aggregated additively on the n_obs counts.
+# Pattern: Fucus_BSH_YYYYMMDDTHHMMSS_{regime}_dt{N}min_seed{S}.
+# `surface_stokes` must precede `surface` so the alternation matches the
+# longer form first.
 _ZARR_STEM_RE = re.compile(
     r"^Fucus_BSH_(\d{8}T\d{6})_(surface_stokes|surface|bottom)_dt\d+min_seed\d+$"
 )
 
 
 def parse_zarr_stem(path):
-    """Parse a trajectory zarr filename into ``(release_time, regime)``.
-
-    Authoritative format (notebook 010):
-    ``Fucus_BSH_{YYYYMMDDTHHMMSS}_{regime}_dt{N}min_seed{S}.zarr``, where
-    ``{regime}`` is ``surface``, ``surface_stokes``, or ``bottom``.
-    """
-    path = Path(path)
-    m = _ZARR_STEM_RE.match(path.stem)
+    """Parse a trajectory zarr filename into ``(release_time, regime)``."""
+    m = _ZARR_STEM_RE.match(Path(path).stem)
     if m is None:
         raise ValueError(
-            f"zarr filename does not match expected pattern "
-            f"'Fucus_BSH_YYYYMMDDTHHMMSS_<regime>_…_seed<S>': {path.name!r}"
+            f"zarr filename does not match expected pattern: {Path(path).name!r}"
         )
     return pd.Timestamp(m.group(1)), m.group(2)
 ```
@@ -85,63 +65,44 @@ def parse_zarr_stem(path):
 # Parameters
 
 ```python tags=["parameters"]
-# Read root of the data twin (HELCOM polygons, Fucus shapefile, BSH
-# coastline + static H0/lonlat under bsh_hbmnoku_static/).
-data_root = "../data"
-# Read root of trajectory zarrs and write root for the hex-aggregate store.
+# Read root of trajectory zarrs and write root for the counts partition.
 output_root = "../output"
 
-# Hex radius (corner-to-centre distance) in metres. Sweep this via
-# papermill to build stores at multiple radii.
+# One (regime, release_year) per run.
+regime = "surface"
+release_year = 2019
+
+# Hex radius (must match an existing key file built by 024a).
 hex_radius = 6000
 
-# Age binning.
-age_bin_days = 10        # 22 bins × 10 d = 220 d of drift.
-output_dt_mins = 60      # zarr output cadence.
-
-# Dev scope: one release year to build.
-release_year = 2019
+# Age-bin granularity. The set of bins that show up emerges from the
+# zarrs — no upper cap; downstream consumers query by age at read time.
+age_bin_days = 10
+# Zarr output cadence.
+output_dt_mins = 60
 ```
 
-# Derived layout / projection
-
-Layout assumptions encoded by the path-construction below:
-
-- ``data_root/bsh_hbmnoku_static/static_file_<grid>/H0_file_<grid>.nc`` for ``grid in {fine, coarse}``
-- ``output_root/HexAggregates/r{hex_radius}m/`` — this run's store root
-- ``output_root/Trajectories/<regime>/<release_year>/*.zarr`` — one zarr per release date
-- ``counts/regime=<regime>/release_year=<release_year>/part.parquet`` — counts partition layout
-
-Projection: equal-area (LAEA) centred on the BSH domain centroid
-(midpoint of the coarse-grid bounding box, computed below from the H0
-files so the centre tracks the actual BSH grid extent).
+# Derived layout / key + projection
 
 ```python
-data_root = Path(data_root)
 output_root = Path(output_root)
 
-n_age_bins = 220 // age_bin_days   # 22
-max_age_bin = n_age_bins - 1        # 21 (bins 0..21)
-
-# Compute domain centroid from the coarse-grid H0 (full BSH extent).
-_h0_coarse = xr.open_dataset(
-    data_root / "bsh_hbmnoku_static/static_file_coarse/H0_file_coarse.nc"
+key_path = output_root / f"HexAgg_key_r{hex_radius}m.parquet"
+meta_path = key_path.with_suffix(".json")
+counts_path = (
+    output_root / f"HexAgg_counts_r{hex_radius}m_{regime}_{release_year}.parquet"
 )
-domain_lon_origin = float(0.5 * (_h0_coarse.lon.min() + _h0_coarse.lon.max()))
-domain_lat_origin = float(0.5 * (_h0_coarse.lat.min() + _h0_coarse.lat.max()))
-print(f"BSH domain centroid: lon={domain_lon_origin:.4f}, lat={domain_lat_origin:.4f}")
 
-dataset_root = output_root / "HexAggregates" / f"r{hex_radius}m"
-dataset_root.mkdir(parents=True, exist_ok=True)
-print(f"Store root: {dataset_root}")
-```
+if not key_path.exists() or not meta_path.exists():
+    raise FileNotFoundError(
+        f"Key file or sidecar missing — run 024a_BuildHexKey.md first.\n"
+        f"  expected: {key_path}\n  expected: {meta_path}"
+    )
 
-# Regime discovery
-
-```python
-trajectory_root = output_root / "Trajectories"
-regimes = sorted(p.name for p in trajectory_root.iterdir() if p.is_dir())
-print(f"Regimes: {regimes}")
+meta = json.loads(meta_path.read_text())
+hp = HexProj(**meta["hex_proj"])
+print(f"HexProj: {meta['hex_proj']}")
+print(f"counts → {counts_path}")
 ```
 
 # Dask cluster
@@ -159,361 +120,80 @@ else:
 client
 ```
 
-# Static inputs
-
-BSH wet-region polygons and Fucus shapefile are independent of the hex
-grid; load them once.
+# Trajectory zarrs → counts
 
 ```python
-wet_gdf = gpd.read_file(data_root / "bsh_hbmnoku_static/coastline.geojson")
-always_wet_gdf = gpd.read_file(
-    data_root / "bsh_hbmnoku_static/coastline_always_wet.geojson"
+zarrs = sorted(
+    (output_root / f"Trajectories/{regime}/{release_year}").glob("*.zarr")
 )
-wet_union = unary_union(wet_gdf.geometry)
-always_wet_union = unary_union(always_wet_gdf.geometry)
+parsed = [(p, *parse_zarr_stem(p)) for p in zarrs]
+for p, ts, fn_regime in parsed:
+    assert ts.year == release_year, (ts, release_year, p)
+    assert fn_regime == regime, (fn_regime, regime, p)
 
-fucus_gdf = (
-    gpd.read_file(data_root / "helcom_fucus_redlist/REDLIST_SIS_Macrophytes.shp")
-    .loc[lambda df: df.F_vesiculo != 0, ["geometry"]]
-    .to_crs(epsg=4326)
-)
-fucus_union_3035 = (
-    gpd.GeoSeries([unary_union(fucus_gdf.geometry)], crs=4326).to_crs(3035).iloc[0]
-)
-
-subbasins = (
-    gpd.read_file(
-        data_root / "helcom_subbasins_2022/HELCOM_subbasins_2022_level2.shp"
+if not parsed:
+    raise FileNotFoundError(
+        f"no zarrs at {output_root}/Trajectories/{regime}/{release_year}/"
     )
-    .to_crs(epsg=4326)
-    .rename(columns={"level_2": "subbasin"})
-    .reset_index(drop=True)
-)
-# Stable int8 lookup for the JSON metadata. -1 reserved for "outside".
-subbasin_name_to_id = {
-    str(name): int(i) for i, name in enumerate(subbasins["subbasin"].tolist())
-}
-subbasin_id_to_name = {-1: "_outside", **{i: n for n, i in subbasin_name_to_id.items()}}
-```
-
-# HexProj and BSH-domain hex set
-
-Build the projection once and label every fine+coarse H0 grid point to
-get the full BSH-domain hex set for this radius.
-
-```python
-hp = HexProj(
-    projection_name="laea",
-    lon_origin=domain_lon_origin,
-    lat_origin=domain_lat_origin,
-    hex_size_meters=hex_radius,
-)
-
-_domain_ids = set()
-for grid in ("fine", "coarse"):
-    h0 = xr.open_dataset(
-        data_root / f"bsh_hbmnoku_static/static_file_{grid}/H0_file_{grid}.nc"
-    )
-    lon2d, lat2d = np.meshgrid(h0.lon.values, h0.lat.values)
-    labels = hp.label(lon2d.ravel(), lat2d.ravel())
-    _domain_ids |= set(int(x) for x in labels if x >= 0)
-hex_ids = np.asarray(sorted(_domain_ids), dtype=np.int32)
-print(f"BSH-domain hexes at r={hex_radius} m: {len(hex_ids):,}")
-```
-
-# Key file
-
-Per-hex geometry and attributes (area, water area, mean depth, coast
-distance, Fucus area, HELCOM subbasin).
-
-```python
-hex_gdf = hp.to_geodataframe(hex_ids.tolist())
-# to_geodataframe returns a 1-col GeoDataFrame indexed by hex_id; realign.
-hex_gdf = hex_gdf.loc[hex_ids].reset_index().rename(columns={"index": "hex_id"})
-hex_gdf["hex_id"] = hex_gdf["hex_id"].astype(np.int32)
-hex_gdf = hex_gdf.set_crs(epsg=4326, allow_override=True)
-
-hex_gdf_3035 = hex_gdf.to_crs(epsg=3035)
-wet_union_3035 = gpd.GeoSeries([wet_union], crs=4326).to_crs(3035).iloc[0]
-always_wet_union_3035 = (
-    gpd.GeoSeries([always_wet_union], crs=4326).to_crs(3035).iloc[0]
-)
-
-hex_gdf["area_m2"] = hex_gdf_3035.geometry.area.astype(np.float32)
-hex_gdf["water_area_m2"] = hex_gdf_3035.geometry.intersection(
-    wet_union_3035
-).area.astype(np.float32)
-hex_gdf["fucus_area_m2"] = hex_gdf_3035.geometry.intersection(
-    fucus_union_3035
-).area.astype(np.float32)
+release_doys = sorted({int(ts.dayofyear) for _, ts, _ in parsed})
+print(f"{len(parsed)} zarrs, release_doys "
+      f"{release_doys[0]}..{release_doys[-1]} ({len(release_doys)} unique)")
 ```
 
 ```python
-def h0_hex_frame(grid, hp_, data_root_):
-    """H0 cells (lon, lat, H0 > 0) labelled by hex_id, tagged by grid."""
-    h0 = xr.open_dataset(
-        data_root_ / f"bsh_hbmnoku_static/static_file_{grid}/H0_file_{grid}.nc"
-    )
-    lon2d, lat2d = np.meshgrid(h0.lon.values, h0.lat.values)
-    flat = pd.DataFrame({
-        "lon": lon2d.ravel(),
-        "lat": lat2d.ravel(),
-        "H0": h0.H0.values.ravel(),
-    })
-    flat = flat[(flat.H0 > 0) & np.isfinite(flat.H0)]
-    flat["hex_id"] = hp_.label(flat.lon.values, flat.lat.values)
-    flat = flat[flat.hex_id >= 0]
-    flat["grid"] = grid
-    return flat[["hex_id", "grid", "H0"]]
-
-
-# Mean depth over always-wet cells (H0 > 0), fine-grid priority.
-h0_frame = pd.concat(
-    [h0_hex_frame("fine", hp, data_root), h0_hex_frame("coarse", hp, data_root)],
-    ignore_index=True,
-)
-hex_has_fine = set(h0_frame.loc[h0_frame.grid == "fine", "hex_id"].unique())
-mask = (h0_frame.grid == "fine") | (~h0_frame.hex_id.isin(hex_has_fine))
-mean_depth = h0_frame[mask].groupby("hex_id")["H0"].mean()
-hex_gdf["mean_depth_m"] = hex_gdf["hex_id"].map(mean_depth).astype(np.float32)
-n_depth_nan = hex_gdf["mean_depth_m"].isna().sum()
-print(f"hexes without H0 > 0 coverage (mean_depth_m NaN): {n_depth_nan}")
-
-# Distance from centroid to always-wet coast (m, in EPSG:3035).
-centroids_3035 = hex_gdf.geometry.centroid.to_crs(3035)
-coast_boundary_3035 = always_wet_union_3035.boundary
-hex_gdf["dist_to_coast_m"] = centroids_3035.distance(
-    coast_boundary_3035
-).astype(np.float32).values
-
-# HELCOM subbasin by centroid.
-centroids_pts = gpd.GeoDataFrame(
-    {"hex_id": hex_gdf["hex_id"].values},
-    geometry=hex_gdf.geometry.centroid,
-    crs=4326,
-)
-joined = gpd.sjoin(
-    centroids_pts,
-    subbasins[["geometry", "subbasin"]],
-    how="left", predicate="within",
-).drop_duplicates(subset="hex_id")
-hex_gdf["helcom_subbasin"] = (
-    joined.set_index("hex_id")
-    .reindex(hex_gdf["hex_id"].values)["subbasin"]
-    .map(subbasin_name_to_id)
-    .fillna(-1)
-    .astype(np.int8)
-    .values
-)
-
-# Serialise key.parquet as geoparquet with HexProj metadata.
-hex_proj_meta = {
-    "projection_name": "laea",
-    "lon_origin": domain_lon_origin,
-    "lat_origin": domain_lat_origin,
-    "hex_size_meters": hex_radius,
-}
-key_meta = {
-    "hex_proj": hex_proj_meta,
-    "area_crs": "EPSG:3035",
-    "subbasin_id_to_name": subbasin_id_to_name,
-}
-
-key_gdf = hex_gdf[["hex_id", "geometry", "area_m2", "water_area_m2",
-                    "fucus_area_m2", "mean_depth_m", "dist_to_coast_m",
-                    "helcom_subbasin"]].copy()
-
-key_path = dataset_root / "key.parquet"
-key_gdf.to_parquet(key_path)
-
-key_table = pq.read_table(key_path)
-existing_meta = key_table.schema.metadata or {}
-existing_meta[b"hex_aggregate_store"] = json.dumps(key_meta).encode("utf-8")
-key_table = key_table.replace_schema_metadata(existing_meta)
-pq.write_table(key_table, key_path, compression="zstd")
-print(f"wrote {key_path} ({key_path.stat().st_size / 1e6:.2f} MB)")
-```
-
-# Per-regime counts
-
-```python
-def zarr_to_lazy_frame(zarr_path, hp_, release_doy):
-    """Lazy (release_hex, age_bin, target_hex, release_doy) dask frame for one zarr.
-
-    Filtered to in-domain target hexes and to the configured age window.
-    """
-    ds = xr.open_zarr(zarr_path)
-    # First-step displacement of zero ⇒ trajectory was seeded on land.
-    ds = ds.where(~(
+def zarr_to_lazy_frame(path, release_doy):
+    """Lazy (release_hex, target_hex, age_bin, release_doy) frame for one zarr.
+    Land-seeded particles (zero first-step displacement) NaN out lon/lat and
+    surface as INVALID_HEX_ID (-1); kept as a sentinel in both hex columns."""
+    ds = xr.open_zarr(path)
+    seeded_on_land = (
         (ds.lon.diff("obs").isel(obs=0, drop=True) == 0)
         & (ds.lat.diff("obs").isel(obs=0, drop=True) == 0)
-    ))
-
-    target_hex = xr.apply_ufunc(
-        hp_.label, ds.lon, ds.lat,
-        dask="parallelized", output_dtypes=[np.int64],
     )
-    release_hex = xr.apply_ufunc(
-        hp_.label, ds.lon.isel(obs=0, drop=True), ds.lat.isel(obs=0, drop=True),
-        dask="parallelized", output_dtypes=[np.int64],
+    ds = ds[["lon", "lat"]].where(~seeded_on_land)
+
+    ddf = hex_connectivity_dask(ds, hp, traj_dim="trajectory").rename(
+        columns={"from_id": "release_hex", "to_id": "target_hex"}
     )
-
-    obs_ages_days = ds.obs.values * output_dt_mins / (60 * 24)
-    age_bin = (obs_ages_days // age_bin_days).astype(np.int32)
-    age_bin_da = xr.DataArray(age_bin, dims=["obs"])
-
-    frame = xr.Dataset({
-        "target_hex": target_hex,
-        "release_hex": release_hex,
-        "age_bin": age_bin_da,
-    }).to_dask_dataframe(dim_order=["trajectory", "obs"])
-    frame = frame[
-        (frame.target_hex >= 0) & (frame.age_bin >= 0) & (frame.age_bin <= max_age_bin)
-    ]
-    frame = frame.assign(release_doy=np.int16(release_doy))
-    return frame
+    ddf["age_bin"] = ddf["obs"] * output_dt_mins // (60 * 24) // age_bin_days
+    ddf["release_doy"] = release_doy
+    return ddf[["release_hex", "release_doy", "age_bin", "target_hex"]]
 
 
-def build_counts(regime, hp_, dataset_root_, hex_proj_meta_, rl_year):
-    # Glob existing zarrs only — NESH jobs sometimes fail, and a missing
-    # release date should reduce coverage, not abort the build.
-    matches = sorted(
-        (output_root / f"Trajectories/{regime}/{rl_year}").glob("*.zarr")
-    )
-    if not matches:
-        print(f"  no zarrs for {regime} {rl_year}, skipping")
-        return None
-
-    parsed = [(p, *parse_zarr_stem(p)) for p in matches]
-    for p, release_ts, fn_regime in parsed:
-        assert release_ts.year == rl_year, (release_ts, rl_year, p)
-        assert fn_regime == regime, (fn_regime, regime, p)
-    release_doys = sorted({int(release_ts.dayofyear) for _, release_ts, _ in parsed})
-    print(f"  {len(matches)} zarrs, release_doys: {release_doys[0]}..{release_doys[-1]} "
-          f"({len(release_doys)} unique)")
-
-    stages = {}
-    t0 = time.time()
-
-    per_zarr_frames = [
-        zarr_to_lazy_frame(p, hp_, release_ts.dayofyear)
-        for p, release_ts, _ in parsed
-    ]
-
-    t1 = time.time()
-    counts = (
-        dd.concat(per_zarr_frames)
-        .groupby(["release_hex", "age_bin", "target_hex", "release_doy"])
-        .size().rename("n_obs").reset_index().compute()
-    )
-    n_valid = int(counts["n_obs"].sum())
-    stages["compute_s"] = time.time() - t1
-
-    counts["release_hex"] = counts["release_hex"].astype(np.int32)
-    counts["target_hex"] = counts["target_hex"].astype(np.int32)
-    counts["age_bin"] = counts["age_bin"].astype(np.int8)
-    counts["release_doy"] = counts["release_doy"].astype(np.int16)
-    counts["n_obs"] = counts["n_obs"].astype(np.int32)
-
-    t2 = time.time()
-    part_dir = dataset_root_ / f"counts/regime={regime}/release_year={rl_year}"
-    part_dir.mkdir(parents=True, exist_ok=True)
-    part_path = part_dir / "part.parquet"
-    part_meta = {
-        "hex_proj": hex_proj_meta_,
-        "age_bin_days": age_bin_days,
-        "output_dt_mins": output_dt_mins,
-        "regime": regime,
-        "release_year": int(rl_year),
-    }
-    tbl = pa.Table.from_pandas(counts, preserve_index=False)
-    tbl = tbl.replace_schema_metadata({
-        b"hex_aggregate_store": json.dumps(part_meta).encode("utf-8"),
-    })
-    pq.write_table(tbl, part_path, compression="zstd")
-    stages["write_s"] = time.time() - t2
-    stages["total_s"] = time.time() - t0
-
-    return {
-        "regime": regime,
-        "n_zarrs": len(matches),
-        "release_doys": release_doys,
-        "n_valid": n_valid,
-        "counts": counts,
-        "part_path": part_path,
-        "stages": stages,
-    }
-
-
-results = {}
-for regime in regimes:
-    print(f"\n--- {regime} ---")
-    r = build_counts(regime, hp, dataset_root, hex_proj_meta, release_year)
-    if r is not None:
-        results[regime] = r
-        print(f"  {r['stages']}")
+t0 = time.time()
+counts = (
+    dd.concat([zarr_to_lazy_frame(p, ts.dayofyear) for p, ts, _ in parsed])
+    .groupby(["release_hex", "release_doy", "age_bin", "target_hex"])
+    .size().rename("n_obs").reset_index()
+    .compute()
+)
+print(f"computed {len(counts):,} rows in {time.time() - t0:.1f}s")
 ```
 
-# Summary
-
 ```python
-summary_rows = []
-for regime, r in results.items():
-    summary_rows.append({
-        "regime": regime,
-        "n_zarrs": r["n_zarrs"],
-        "n_release_doys": len(r["release_doys"]),
-        "rows": len(r["counts"]),
-        "sum_n_obs": int(r["counts"]["n_obs"].sum()),
-        "part_size_mb": r["part_path"].stat().st_size / 1e6,
-    })
-summary_df = pd.DataFrame(summary_rows).set_index("regime")
-print(f"key hexes: {len(key_gdf):,}")
-print(f"key.parquet size: {key_path.stat().st_size / 1e6:.2f} MB")
-summary_df
+counts.to_parquet(counts_path)
+print(f"wrote {counts_path} ({counts_path.stat().st_size / 1e6:.2f} MB)")
 ```
 
 # Validation
 
-## Key-completeness invariant
-
-Every `release_hex` and `target_hex` in the counts must be in
-`key.parquet`. Any violation is a data integrity bug.
-
 ```python
-key_ids = set(int(x) for x in key_gdf["hex_id"].values)
-for regime, r in results.items():
-    unseen = (
-        set(int(x) for x in r["counts"]["release_hex"].values)
-        | set(int(x) for x in r["counts"]["target_hex"].values)
-    ) - key_ids
-    assert not unseen, (regime, sorted(unseen))
-print(f"PASS [r{hex_radius}m]: every release_hex and target_hex is in key.parquet.")
+key_ids = set(pd.read_parquet(key_path, columns=["hex_id"])["hex_id"].astype(int))
+seen = (
+    set(counts["release_hex"].astype(int))
+    | set(counts["target_hex"].astype(int))
+)
+unseen = seen - key_ids - {-1}  # -1 is the INVALID_HEX_ID sentinel.
+assert not unseen, f"hex_ids missing from key.parquet: {sorted(unseen)[:10]} ..."
+print(f"PASS: every release_hex/target_hex is in {key_path.name} (or -1).")
 ```
 
-## Conservation cross-check
-
-`n_valid` is the count of all obs passing age/hex filters; it must
-equal `sum(n_obs)` in the stored counts (no domain filter is applied
-in the single-domain build).
-
 ```python
-for regime, r in results.items():
-    n_valid = r["n_valid"]
-    n_stored = int(r["counts"]["n_obs"].sum())
-    print(f"[{regime}] n_valid={n_valid:,}  stored sum(n_obs)={n_stored:,}")
-    assert n_valid == n_stored, (regime, n_valid, n_stored)
-```
-
-## Output sizes
-
-```python
-total_bytes = key_path.stat().st_size
-print(f"{'key.parquet':<60s} {key_path.stat().st_size/1e6:>9.2f} MB")
-for regime, r in results.items():
-    size = r["part_path"].stat().st_size
-    total_bytes += size
-    label = f"counts/regime={regime}/release_year={release_year}"
-    print(f"{label:<60s} {size/1e6:>9.2f} MB")
-print(f"{'TOTAL':<60s} {total_bytes/1e6:>9.2f} MB")
+print(f"regime={regime}, release_year={release_year}, hex_radius={hex_radius} m")
+print(f"  rows:           {len(counts):,}")
+print(f"  sum(n_obs):     {int(counts['n_obs'].sum()):,}")
+print(f"  release_doys:   {counts['release_doy'].nunique()} "
+      f"({counts['release_doy'].min()}..{counts['release_doy'].max()})")
+print(f"  unique target:  {counts['target_hex'].nunique():,}")
+print(f"  age_bins used:  {counts['age_bin'].min()}..{counts['age_bin'].max()}")
 ```
