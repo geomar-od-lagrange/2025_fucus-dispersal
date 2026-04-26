@@ -4,7 +4,7 @@ The store splits across two notebooks. The key file is shared by every
 counts file at the same `hex_radius`.
 
 ```
-output_root/
+output_root/HexAggregates/
   HexAgg_key_r<radius>m.parquet         (notebook 024a — once per radius)
   HexAgg_key_r<radius>m.json            ( ditto, sidecar metadata     )
   HexAgg_counts_r<radius>m_<regime>_<year>.parquet

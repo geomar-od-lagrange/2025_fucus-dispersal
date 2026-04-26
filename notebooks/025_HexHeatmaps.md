@@ -78,17 +78,18 @@ de_panel_height_in = 4.5
 
 # Path construction and parquet reads
 
-Layout: flat files under ``output_root`` —
+Layout: flat files under ``output_root/HexAggregates/`` —
 ``HexAgg_key_r<radius>m.parquet`` (+ ``.json`` sidecar) and
 ``HexAgg_counts_r<radius>m_<regime>_<year>.parquet``.
 
 ```python
 data_root = Path(data_root)
 output_root = Path(output_root)
+store_root = output_root / "HexAggregates"
 
-key_path = output_root / f"HexAgg_key_r{hex_radius}m.parquet"
+key_path = store_root / f"HexAgg_key_r{hex_radius}m.parquet"
 counts_path = (
-    output_root / f"HexAgg_counts_r{hex_radius}m_{regime}_{release_year}.parquet"
+    store_root / f"HexAgg_counts_r{hex_radius}m_{regime}_{release_year}.parquet"
 )
 
 key = gpd.read_parquet(key_path)

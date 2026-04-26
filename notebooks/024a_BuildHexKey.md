@@ -56,9 +56,10 @@ hex_radius = 6000
 ```python
 data_root = Path(data_root)
 output_root = Path(output_root)
-output_root.mkdir(parents=True, exist_ok=True)
+store_root = output_root / "HexAggregates"
+store_root.mkdir(parents=True, exist_ok=True)
 
-key_path = output_root / f"HexAgg_key_r{hex_radius}m.parquet"
+key_path = store_root / f"HexAgg_key_r{hex_radius}m.parquet"
 meta_path = key_path.with_suffix(".json")
 print(f"key:  {key_path}")
 print(f"meta: {meta_path}")

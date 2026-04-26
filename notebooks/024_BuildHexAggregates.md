@@ -86,11 +86,13 @@ output_dt_mins = 60
 
 ```python
 output_root = Path(output_root)
+store_root = output_root / "HexAggregates"
+store_root.mkdir(parents=True, exist_ok=True)
 
-key_path = output_root / f"HexAgg_key_r{hex_radius}m.parquet"
+key_path = store_root / f"HexAgg_key_r{hex_radius}m.parquet"
 meta_path = key_path.with_suffix(".json")
 counts_path = (
-    output_root / f"HexAgg_counts_r{hex_radius}m_{regime}_{release_year}.parquet"
+    store_root / f"HexAgg_counts_r{hex_radius}m_{regime}_{release_year}.parquet"
 )
 
 if not key_path.exists() or not meta_path.exists():
