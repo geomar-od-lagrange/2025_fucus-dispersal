@@ -93,7 +93,9 @@ counts_path = (
 )
 
 key = gpd.read_parquet(key_path)
-counts = pd.read_parquet(counts_path)
+# reset_index because dd.compute() concatenates per-partition RangeIndexes,
+# leaving duplicate labels that break label-aligned ops like pd.crosstab.
+counts = pd.read_parquet(counts_path).reset_index(drop=True)
 
 key_meta = json.loads(key_path.with_suffix(".json").read_text())
 subbasin_id_to_name = {int(k): v for k, v in key_meta["subbasin_id_to_name"].items()}

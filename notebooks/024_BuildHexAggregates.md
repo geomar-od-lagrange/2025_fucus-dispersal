@@ -168,6 +168,7 @@ counts = (
     .groupby(["release_hex", "release_doy", "age_bin", "target_hex"])
     .size().rename("n_obs").reset_index()
     .compute()
+    .reset_index(drop=True)  # collapse the per-partition RangeIndex stack
 )
 print(f"computed {len(counts):,} rows in {time.time() - t0:.1f}s")
 ```
