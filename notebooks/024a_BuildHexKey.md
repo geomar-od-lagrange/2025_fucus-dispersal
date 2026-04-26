@@ -180,8 +180,10 @@ mean_depth = (
     .combine_first(h0_coarse_frame.groupby("hex_id")["H0"].mean())
 )
 
-lon_step = float(h0_coarse.lon.diff("lon").max())
-lat_step = float(h0_coarse.lat.diff("lat").max())
+# abs() because `lat` is stored descending — `diff().max()` is negative
+# in that case and would shrink the bbox instead of padding it.
+lon_step = abs(float(h0_coarse.lon.diff("lon").mean()))
+lat_step = abs(float(h0_coarse.lat.diff("lat").mean()))
 hex_ids = hp.rectangle_of_hexes(
     float(h0_coarse.lon.min()) - lon_step,
     float(h0_coarse.lon.max()) + lon_step,
