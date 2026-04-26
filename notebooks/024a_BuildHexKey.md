@@ -127,14 +127,14 @@ hp = HexProj(
 The coastline geojsons store fine and coarse staircase polygons in the
 same file with overlap in the German Bight. A plain `unary_union` over
 both wets pixels that fine resolves as land. The right merge is
-`fine_polys ∪ (coarse_polys \ fine_footprint)`, where `fine_footprint`
+`fine_polys ∪ (coarse_polys \ fine_bbox)`, where `fine_bbox`
 is the H0-fine bbox padded by half a fine cell so all fine cells fall
 inside.
 
 ```python
 fine_lon_pad = abs(float(h0_fine.lon.diff("lon").mean())) / 2
 fine_lat_pad = abs(float(h0_fine.lat.diff("lat").mean())) / 2
-fine_footprint = box(
+fine_bbox = box(
     float(h0_fine.lon.min()) - fine_lon_pad,
     float(h0_fine.lat.min()) - fine_lat_pad,
     float(h0_fine.lon.max()) + fine_lon_pad,
@@ -145,7 +145,7 @@ fine_footprint = box(
 def fine_first_union(gdf):
     fine = unary_union(gdf.loc[gdf["grid"] == "fine", "geometry"].tolist())
     coarse = unary_union(gdf.loc[gdf["grid"] == "coarse", "geometry"].tolist())
-    return unary_union([fine, coarse.difference(fine_footprint)])
+    return unary_union([fine, coarse.difference(fine_bbox)])
 
 
 wet_union_3035 = (

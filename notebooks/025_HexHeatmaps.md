@@ -103,10 +103,9 @@ subbasin_id_to_name = {int(k): v for k, v in key_meta["subbasin_id_to_name"].ite
 print(f"key: {len(key):,} hexes")
 print(f"counts: {len(counts):,} rows")
 
-# sum(n_obs) by (release, target) validity. Land-seeded trajectories
-# NaN out lon/lat for every obs, so they all belong in (-1, -1).
-# Valid trajectories never leave the BSH domain, so they all belong in
-# (valid, valid). Off-diagonal ⇒ a 024 bug or a Parcels escape.
+# sum(n_obs) by (release, target) validity. -1 is the INVALID_HEX_ID
+# sentinel for land-seeded particles and obs with NaN lon/lat (e.g.
+# trajectories that exited the BSH domain mid-run, see 024).
 quadrant = pd.crosstab(
     np.where(counts.release_hex >= 0, "valid", "-1"),
     np.where(counts.target_hex  >= 0, "valid", "-1"),
@@ -115,11 +114,8 @@ quadrant = pd.crosstab(
 ).fillna(0).astype(int).reindex(
     index=["-1", "valid"], columns=["-1", "valid"], fill_value=0,
 )
-print("sum(n_obs) by validity quadrant (off-diagonal expected 0):")
+print("sum(n_obs) by (release, target) validity:")
 print(quadrant)
-cross = quadrant.loc["-1", "valid"] + quadrant.loc["valid", "-1"]
-if cross > 0:
-    print(f"WARNING: {cross:,} obs in -1 ↔ valid quadrants (expected 0)")
 ```
 
 # Rendering helpers
