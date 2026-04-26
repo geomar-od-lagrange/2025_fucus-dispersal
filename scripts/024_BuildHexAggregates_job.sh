@@ -23,8 +23,6 @@ year="${1:-2019}"
 
 repo_root=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
-# Full BSH store on NESH (provides H0 for the hex key; not the bsh_hbmnoku_demo subset).
-bsh_root=/gxfs_work/geomar/smomw400/bsh_operationalmodel_data
 
 export SCHEDULER_FILE=${repo_root}/.scheduler_${SLURM_JOB_ID}.json
 
@@ -56,7 +54,6 @@ ${SRUN_STEP} pixi run papermill --cwd notebooks/ \
     notebooks_executed/Visualisations/024_BuildHexAggregates_${year}.ipynb \
     -p data_root ${repo_root}/data \
     -p output_root ${output_root} \
-    -p bsh_root ${bsh_root} \
     -p release_year ${year} \
     -k python &
 PAPERMILL_PID=$!

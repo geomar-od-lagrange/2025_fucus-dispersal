@@ -84,14 +84,11 @@ def parse_zarr_stem(path):
 # Parameters
 
 ```python tags=["parameters"]
-# Read root of the data twin (HELCOM polygons, Fucus shapefile, BSH coastline).
+# Read root of the data twin (HELCOM polygons, Fucus shapefile, BSH
+# coastline + static H0/lonlat under bsh_hbmnoku_static/).
 data_root = "../data"
 # Read root of trajectory zarrs and write root for the hex-aggregate store.
 output_root = "../output"
-# Read root of BSH H0 / static inputs (defines the hex domain). Demo
-# default points at the twin's static subset; NESH runs override to the
-# full BSH store.
-bsh_root = "../data/bsh_hbmnoku_static"
 
 # Hex radius (corner-to-centre distance) in metres. Sweep this via
 # papermill to build stores at multiple radii.
@@ -109,7 +106,7 @@ release_year = 2019
 
 Layout assumptions encoded by the path-construction below:
 
-- ``bsh_root/static_file_<grid>/H0_file_<grid>.nc`` for ``grid in {fine, coarse}``
+- ``data_root/bsh_hbmnoku_static/static_file_<grid>/H0_file_<grid>.nc`` for ``grid in {fine, coarse}``
 - ``output_root/HexAggregates/r{hex_radius}m/`` — this run's store root
 - ``output_root/Trajectories/<regime>/<release_year>/*.zarr`` — one zarr per release date
 - ``counts/regime=<regime>/release_year=<release_year>/part.parquet`` — counts partition layout
@@ -121,13 +118,14 @@ files so the centre tracks the actual BSH grid extent).
 ```python
 data_root = Path(data_root)
 output_root = Path(output_root)
-bsh_root = Path(bsh_root)
 
 n_age_bins = 220 // age_bin_days   # 22
 max_age_bin = n_age_bins - 1        # 21 (bins 0..21)
 
 # Compute domain centroid from the coarse-grid H0 (full BSH extent).
-_h0_coarse = xr.open_dataset(bsh_root / "static_file_coarse/H0_file_coarse.nc")
+_h0_coarse = xr.open_dataset(
+    data_root / "bsh_hbmnoku_static/static_file_coarse/H0_file_coarse.nc"
+)
 domain_lon_origin = float(0.5 * (_h0_coarse.lon.min() + _h0_coarse.lon.max()))
 domain_lat_origin = float(0.5 * (_h0_coarse.lat.min() + _h0_coarse.lat.max()))
 print(f"BSH domain centroid: lon={domain_lon_origin:.4f}, lat={domain_lat_origin:.4f}")
@@ -212,7 +210,9 @@ hp = HexProj(
 
 _domain_ids = set()
 for grid in ("fine", "coarse"):
-    h0 = xr.open_dataset(bsh_root / f"static_file_{grid}/H0_file_{grid}.nc")
+    h0 = xr.open_dataset(
+        data_root / f"bsh_hbmnoku_static/static_file_{grid}/H0_file_{grid}.nc"
+    )
     lon2d, lat2d = np.meshgrid(h0.lon.values, h0.lat.values)
     labels = hp.label(lon2d.ravel(), lat2d.ravel())
     _domain_ids |= set(int(x) for x in labels if x >= 0)
@@ -248,9 +248,11 @@ hex_gdf["fucus_area_m2"] = hex_gdf_3035.geometry.intersection(
 ```
 
 ```python
-def h0_hex_frame(grid, hp_, bsh_root_):
+def h0_hex_frame(grid, hp_, data_root_):
     """H0 cells (lon, lat, H0 > 0) labelled by hex_id, tagged by grid."""
-    h0 = xr.open_dataset(bsh_root_ / f"static_file_{grid}/H0_file_{grid}.nc")
+    h0 = xr.open_dataset(
+        data_root_ / f"bsh_hbmnoku_static/static_file_{grid}/H0_file_{grid}.nc"
+    )
     lon2d, lat2d = np.meshgrid(h0.lon.values, h0.lat.values)
     flat = pd.DataFrame({
         "lon": lon2d.ravel(),
@@ -266,7 +268,7 @@ def h0_hex_frame(grid, hp_, bsh_root_):
 
 # Mean depth over always-wet cells (H0 > 0), fine-grid priority.
 h0_frame = pd.concat(
-    [h0_hex_frame("fine", hp, bsh_root), h0_hex_frame("coarse", hp, bsh_root)],
+    [h0_hex_frame("fine", hp, data_root), h0_hex_frame("coarse", hp, data_root)],
     ignore_index=True,
 )
 hex_has_fine = set(h0_frame.loc[h0_frame.grid == "fine", "hex_id"].unique())

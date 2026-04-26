@@ -87,7 +87,7 @@ set-difference check.
 
 Key file derives from:
 
-- BSH H0 statics (`bsh_root/static_file_{fine,coarse}/H0_file_*.nc`)
+- BSH H0 statics (`data/bsh_hbmnoku_static/static_file_{fine,coarse}/H0_file_*.nc`)
 - BSH wet-cell coastline geojsons under `data/bsh_hbmnoku_static/`
   (produced by `notebooks/004_extract_coastline.py`)
 - HELCOM subbasins shapefile (`HELCOM_subbasins_2022_level2.shp`)
