@@ -8,6 +8,10 @@ description: Create, update, sync, and execute jupytext-managed notebooks. Use w
 Notebooks are paired `.md` + `.ipynb` via jupytext. The `.md` file is the
 source of truth — always edit the `.md`, never the `.ipynb` directly.
 
+**Committed `.ipynb` files carry code only, no cell outputs.** Production
+runs with rendered figures live under `notebooks_executed/` (cluster
+papermill output) and are not under `notebooks/`.
+
 ## Creating a new notebook
 
 1. Write the `.md` file with **only** markdown text and fenced `python` code
@@ -31,19 +35,36 @@ source of truth — always edit the `.md`, never the `.ipynb` directly.
 2. Pair: `jupytext --set-kernel KERNEL --set-formats md,ipynb foo.md`
    — this adds the YAML frontmatter to `foo.md` and creates the paired
    `.ipynb`.
-3. Sync and execute: `jupytext --sync --execute foo.md`
+3. Sync (no execution): `jupytext --sync foo.md`
 
 Check available kernels with `jupyter kernelspec list`. Common values:
 `python3`, `conda-env-XXX-py`, or a custom name.
 
-## Executing an existing notebook
+## Updating an existing notebook
+
+Edit the `.md`, then sync code-only (the standard workflow):
+
+```sh
+jupytext --sync foo.md
+```
+
+This propagates the code from `.md` → `.ipynb` without running any cells.
+Commit both files.
+
+## Executing locally (testing only)
+
+If you need to verify a notebook runs end-to-end before committing:
 
 ```sh
 jupytext --sync --execute foo.md
+jupyter nbconvert --clear-output --inplace foo.ipynb   # strip outputs
 ```
 
-This syncs `.md` → `.ipynb`, executes all cells, saves outputs to `.ipynb`,
-and syncs timestamps back. One command, no intermediate steps.
+The clear-output step is mandatory before committing — committed
+notebooks under `notebooks/` are code-only. Production execution
+happens on the cluster via the `scripts/0XX_*_job.sh` SLURM scripts,
+which write executed copies into `notebooks_executed/Visualisations/`
+via papermill.
 
 Run from the notebook's directory so relative paths resolve correctly.
 Prefix with the project's environment manager if needed (e.g. `pixi run`).
@@ -51,14 +72,13 @@ Prefix with the project's environment manager if needed (e.g. `pixi run`).
 ## Fixing a broken notebook
 
 1. Read the `.md` to understand the code (not the `.ipynb` — it may have
-   stale outputs or error markers).
+   stale outputs or error markers from a prior local execution).
 2. Fix the code in the `.md`.
 3. Delete the `.ipynb` and regenerate cleanly:
 
 ```sh
 rm foo.ipynb
-jupytext --sync foo.md            # recreates .ipynb from .md
-jupytext --sync --execute foo.md  # execute
+jupytext --sync foo.md            # recreates .ipynb from .md, no outputs
 ```
 
 Deleting the `.ipynb` first avoids stale artifacts (papermill error spans,
@@ -77,15 +97,17 @@ newer when you sync. If the `.ipynb` is newer (e.g. after a manual
 execution or a failed papermill run), jupytext syncs `.ipynb` → `.md` and
 may overwrite your tags. Fix: delete the `.ipynb` and regenerate from `.md`.
 
-When using papermill for parameter injection, sync from `.md` first:
+When using papermill for parameter injection (cluster runs, parameter
+sweeps), sync from `.md` first:
 
 ```sh
 jupytext --sync foo.md
-papermill foo.ipynb foo.ipynb -p x 2.0
+papermill foo.ipynb notebooks_executed/.../foo_params.ipynb -p x 2.0
 ```
 
-Don't reach for papermill by default. `jupytext --sync --execute` is the
-standard workflow.
+Write papermill output under `notebooks_executed/` — never overwrite
+the source `.ipynb` under `notebooks/`, or you'll commit a notebook
+with rendered figures.
 
 ## Cleaning `<!-- #region tags=[] -->` markers from .md
 

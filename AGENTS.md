@@ -81,7 +81,7 @@ prefix every invocation with `pixi run`.
 
 **Shell.** Always work from the repo root. Don't `cd` into subdirectories
 between commands — pass relative paths to tools (e.g.
-`pixi run jupytext --sync --execute notebooks/foo.md`) or use a subshell
+`pixi run jupytext --sync notebooks/foo.md`) or use a subshell
 `(cd notebooks && ...)` for one-off needs. Don't pass `-C <path>` to
 `git` for ordinary repo-root operations; it already operates on the cwd.
 
@@ -212,10 +212,14 @@ parameters cell, not the filename.
 `../output/...`) resolve against the notebook's directory.
 
 - The `.md` is the source of truth — always edit it, never the `.ipynb`.
-  Commit **both** the `.md` and the freshly-executed `.ipynb` so rendered
-  figures show on GitHub. Execute with
-  `pixi run jupytext --sync --execute <nb>.md`. Papermill only for parameter
-  injection or when streaming progress matters. Do not use
+  Commit **both** the `.md` and the synced-but-unexecuted `.ipynb` (code
+  only, no cell outputs). Sync with `pixi run jupytext --sync <nb>.md`;
+  if you executed locally, strip outputs before committing
+  (`pixi run jupyter nbconvert --clear-output --inplace <nb>.ipynb`).
+  Executed copies with rendered figures live under
+  `notebooks_executed/`, written by papermill on the cluster — do not
+  commit executed `.ipynb` files into `notebooks/`. Papermill only for
+  parameter injection or when streaming progress matters. Do not use
   `jupyter nbconvert --execute`.
 - When using **papermill** from the repo root, always pass `--cwd notebooks/`
   so relative paths in the notebook resolve against the notebook's
