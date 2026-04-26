@@ -1,6 +1,9 @@
-> **Done.** Implemented state is documented in
-> [../../docs/bundle_and_layout.md](../../docs/bundle_and_layout.md).
-> This file is retained as the historical plan record.
+> **Done.** Outcomes folded into the per-topic docs
+> ([seeding](../../docs/seeding.md),
+> [hexbinning_and_connectivity](../../docs/hexbinning_and_connectivity.md),
+> [2d_field_extraction](../../docs/2d_field_extraction.md));
+> the standalone `docs/bundle_and_layout.md` was dropped per
+> `plans/wrapup.md §6`. This file is retained as the historical plan record.
 
 # Public-repo refactor: data bundle + NESH output layout + code cleanups
 

@@ -1,4 +1,4 @@
-> Implemented as [../docs/h0_semantics.md](../docs/h0_semantics.md). Original plan retained as historical record.
+> Implemented as [../../docs/h0_semantics.md](../../docs/h0_semantics.md). Original plan retained as historical record.
 
 # AGENTS.md
 

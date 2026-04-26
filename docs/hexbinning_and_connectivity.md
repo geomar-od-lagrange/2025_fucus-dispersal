@@ -105,13 +105,44 @@ papermill sweeps of 024a (key) and 024 (counts).
 
 ## Domain coverage
 
-The key file covers every hex `hp.label` can ever assign within the
-BSH lat/lon extent (built from the union of fine + coarse H0 cells
-with `H0 > 0`, fine-grid priority for `mean_depth_m`). A trajectory
-cannot escape the BSH grid, so every `release_hex`/`target_hex` is
-pre-populated. Counts therefore assert a hard key-completeness
-invariant (every counts hex_id is in the key) as a one-line
-set-difference check.
+The key file enumerates every hex intersecting the BSH coarse-grid
+bbox padded by one coarse cell on each side
+(`hp.rectangle_of_hexes(...)`). Sampling the H0 grid points directly
+under-counts: trajectories use bilinear-interpolated currents and can
+land in hexes between H0 grid points, especially in coastal pockets
+and along the periphery of the coarse grid. The bbox+margin scheme
+gives the union of "every hex a particle could plausibly visit while
+inside the BSH model".
+
+`mean_depth_m` is then attached only to hexes that *do* contain at
+least one wet H0 cell (mean over `H0 > 0` cells inside the hex, fine
+grid priority via `combine_first`); other hexes carry NaN. So
+`(hexes with H0 coverage) ⊆ (hexes in key)` — the key is broader than
+H0 coverage by design.
+
+Counts validation is a soft check: the build prints a warning if any
+counts `hex_id` falls outside the key (parcels can drift into hexes
+beyond the bbox+margin via Stokes or numerical excursions), but does
+not abort. Counts files preserve the original `hex_id` regardless.
+
+## Coastline merge (fine-precedes-coarse)
+
+`water_area_m2` and `dist_to_coast_m` come from per-hex intersections
+with the merged BSH wet polygon. The two coastline geojsons store
+fine and coarse staircase polygons in the same file with overlap in
+the German Bight, so a plain `unary_union` would wet pixels that fine
+resolves as land. The merge is
+
+```
+merged = fine_polys ∪ (coarse_polys \ fine_bbox)
+```
+
+where `fine_bbox` is the H0-fine bbox padded by half a fine cell.
+Coarse is clipped to coarse-only territory before union, so fine has
+sole authority inside its bbox and coarse fills the rest. The two
+sides are spatially disjoint by construction, so the union dissolves
+their shared edge along `fine_bbox` and double-counting is impossible
+regardless of who claims wet/dry where they overlap.
 
 ## Source data and provenance
 
