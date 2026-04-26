@@ -32,6 +32,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import xarray as xr
+from shapely.geometry import box
 from shapely.ops import unary_union
 
 from hextraj import HexProj
@@ -72,12 +73,6 @@ wet_gdf = gpd.read_file(data_root / "bsh_hbmnoku_static/coastline.geojson")
 always_wet_gdf = gpd.read_file(
     data_root / "bsh_hbmnoku_static/coastline_always_wet.geojson"
 )
-wet_union_3035 = (
-    gpd.GeoSeries([unary_union(wet_gdf.geometry)], crs=4326).to_crs(3035).iloc[0]
-)
-always_wet_union_3035 = (
-    gpd.GeoSeries([unary_union(always_wet_gdf.geometry)], crs=4326).to_crs(3035).iloc[0]
-)
 
 fucus_union_3035 = (
     gpd.read_file(data_root / "helcom_fucus_redlist/REDLIST_SIS_Macrophytes.shp")
@@ -101,9 +96,12 @@ subbasin_id_to_name = {-1: "_outside", **{i: n for n, i in subbasin_name_to_id.i
 
 # HexProj and BSH-domain hex set
 
-Domain centroid from the coarse-grid H0; label every fine+coarse H0
-grid point to enumerate every hex `hp.label` can ever assign within the
-BSH lat/lon extent.
+Domain centroid from the coarse-grid H0. The hex domain is every hex
+intersecting the coarse-grid bbox padded by one coarse cell on each
+side — broader than the H0-cell pass because trajectories sample at
+sub-grid positions and can visit hexes that contain no H0 point (yet
+still have water in the wet polygon). H0 is then attached as a per-hex
+mean depth where available, NaN elsewhere.
 
 ```python
 h0_coarse = xr.open_dataset(
@@ -121,6 +119,40 @@ hp = HexProj(
     lon_origin=domain_lon_origin,
     lat_origin=domain_lat_origin,
     hex_size_meters=hex_radius,
+)
+```
+
+# Fine-precedes-coarse coastline merge
+
+The coastline geojsons store fine and coarse staircase polygons in the
+same file with overlap in the German Bight. A plain `unary_union` over
+both wets pixels that fine resolves as land. The right merge is
+`fine_polys ∪ (coarse_polys \ fine_footprint)`, where `fine_footprint`
+is the H0-fine bbox padded by half a fine cell so all fine cells fall
+inside.
+
+```python
+fine_lon_pad = abs(float(h0_fine.lon.diff("lon").mean())) / 2
+fine_lat_pad = abs(float(h0_fine.lat.diff("lat").mean())) / 2
+fine_footprint = box(
+    float(h0_fine.lon.min()) - fine_lon_pad,
+    float(h0_fine.lat.min()) - fine_lat_pad,
+    float(h0_fine.lon.max()) + fine_lon_pad,
+    float(h0_fine.lat.max()) + fine_lat_pad,
+)
+
+
+def fine_first_union(gdf):
+    fine = unary_union(gdf.loc[gdf["grid"] == "fine", "geometry"].tolist())
+    coarse = unary_union(gdf.loc[gdf["grid"] == "coarse", "geometry"].tolist())
+    return unary_union([fine, coarse.difference(fine_footprint)])
+
+
+wet_union_3035 = (
+    gpd.GeoSeries([fine_first_union(wet_gdf)], crs=4326).to_crs(3035).iloc[0]
+)
+always_wet_union_3035 = (
+    gpd.GeoSeries([fine_first_union(always_wet_gdf)], crs=4326).to_crs(3035).iloc[0]
 )
 ```
 
@@ -142,12 +174,20 @@ h0_fine_frame = h0_frame(h0_fine, "fine")
 h0_coarse_frame = h0_frame(h0_coarse, "coarse")
 
 # Mean depth, fine-grid priority: combine_first fills coarse where fine
-# is absent. The hex domain is the union of both.
+# is absent. NaN for hexes without H0 coverage.
 mean_depth = (
     h0_fine_frame.groupby("hex_id")["H0"].mean()
     .combine_first(h0_coarse_frame.groupby("hex_id")["H0"].mean())
 )
-hex_ids = mean_depth.index.to_numpy(dtype=np.int32)
+
+lon_step = float(h0_coarse.lon.diff("lon").max())
+lat_step = float(h0_coarse.lat.diff("lat").max())
+hex_ids = hp.rectangle_of_hexes(
+    float(h0_coarse.lon.min()) - lon_step,
+    float(h0_coarse.lon.max()) + lon_step,
+    float(h0_coarse.lat.min()) - lat_step,
+    float(h0_coarse.lat.max()) + lat_step,
+).astype(np.int32)
 print(f"BSH-domain hexes at r={hex_radius} m: {len(hex_ids):,}")
 ```
 
