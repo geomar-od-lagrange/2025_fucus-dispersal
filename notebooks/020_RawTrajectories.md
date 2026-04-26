@@ -151,18 +151,19 @@ cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 regime_color = {r: cycle[i] for i, r in enumerate(regimes)}
 
 regime_dsets = {}
+regime_meta = {}
 for regime in regimes:
     zarr_files = sorted((trajectory_root / regime).glob("**/*.zarr"))
     print(f"{regime}: {len(zarr_files)} trajectory files")
-    ds = xr.concat([xr.open_zarr(z) for z in zarr_files], dim="trajectory")
-    # First-step displacement of zero ⇒ trajectory was seeded on land.
-    ds = ds.where(~(
-        (ds.lon.diff("obs").isel(obs=0, drop=True) == 0)
-        & (ds.lat.diff("obs").isel(obs=0, drop=True) == 0)
-    ))
+    ds = xr.concat(
+        [xr.open_zarr(z) for z in zarr_files], dim="trajectory"
+    )[["lon", "lat", "time"]]
     ds = ds.assign(release_quarter=ds.time.isel(obs=0, drop=True).dt.quarter)
     ds = assign_release_subbasin(ds, subbasins)
     regime_dsets[regime] = ds
+    # Materialise (trajectory,)-only metadata once per regime; reused by
+    # every panel filter below as a plain pandas/numpy comparison.
+    regime_meta[regime] = ds[["subbasin", "release_quarter"]].compute()
 ```
 
 # Map extents and aspects
@@ -191,9 +192,17 @@ ncols = 4
 nrows = int(np.ceil(len(subbasins) / ncols))
 for regime in regimes:
     ds = regime_dsets[regime]
-    # subbasin is a (trajectory,)-shaped coord — small, materialise once
-    # per regime so the per-panel filter is a numpy comparison.
-    subbasin_np = ds.subbasin.compute().values
+    subbasin_np = regime_meta[regime].subbasin.values
+    panel_idx = {}
+    for basin in subbasins["subbasin"].tolist():
+        avail = np.flatnonzero(subbasin_np == basin)
+        panel_idx[basin] = rng.choice(
+            avail, size=min(n_traj_subset, avail.size), replace=False
+        )
+    # Single fancy isel + compute per regime: union of all panel picks,
+    # sorted/unique so dask `take` collapses to the minimal chunk set.
+    union = np.unique(np.concatenate(list(panel_idx.values())))
+    ds_small = ds[["lon", "lat"]].isel(trajectory=union).compute()
     fig, axes = plt.subplots(
         nrows=nrows, ncols=ncols,
         figsize=(baltic_panel_height_in * baltic_aspect * ncols, baltic_panel_height_in * nrows),
@@ -201,14 +210,14 @@ for regime in regimes:
         subplot_kw=dict(projection=ccrs.PlateCarree()),
     )
     for ax, basin in zip(axes.flat, subbasins["subbasin"].tolist()):
-        avail = np.flatnonzero(subbasin_np == basin)
-        idx = rng.choice(avail, size=min(n_traj_subset, avail.size), replace=False)
-        ds_plot = ds.isel(trajectory=idx).compute()
-        for i in range(ds_plot.sizes["trajectory"]):
+        # Map original trajectory indices → positions within ds_small.
+        local = np.searchsorted(union, panel_idx[basin])
+        ds_panel = ds_small.isel(trajectory=local)
+        for i in range(ds_panel.sizes["trajectory"]):
             # TODO(phase-f): justify linewidth in docs/visualisations.md.
             ax.plot(
-                ds_plot.lon.isel(trajectory=i),
-                ds_plot.lat.isel(trajectory=i),
+                ds_panel.lon.isel(trajectory=i),
+                ds_panel.lat.isel(trajectory=i),
                 color=regime_color[regime], linewidth=0.5, alpha=0.3,
                 transform=ccrs.PlateCarree(),
             )
@@ -232,8 +241,9 @@ fig, axes = plt.subplots(
 )
 for ax, regime in zip(axes, regimes):
     ds = regime_dsets[regime]
-    idx = rng.choice(ds.sizes["trajectory"], size=min(n_traj_subset, ds.sizes["trajectory"]), replace=False)
-    ds_plot = ds.isel(trajectory=idx).compute()
+    n = ds.sizes["trajectory"]
+    idx = np.sort(rng.choice(n, size=min(n_traj_subset, n), replace=False))
+    ds_plot = ds[["lon", "lat"]].isel(trajectory=idx).compute()
     for i in range(ds_plot.sizes["trajectory"]):
         ax.plot(
             ds_plot.lon.isel(trajectory=i),
@@ -253,9 +263,24 @@ plt.show()
 quarter_labels = {1: "JFM", 2: "AMJ", 3: "JAS", 4: "OND"}
 nrows = len(quarter_labels)
 ncols = len(regimes)
-regime_quarter_np = {
-    regime: regime_dsets[regime].release_quarter.compute().values for regime in regimes
-}
+
+# Pre-pick all panel indices per regime, then one compute per regime.
+regime_quarter_picks = {}
+regime_quarter_small = {}
+for regime in regimes:
+    quarter_np = regime_meta[regime].release_quarter.values
+    picks = {}
+    for q_int in quarter_labels:
+        avail = np.flatnonzero(quarter_np == q_int)
+        picks[q_int] = rng.choice(
+            avail, size=min(n_traj_subset, avail.size), replace=False
+        )
+    union = np.unique(np.concatenate(list(picks.values())))
+    regime_quarter_picks[regime] = (picks, union)
+    regime_quarter_small[regime] = (
+        regime_dsets[regime][["lon", "lat"]].isel(trajectory=union).compute()
+    )
+
 fig, axes = plt.subplots(
     nrows=nrows, ncols=ncols,
     figsize=(baltic_panel_height_in * baltic_aspect * ncols, baltic_panel_height_in * nrows),
@@ -265,14 +290,14 @@ fig, axes = plt.subplots(
 for row, (q_int, q_label) in enumerate(quarter_labels.items()):
     for col, regime in enumerate(regimes):
         ax = axes[row, col]
-        ds = regime_dsets[regime]
-        avail = np.flatnonzero(regime_quarter_np[regime] == q_int)
-        idx = rng.choice(avail, size=min(n_traj_subset, avail.size), replace=False)
-        ds_plot = ds.isel(trajectory=idx).compute()
-        for i in range(ds_plot.sizes["trajectory"]):
+        picks, union = regime_quarter_picks[regime]
+        ds_small = regime_quarter_small[regime]
+        local = np.searchsorted(union, picks[q_int])
+        ds_panel = ds_small.isel(trajectory=local)
+        for i in range(ds_panel.sizes["trajectory"]):
             ax.plot(
-                ds_plot.lon.isel(trajectory=i),
-                ds_plot.lat.isel(trajectory=i),
+                ds_panel.lon.isel(trajectory=i),
+                ds_panel.lat.isel(trajectory=i),
                 color=regime_color[regime], alpha=0.3,
                 transform=ccrs.PlateCarree(),
             )
