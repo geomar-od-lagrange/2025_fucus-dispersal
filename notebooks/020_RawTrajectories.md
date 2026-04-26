@@ -181,6 +181,48 @@ de_aspect = (
 ) / (de_lat_max - de_lat_min)
 ```
 
+# Pre-pick panel indices and compute once per regime
+
+All three figures (subbasin, DE, quarter) sample ~300 trajectories per
+panel from the same per-regime concatenated dataset. Picking every
+panel's indices upfront and unioning them lets us materialise each
+regime's lon/lat exactly once — fancy `isel` on the union is cheap, the
+plot blocks below just slice the in-memory result.
+
+```python
+quarter_labels = {1: "JFM", 2: "AMJ", 3: "JAS", 4: "OND"}
+
+regime_picks = {}
+regime_small = {}
+for regime in regimes:
+    ds = regime_dsets[regime]
+    meta = regime_meta[regime]
+    n = ds.sizes["trajectory"]
+    subbasin_np = meta.subbasin.values
+    quarter_np = meta.release_quarter.values
+
+    picks = {"subbasin": {}, "quarter": {}}
+    for basin in subbasins["subbasin"].tolist():
+        avail = np.flatnonzero(subbasin_np == basin)
+        picks["subbasin"][basin] = rng.choice(
+            avail, size=min(n_traj_subset, avail.size), replace=False
+        )
+    for q_int in quarter_labels:
+        avail = np.flatnonzero(quarter_np == q_int)
+        picks["quarter"][q_int] = rng.choice(
+            avail, size=min(n_traj_subset, avail.size), replace=False
+        )
+    picks["de"] = rng.choice(n, size=min(n_traj_subset, n), replace=False)
+
+    union = np.unique(np.concatenate([
+        *picks["subbasin"].values(),
+        *picks["quarter"].values(),
+        picks["de"],
+    ]))
+    regime_picks[regime] = (picks, union)
+    regime_small[regime] = ds[["lon", "lat"]].isel(trajectory=union).compute()
+```
+
 # Per HELCOM release subbasin
 
 One figure per regime, one panel per HELCOM subbasin. Empty panels
@@ -191,18 +233,8 @@ layout stable across regimes.
 ncols = 4
 nrows = int(np.ceil(len(subbasins) / ncols))
 for regime in regimes:
-    ds = regime_dsets[regime]
-    subbasin_np = regime_meta[regime].subbasin.values
-    panel_idx = {}
-    for basin in subbasins["subbasin"].tolist():
-        avail = np.flatnonzero(subbasin_np == basin)
-        panel_idx[basin] = rng.choice(
-            avail, size=min(n_traj_subset, avail.size), replace=False
-        )
-    # Single fancy isel + compute per regime: union of all panel picks,
-    # sorted/unique so dask `take` collapses to the minimal chunk set.
-    union = np.unique(np.concatenate(list(panel_idx.values())))
-    ds_small = ds[["lon", "lat"]].isel(trajectory=union).compute()
+    picks, union = regime_picks[regime]
+    ds_small = regime_small[regime]
     fig, axes = plt.subplots(
         nrows=nrows, ncols=ncols,
         figsize=(baltic_panel_height_in * baltic_aspect * ncols, baltic_panel_height_in * nrows),
@@ -210,8 +242,7 @@ for regime in regimes:
         subplot_kw=dict(projection=ccrs.PlateCarree()),
     )
     for ax, basin in zip(axes.flat, subbasins["subbasin"].tolist()):
-        # Map original trajectory indices → positions within ds_small.
-        local = np.searchsorted(union, panel_idx[basin])
+        local = np.searchsorted(union, picks["subbasin"][basin])
         ds_panel = ds_small.isel(trajectory=local)
         for i in range(ds_panel.sizes["trajectory"]):
             # TODO(phase-f): justify linewidth in docs/visualisations.md.
@@ -240,14 +271,13 @@ fig, axes = plt.subplots(
     subplot_kw=dict(projection=ccrs.PlateCarree()),
 )
 for ax, regime in zip(axes, regimes):
-    ds = regime_dsets[regime]
-    n = ds.sizes["trajectory"]
-    idx = np.sort(rng.choice(n, size=min(n_traj_subset, n), replace=False))
-    ds_plot = ds[["lon", "lat"]].isel(trajectory=idx).compute()
-    for i in range(ds_plot.sizes["trajectory"]):
+    picks, union = regime_picks[regime]
+    local = np.searchsorted(union, picks["de"])
+    ds_panel = regime_small[regime].isel(trajectory=local)
+    for i in range(ds_panel.sizes["trajectory"]):
         ax.plot(
-            ds_plot.lon.isel(trajectory=i),
-            ds_plot.lat.isel(trajectory=i),
+            ds_panel.lon.isel(trajectory=i),
+            ds_panel.lat.isel(trajectory=i),
             color=regime_color[regime], alpha=0.3,
             transform=ccrs.PlateCarree(),
         )
@@ -260,27 +290,8 @@ plt.show()
 # Per release quarter (JFM/AMJ/JAS/OND)
 
 ```python
-quarter_labels = {1: "JFM", 2: "AMJ", 3: "JAS", 4: "OND"}
 nrows = len(quarter_labels)
 ncols = len(regimes)
-
-# Pre-pick all panel indices per regime, then one compute per regime.
-regime_quarter_picks = {}
-regime_quarter_small = {}
-for regime in regimes:
-    quarter_np = regime_meta[regime].release_quarter.values
-    picks = {}
-    for q_int in quarter_labels:
-        avail = np.flatnonzero(quarter_np == q_int)
-        picks[q_int] = rng.choice(
-            avail, size=min(n_traj_subset, avail.size), replace=False
-        )
-    union = np.unique(np.concatenate(list(picks.values())))
-    regime_quarter_picks[regime] = (picks, union)
-    regime_quarter_small[regime] = (
-        regime_dsets[regime][["lon", "lat"]].isel(trajectory=union).compute()
-    )
-
 fig, axes = plt.subplots(
     nrows=nrows, ncols=ncols,
     figsize=(baltic_panel_height_in * baltic_aspect * ncols, baltic_panel_height_in * nrows),
@@ -290,10 +301,9 @@ fig, axes = plt.subplots(
 for row, (q_int, q_label) in enumerate(quarter_labels.items()):
     for col, regime in enumerate(regimes):
         ax = axes[row, col]
-        picks, union = regime_quarter_picks[regime]
-        ds_small = regime_quarter_small[regime]
-        local = np.searchsorted(union, picks[q_int])
-        ds_panel = ds_small.isel(trajectory=local)
+        picks, union = regime_picks[regime]
+        local = np.searchsorted(union, picks["quarter"][q_int])
+        ds_panel = regime_small[regime].isel(trajectory=local)
         for i in range(ds_panel.sizes["trajectory"]):
             ax.plot(
                 ds_panel.lon.isel(trajectory=i),
