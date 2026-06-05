@@ -103,10 +103,10 @@ A single linear pipeline, named with 3-digit stage numbers and gaps of 10
 for inserts. Region/year belong to the parameters cell, never in the
 filename.
 
-- `scripts/00x_*.py` / `notebooks/00x_*.md` — inputs and preprocessing
-  (Stokes download, 2D-field extraction, BSH coastline
-  extraction).
-- `scripts/010_FucusDispersal_{surface,bottom}_job.sh` +
+- `notebooks/00x_*.{md,py}` — inputs and preprocessing (start-location
+  prep, Stokes download, 2D-field extraction, BSH coastline
+  extraction), with `scripts/00x_*_job.sh` SLURM wrappers.
+- `scripts/010_FucusDispersal_{surface,bottom,surface_stokes}_job.sh` +
   `notebooks/010_FucusDispersal.md` — Parcels runs, papermill-swept
   across (year, doy, regime). Writes trajectory zarrs under
   `output_root/Trajectories/<regime>/<year>/`.
@@ -211,19 +211,11 @@ parameters cell, not the filename.
 `--cwd notebooks/` so relative paths in the notebook (`../data/foo.shp`,
 `../output/...`) resolve against the notebook's directory.
 
-- The `.md` is the source of truth — always edit it, never the `.ipynb`.
-  Commit **both** the `.md` and the synced-but-unexecuted `.ipynb` (code
-  only, no cell outputs). Sync with `pixi run jupytext --sync <nb>.md`;
-  if you executed locally, strip outputs before committing
-  (`pixi run jupyter nbconvert --clear-output --inplace <nb>.ipynb`).
-  Executed copies with rendered figures live under
-  `notebooks_executed/`, written by papermill on the cluster — do not
-  commit executed `.ipynb` files into `notebooks/`. Papermill only for
-  parameter injection or when streaming progress matters. Do not use
-  `jupyter nbconvert --execute`.
-- When using **papermill** from the repo root, always pass `--cwd notebooks/`
-  so relative paths in the notebook resolve against the notebook's
-  directory rather than wherever the shell happens to be.
+- Commit **both** the `.md` and the code-only `.ipynb`; never commit
+  executed notebooks into `notebooks/` (full sync/strip/execute
+  workflow in the jupytext skill linked above).
+- Run papermill with `--cwd notebooks/` so in-notebook relative paths
+  (`../data/…`, `../output/…`) resolve against `notebooks/`.
 - Markdown cells for narrative; clean code cells for execution.
 - Well-scoped cells — don't mix imports, parameters, and calculations.
 - Every notebook must have one early parameters cell tagged `"parameters"`
@@ -294,7 +286,7 @@ Agents get context by reading `docs/*.md` (what is) + open `plans/*.md`
 (what's next).
 
 Use markdown relative links when referencing other files in `plans/` and
-`docs/`. Example: `[bundle_and_layout.md](../plans/bundle_and_layout.md)`
+`docs/`. Example: `[hex_aggregate_store.md](../plans/hex_aggregate_store.md)`
 from a doc, `[seafloor-location-H0-semantics.md](seafloor-location-H0-semantics.md)`
 within `plans/`.
 

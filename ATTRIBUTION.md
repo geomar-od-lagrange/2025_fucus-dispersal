@@ -24,9 +24,3 @@
 - Product: BALTICSEA_MULTIYEAR_WAV_003_015
 - DOI: https://doi.org/10.48670/moi-00014
 - Attribution: Generated using E.U. Copernicus Marine Service Information; https://doi.org/10.48670/moi-00014
-
-## CMEMS Global Ocean Waves Reanalysis (WAVERYS, Stokes drift fallback)
-- Lives in: `data/cmems_stokes_sample/` (alongside Baltic high-res sample)
-- Product: GLOBAL_MULTIYEAR_WAV_001_032
-- DOI: https://doi.org/10.48670/moi-00022
-- Attribution: Generated using E.U. Copernicus Marine Service Information; https://doi.org/10.48670/moi-00022
