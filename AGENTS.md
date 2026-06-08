@@ -112,9 +112,14 @@ filename.
   `output_root/Trajectories/<regime>/<year>/`.
 - `notebooks/020..023_*.md` — per-trajectory visualisations (raw lines,
   time stats, distance vs. time, density + mean-age heatmaps).
-- `notebooks/024_*.md` — build the hex-aggregated dispersal store
-  (`key.parquet` + `counts/` partitions).
-- `notebooks/025_*.md` — hex heatmaps driven by the aggregate store.
+- `notebooks/024a_*` — static hex key (geometry/attrs, once per radius);
+  `notebooks/024_*` — occupancy counts store; `notebooks/024b_*` —
+  per-source-hex distance histogram store. The two stores are the heavy
+  per-`(regime, year)` trajectory-zarr aggregations.
+- `notebooks/025_*`, `notebooks/026_*`, `notebooks/027_*` — lightweight
+  parquet-only consumers of the hex store (no Dask cluster): hex density
+  (025), elapsed-time-horizon density via the counts `age_bin` axis (026),
+  per-source-hex crow-flies distance quantiles via the 024b store (027).
 
 ## Data access
 
@@ -211,9 +216,13 @@ parameters cell, not the filename.
 `--cwd notebooks/` so relative paths in the notebook (`../data/foo.shp`,
 `../output/...`) resolve against the notebook's directory.
 
-- Commit **both** the `.md` and the code-only `.ipynb`; never commit
-  executed notebooks into `notebooks/` (full sync/strip/execute
-  workflow in the jupytext skill linked above).
+**Format.** New notebooks use `py:percent,md,ipynb` with the `.py` as the
+source of truth (edit the `.py`, then `jupytext --sync`); legacy `02x`
+notebooks predate this and stay `md,ipynb` (no `.py`) until otherwise
+touched. Commit **every** paired form — for new notebooks that's `.py`,
+`.md`, and the code-only `.ipynb`; never commit executed notebooks into
+`notebooks/` (full sync/strip/execute workflow in the jupytext skill
+linked above).
 - Run papermill with `--cwd notebooks/` so in-notebook relative paths
   (`../data/…`, `../output/…`) resolve against `notebooks/`.
 - Markdown cells for narrative; clean code cells for execution.
