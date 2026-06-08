@@ -3,7 +3,7 @@
 #SBATCH --ntasks=3
 #SBATCH --cpus-per-task=8
 #SBATCH --mem-per-cpu=8G
-#SBATCH --time=04:00:00
+#SBATCH --time=12:00:00
 #SBATCH --partition=base
 
 # Multi-task dask layout, one task per SLURM task, adjust --ntasks at submit:
