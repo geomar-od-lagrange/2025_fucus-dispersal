@@ -39,9 +39,12 @@ warnings.simplefilter("ignore", RuntimeWarning)
 ```
 
 ```python
-def assign_release_subbasin(ds, subbasins):
-    # Lazy per (trajectory,) chunk; STRtree built once, looked up per-chunk.
-    # The full-sweep concat reaches 60M+ trajectories — eager would OOM.
+def release_subbasin(lon0, lat0, subbasins):
+    # Nearest-subbasin lookup on the obs=0 release positions. Lazy per
+    # (trajectory,) chunk; STRtree built once, looked up per-chunk. lon0/lat0
+    # arrive already sliced to obs=0 at the zarr read (see the load cell), so
+    # the full (trajectory, obs) chunks never materialise — the full-sweep
+    # concat reaches 60M+ trajectories and reading whole obs-chunks would OOM.
     tree = shapely.STRtree(subbasins.geometry.values)
     names = subbasins["subbasin"].to_numpy()
 
@@ -53,13 +56,10 @@ def assign_release_subbasin(ds, subbasins):
             out[valid] = names[tree.nearest(pts)]
         return out
 
-    lon0 = ds.lon.isel(obs=0, drop=True)
-    lat0 = ds.lat.isel(obs=0, drop=True)
-    subbasin = xr.apply_ufunc(
+    return xr.apply_ufunc(
         _lookup, lon0, lat0,
         dask="parallelized", output_dtypes=[object],
     )
-    return ds.assign(subbasin=subbasin)
 ```
 
 # Parameters
@@ -155,15 +155,33 @@ regime_meta = {}
 for regime in regimes:
     zarr_files = sorted((trajectory_root / regime).glob("**/*.zarr"))
     print(f"{regime}: {len(zarr_files)} trajectory files")
-    ds = xr.concat(
+    # Full-obs lazy view, sliced below only to the sampled ~300/panel union —
+    # the full tracks are read for a bounded handful of trajectories.
+    regime_dsets[regime] = xr.concat(
         [xr.open_zarr(z) for z in zarr_files], dim="trajectory"
     )[["lon", "lat", "time"]]
-    ds = ds.assign(release_quarter=ds.time.isel(obs=0, drop=True).dt.quarter)
-    ds = assign_release_subbasin(ds, subbasins)
-    regime_dsets[regime] = ds
+    # obs=0 metadata view: slice obs *inside each per-file read* (then rechunk)
+    # so the slice fuses into the zarr read and the full (trajectory, obs)
+    # chunks never become lingering dask task results. A post-concat
+    # ds.isel(obs=0) instead reads — and retains — every full obs-chunk as a
+    # task result, exhausting worker memory at the 60M+-trajectory scale.
+    obs0 = xr.concat(
+        [
+            xr.open_zarr(z)[["lon", "lat", "time"]]
+            .isel(obs=slice(0, 1))
+            .chunk(obs=1)
+            for z in zarr_files
+        ],
+        dim="trajectory",
+    ).isel(obs=0, drop=True)
     # Materialise (trajectory,)-only metadata once per regime; reused by
-    # every panel filter below as a plain pandas/numpy comparison.
-    regime_meta[regime] = ds[["subbasin", "release_quarter"]].compute()
+    # every panel filter below as a plain numpy comparison.
+    regime_meta[regime] = xr.Dataset(
+        dict(
+            subbasin=release_subbasin(obs0.lon, obs0.lat, subbasins),
+            release_quarter=obs0.time.dt.quarter,
+        )
+    ).compute()
 ```
 
 # Map extents and aspects
