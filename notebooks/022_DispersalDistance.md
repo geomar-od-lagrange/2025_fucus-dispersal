@@ -128,49 +128,6 @@ subbasins = gpd.read_file(
 subbasins
 ```
 
-# Load each regime
-
-```python
-regime_dsets = {}
-for regime in regimes:
-    zarr_files = sorted((trajectory_root / regime).glob("**/*.zarr"))
-    ds = xr.concat([xr.open_zarr(z) for z in zarr_files], dim="trajectory")
-    # Cheap release-edge view: push the obs slice into each per-file read so
-    # the full (trajectory, obs) chunks never linger as dask task results.
-    # Two steps suffice — obs=0 for the release position, obs=1 for the land
-    # test. A post-concat ds.isel(obs=0) instead reads and retains every full
-    # obs-chunk, exhausting worker memory at the 60M+-trajectory scale.
-    edge = xr.concat(
-        [
-            xr.open_zarr(z)[["lon", "lat", "time"]]
-            .isel(obs=slice(0, 2))
-            .chunk(obs=2)
-            for z in zarr_files
-        ],
-        dim="trajectory",
-    )
-    lon0 = edge.lon.isel(obs=0, drop=True)
-    lat0 = edge.lat.isel(obs=0, drop=True)
-    # First-step displacement of zero ⇒ trajectory was seeded on land.
-    on_land = (
-        (edge.lon.diff("obs").isel(obs=0, drop=True) == 0)
-        & (edge.lat.diff("obs").isel(obs=0, drop=True) == 0)
-    )
-    ds = ds.where(~on_land)
-    # Release position as (trajectory,) coords — reused by distance_km and the
-    # German-waters filter so neither re-slices obs=0 off the full concat.
-    ds = ds.assign_coords(
-        release_lon=lon0.where(~on_land),
-        release_lat=lat0.where(~on_land),
-    )
-    ds = ds.assign(
-        release_quarter=edge.time.isel(obs=0, drop=True).where(~on_land).dt.quarter,
-        subbasin=release_subbasin(lon0.where(~on_land), lat0.where(~on_land), subbasins),
-    )
-    regime_dsets[regime] = ds
-regime_dsets
-```
-
 # Distance from release
 
 Great-circle approximation (111 km per degree lat).
@@ -184,71 +141,131 @@ def distance_km(ds):
     return (111.0 * np.sqrt(dlat ** 2 + dlon ** 2)).rename("distance_km")
 ```
 
-# Compute per-scope means (one shared dask pass)
+# Compute per-scope means (per-batch accumulation)
 
-All scope means walk the same per-regime distance graph. Build them
-lazily, then let `dask.compute(*)` evaluate everything in a single pass.
+A `mean("trajectory")` keeping `obs` is a small-output reduction, but one
+`dask.compute` over the whole-regime concat builds a single graph that
+references every trajectory-chunk at once; the freed chunk buffers accumulate
+as unmanaged worker memory and the run stalls at the pause threshold. Instead
+we loop over small batches of files: each batch is its own bounded graph that
+computes and releases before the next opens, so peak memory plateaus at
+`batch_files` chunks regardless of how many files a regime has. A NaN-aware
+mean is `sum / count`, and both are additive over any partition of the
+trajectory axis, so summing per-batch partials and dividing at the end
+reproduces the exact global mean per `obs` per scope.
 
-The group-coord (`subbasin`, `release_quarter`) is small —
-`(trajectory,)`-shaped — so we materialise it once per regime before the
-groupby; that keeps the rest of the graph lazy and avoids forcing a
-client-side fancy index into the concat dim.
+`batch_files` trades plateau height for cluster parallelism: one file is a
+single `(trajectory=10000, obs≈thousands)` chunk (one task, one worker), so a
+batch holds `batch_files` such chunks (~1 GiB each for lon+lat). Keep it a
+small multiple of the worker count so a pass spreads across the cluster while
+staying well under a worker's memory.
+
+`obs` length varies file to file — Parcels trims trailing empty steps — so the
+per-batch partials have different `obs` extents. They are outer-aligned on
+`obs` with fill `0` before accumulating (`add_obs`): a batch that ends earlier
+contributes `0` to both sum and count at another batch's later `obs`, exactly
+as those (absent) trajectories would have been NaN-skipped in a single concat.
+A plain `+` would inner-join and silently truncate to the shortest batch.
 
 ```python
-regime_distance = {r: distance_km(ds) for r, ds in regime_dsets.items()}
+batch_files = 16
 
-da_global_lazy = xr.concat(
-    [regime_distance[r].mean("trajectory").expand_dims(regime=[r]) for r in regimes],
-    dim="regime",
-)
+quarters = [1, 2, 3, 4]
+# Sorted to match the order xarray's groupby would have produced.
+all_subbasins = sorted(subbasins["subbasin"].tolist())
 
-da_de_lazy = xr.concat(
-    [
-        regime_distance[r].where(
-            (regime_dsets[r].release_lon >= de_lon_min)
-            & (regime_dsets[r].release_lon <= de_lon_max)
-            & (regime_dsets[r].release_lat >= de_lat_min)
-            & (regime_dsets[r].release_lat <= de_lat_max)
-        ).mean("trajectory").expand_dims(regime=[r])
-        for r in regimes
-    ],
-    dim="regime",
-)
 
-# Pre-compute the small (trajectory,)-shaped group coords once per regime.
-regime_group_coords = {
-    r: dict(
-        subbasin=regime_dsets[r].subbasin.compute(),
-        release_quarter=regime_dsets[r].release_quarter.compute(),
+def scope_sum_count(dist, mask=None):
+    # NaN-aware partials: skipna sum and count of non-NaN. Land-masked
+    # trajectories are already NaN and drop out of both, matching .mean().
+    d = dist if mask is None else dist.where(mask)
+    return d.sum("trajectory"), d.notnull().sum("trajectory")
+
+
+def add_obs(a, b):
+    # Outer-align on the variable-length obs axis, fill 0, then add — so a
+    # shorter batch contributes 0 to both sum and count at later obs.
+    a, b = xr.align(a, b, join="outer", fill_value=0)
+    return a + b
+
+
+def nanmean(total_sum, total_count):
+    # 0 valid trajectories ⇒ NaN, not 0/0.
+    return (total_sum / total_count.where(total_count > 0)).rename("distance_km")
+
+
+da_global, da_de, da_sb, da_quarter = {}, {}, {}, {}
+for regime in regimes:
+    zarr_files = sorted((trajectory_root / regime).glob("**/*.zarr"))
+
+    acc = None  # dict of running (sum, count) partials, lazily initialised
+    for start in range(0, len(zarr_files), batch_files):
+        batch = zarr_files[start:start + batch_files]
+        ds = xr.concat([xr.open_zarr(z) for z in batch], dim="trajectory")
+        # Per-batch release edge (same obs pushdown as the metadata read):
+        # obs=0 release position, obs=1 land test.
+        edge = xr.concat(
+            [
+                xr.open_zarr(z)[["lon", "lat", "time"]]
+                .isel(obs=slice(0, 2))
+                .chunk(obs=2)
+                for z in batch
+            ],
+            dim="trajectory",
+        )
+        lon0 = edge.lon.isel(obs=0, drop=True)
+        lat0 = edge.lat.isel(obs=0, drop=True)
+        keep = ~(
+            (edge.lon.diff("obs").isel(obs=0, drop=True) == 0)
+            & (edge.lat.diff("obs").isel(obs=0, drop=True) == 0)
+        )
+        ds = ds.assign_coords(
+            release_lon=lon0.where(keep), release_lat=lat0.where(keep)
+        )
+        dist = distance_km(ds).where(keep)
+        # Small (trajectory,) group labels — materialise once, reuse per group.
+        subbasin = release_subbasin(lon0.where(keep), lat0.where(keep), subbasins).compute()
+        quarter = edge.time.isel(obs=0, drop=True).where(keep).dt.quarter.compute()
+
+        de_mask = (
+            (ds.release_lon >= de_lon_min) & (ds.release_lon <= de_lon_max)
+            & (ds.release_lat >= de_lat_min) & (ds.release_lat <= de_lat_max)
+        )
+        lazy = {"global": scope_sum_count(dist), "de": scope_sum_count(dist, de_mask)}
+        for sb in all_subbasins:
+            lazy[("sb", sb)] = scope_sum_count(
+                dist, xr.DataArray(subbasin == sb, dims="trajectory")
+            )
+        for q in quarters:
+            lazy[("q", q)] = scope_sum_count(
+                dist, xr.DataArray(quarter == q, dims="trajectory")
+            )
+        # One dask pass per batch; every value is (obs,)-shaped and cheap.
+        part = dask.compute(lazy)[0]
+        acc = part if acc is None else {
+            k: (add_obs(acc[k][0], part[k][0]), add_obs(acc[k][1], part[k][1]))
+            for k in acc
+        }
+
+    da_global[regime] = nanmean(*acc["global"])
+    da_de[regime] = nanmean(*acc["de"])
+    da_sb[regime] = xr.concat(
+        [nanmean(*acc[("sb", sb)]).expand_dims(subbasin=[sb]) for sb in all_subbasins],
+        dim="subbasin",
     )
-    for r in regimes
-}
+    da_quarter[regime] = xr.concat(
+        [nanmean(*acc[("q", q)]).expand_dims(release_quarter=[q]) for q in quarters],
+        dim="release_quarter",
+    )
 
-da_sb_lazy = xr.concat(
-    [
-        regime_distance[r]
-        .assign_coords(subbasin=regime_group_coords[r]["subbasin"])
-        .groupby("subbasin").mean("trajectory")
-        .expand_dims(regime=[r])
-        for r in regimes
-    ],
-    dim="regime",
-)
+da_global = xr.concat([da_global[r].expand_dims(regime=[r]) for r in regimes], dim="regime")
+da_de = xr.concat([da_de[r].expand_dims(regime=[r]) for r in regimes], dim="regime")
+da_sb = xr.concat([da_sb[r].expand_dims(regime=[r]) for r in regimes], dim="regime")
+da_quarter = xr.concat([da_quarter[r].expand_dims(regime=[r]) for r in regimes], dim="regime")
 
-da_quarter_lazy = xr.concat(
-    [
-        regime_distance[r]
-        .assign_coords(release_quarter=regime_group_coords[r]["release_quarter"])
-        .groupby("release_quarter").mean("trajectory")
-        .expand_dims(regime=[r])
-        for r in regimes
-    ],
-    dim="regime",
-)
-
-da_global, da_de, da_sb, da_quarter = dask.compute(
-    da_global_lazy, da_de_lazy, da_sb_lazy, da_quarter_lazy,
-)
+# Drop subbasins absent from every regime so the facet set matches the data
+# (groupby would have omitted them); all four quarters always occur.
+da_sb = da_sb.isel(subbasin=np.flatnonzero(da_sb.notnull().any(["regime", "obs"]).values))
 ```
 
 # Global

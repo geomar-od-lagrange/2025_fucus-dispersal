@@ -238,7 +238,32 @@ for regime in regimes:
         picks["de"],
     ]))
     regime_picks[regime] = (picks, union)
-    regime_small[regime] = ds[["lon", "lat"]].isel(trajectory=union).compute()
+
+    # Streaming per-file gather of the sampled union. A single
+    # isel(trajectory=union).compute() over the full-obs concat builds one
+    # graph spanning every file; a scattered index then reads whole
+    # (trajectory=10000, obs=1000) chunks for a few rows each, and the freed
+    # buffers pile up as unmanaged memory until the graph ends. Instead map
+    # each global union index to its (file, local) slot via cumulative
+    # per-file trajectory sizes and open + isel + compute one file at a time:
+    # each file's buffers free before the next opens, so peak memory plateaus
+    # at one file. The same sorted glob that built the concat defines the
+    # global index order, so the offsets line up exactly.
+    zarr_files = sorted((trajectory_root / regime).glob("**/*.zarr"))
+    offsets = np.cumsum([0, *(xr.open_zarr(z).sizes["trajectory"] for z in zarr_files)])
+    file_of_union = np.searchsorted(offsets, union, side="right") - 1
+    parts = []
+    for fi, z in enumerate(zarr_files):
+        local = union[file_of_union == fi] - offsets[fi]
+        if local.size == 0:
+            continue
+        parts.append(
+            xr.open_zarr(z)[["lon", "lat"]].isel(trajectory=local).compute()
+        )
+    # Files iterate in offset order and union is sorted, so the concat keeps
+    # the trajectory axis in union order — the searchsorted slicing in the
+    # plot cells below is unchanged.
+    regime_small[regime] = xr.concat(parts, dim="trajectory")
 ```
 
 # Per HELCOM release subbasin
