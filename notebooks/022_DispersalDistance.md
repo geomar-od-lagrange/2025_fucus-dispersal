@@ -35,9 +35,12 @@ from pathlib import Path
 ```
 
 ```python
-def assign_release_subbasin(ds, subbasins):
-    # Lazy per (trajectory,) chunk; STRtree built once, looked up per-chunk.
-    # The full-sweep concat reaches 60M+ trajectories — eager would OOM.
+def release_subbasin(lon0, lat0, subbasins):
+    # Nearest-subbasin lookup on the obs=0 release positions. Lazy per
+    # (trajectory,) chunk; STRtree built once, looked up per-chunk. lon0/lat0
+    # arrive already sliced to obs=0 at the zarr read (see the load cell), so
+    # the full (trajectory, obs) chunks never materialise — the full-sweep
+    # concat reaches 60M+ trajectories and reading whole obs-chunks would OOM.
     tree = shapely.STRtree(subbasins.geometry.values)
     names = subbasins["subbasin"].to_numpy()
 
@@ -49,13 +52,10 @@ def assign_release_subbasin(ds, subbasins):
             out[valid] = names[tree.nearest(pts)]
         return out
 
-    lon0 = ds.lon.isel(obs=0, drop=True)
-    lat0 = ds.lat.isel(obs=0, drop=True)
-    subbasin = xr.apply_ufunc(
+    return xr.apply_ufunc(
         _lookup, lon0, lat0,
         dask="parallelized", output_dtypes=[object],
     )
-    return ds.assign(subbasin=subbasin)
 ```
 
 # Parameters
@@ -135,13 +135,38 @@ regime_dsets = {}
 for regime in regimes:
     zarr_files = sorted((trajectory_root / regime).glob("**/*.zarr"))
     ds = xr.concat([xr.open_zarr(z) for z in zarr_files], dim="trajectory")
+    # Cheap release-edge view: push the obs slice into each per-file read so
+    # the full (trajectory, obs) chunks never linger as dask task results.
+    # Two steps suffice — obs=0 for the release position, obs=1 for the land
+    # test. A post-concat ds.isel(obs=0) instead reads and retains every full
+    # obs-chunk, exhausting worker memory at the 60M+-trajectory scale.
+    edge = xr.concat(
+        [
+            xr.open_zarr(z)[["lon", "lat", "time"]]
+            .isel(obs=slice(0, 2))
+            .chunk(obs=2)
+            for z in zarr_files
+        ],
+        dim="trajectory",
+    )
+    lon0 = edge.lon.isel(obs=0, drop=True)
+    lat0 = edge.lat.isel(obs=0, drop=True)
     # First-step displacement of zero ⇒ trajectory was seeded on land.
-    ds = ds.where(~(
-        (ds.lon.diff("obs").isel(obs=0, drop=True) == 0)
-        & (ds.lat.diff("obs").isel(obs=0, drop=True) == 0)
-    ))
-    ds = ds.assign(release_quarter=ds.time.isel(obs=0, drop=True).dt.quarter)
-    ds = assign_release_subbasin(ds, subbasins)
+    on_land = (
+        (edge.lon.diff("obs").isel(obs=0, drop=True) == 0)
+        & (edge.lat.diff("obs").isel(obs=0, drop=True) == 0)
+    )
+    ds = ds.where(~on_land)
+    # Release position as (trajectory,) coords — reused by distance_km and the
+    # German-waters filter so neither re-slices obs=0 off the full concat.
+    ds = ds.assign_coords(
+        release_lon=lon0.where(~on_land),
+        release_lat=lat0.where(~on_land),
+    )
+    ds = ds.assign(
+        release_quarter=edge.time.isel(obs=0, drop=True).where(~on_land).dt.quarter,
+        subbasin=release_subbasin(lon0.where(~on_land), lat0.where(~on_land), subbasins),
+    )
     regime_dsets[regime] = ds
 regime_dsets
 ```
@@ -152,10 +177,10 @@ Great-circle approximation (111 km per degree lat).
 
 ```python
 def distance_km(ds):
-    lon0 = ds.lon.isel(obs=0, drop=True)
-    lat0 = ds.lat.isel(obs=0, drop=True)
-    dlat = ds.lat - lat0
-    dlon = (ds.lon - lon0) * np.cos(np.deg2rad(lat0))
+    # release_lon/release_lat are the (trajectory,) obs=0 coords attached at
+    # load time, so this never re-reads obs=0 off the full concat.
+    dlat = ds.lat - ds.release_lat
+    dlon = (ds.lon - ds.release_lon) * np.cos(np.deg2rad(ds.release_lat))
     return (111.0 * np.sqrt(dlat ** 2 + dlon ** 2)).rename("distance_km")
 ```
 
@@ -180,10 +205,10 @@ da_global_lazy = xr.concat(
 da_de_lazy = xr.concat(
     [
         regime_distance[r].where(
-            (regime_dsets[r].lon.isel(obs=0, drop=True) >= de_lon_min)
-            & (regime_dsets[r].lon.isel(obs=0, drop=True) <= de_lon_max)
-            & (regime_dsets[r].lat.isel(obs=0, drop=True) >= de_lat_min)
-            & (regime_dsets[r].lat.isel(obs=0, drop=True) <= de_lat_max)
+            (regime_dsets[r].release_lon >= de_lon_min)
+            & (regime_dsets[r].release_lon <= de_lon_max)
+            & (regime_dsets[r].release_lat >= de_lat_min)
+            & (regime_dsets[r].release_lat <= de_lat_max)
         ).mean("trajectory").expand_dims(regime=[r])
         for r in regimes
     ],

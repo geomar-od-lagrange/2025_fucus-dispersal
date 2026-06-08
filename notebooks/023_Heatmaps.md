@@ -37,9 +37,12 @@ from pathlib import Path
 ```
 
 ```python
-def assign_release_subbasin(ds, subbasins):
-    # Lazy per (trajectory,) chunk; STRtree built once, looked up per-chunk.
-    # The full-sweep concat reaches 60M+ trajectories — eager would OOM.
+def release_subbasin(lon0, lat0, subbasins):
+    # Nearest-subbasin lookup on the obs=0 release positions. Lazy per
+    # (trajectory,) chunk; STRtree built once, looked up per-chunk. lon0/lat0
+    # arrive already sliced to obs=0 at the zarr read (see the load cell), so
+    # the full (trajectory, obs) chunks never materialise — the full-sweep
+    # concat reaches 60M+ trajectories and reading whole obs-chunks would OOM.
     tree = shapely.STRtree(subbasins.geometry.values)
     names = subbasins["subbasin"].to_numpy()
 
@@ -51,13 +54,10 @@ def assign_release_subbasin(ds, subbasins):
             out[valid] = names[tree.nearest(pts)]
         return out
 
-    lon0 = ds.lon.isel(obs=0, drop=True)
-    lat0 = ds.lat.isel(obs=0, drop=True)
-    subbasin = xr.apply_ufunc(
+    return xr.apply_ufunc(
         _lookup, lon0, lat0,
         dask="parallelized", output_dtypes=[object],
     )
-    return ds.assign(subbasin=subbasin)
 ```
 
 # Parameters
@@ -142,13 +142,34 @@ trajectory_path = output_root / "Trajectories" / regime
 zarr_files = sorted(trajectory_path.glob("**/*.zarr"))
 print(f"{len(zarr_files)} trajectory files for {regime}")
 ds = xr.concat([xr.open_zarr(z) for z in zarr_files], dim="trajectory")
+# Cheap release-edge view: push the obs slice into each per-file read so the
+# full (trajectory, obs) chunks never linger as dask task results. Two steps
+# suffice — obs=0 for the release position, obs=1 for the land test. A
+# post-concat ds.isel(obs=0) instead reads and retains every full obs-chunk,
+# exhausting worker memory at the 60M+-trajectory scale. subbasin and
+# release_quarter stay dask-backed and chunk-aligned with ds.lon/ds.lat, so
+# the hist_by masks below fuse block-wise on the workers.
+edge = xr.concat(
+    [
+        xr.open_zarr(z)[["lon", "lat", "time"]]
+        .isel(obs=slice(0, 2))
+        .chunk(obs=2)
+        for z in zarr_files
+    ],
+    dim="trajectory",
+)
+lon0 = edge.lon.isel(obs=0, drop=True)
+lat0 = edge.lat.isel(obs=0, drop=True)
 # First-step displacement of zero ⇒ trajectory was seeded on land.
-ds = ds.where(~(
-    (ds.lon.diff("obs").isel(obs=0, drop=True) == 0)
-    & (ds.lat.diff("obs").isel(obs=0, drop=True) == 0)
-))
-ds = ds.assign(release_quarter=ds.time.isel(obs=0, drop=True).dt.quarter)
-ds = assign_release_subbasin(ds, subbasins)
+on_land = (
+    (edge.lon.diff("obs").isel(obs=0, drop=True) == 0)
+    & (edge.lat.diff("obs").isel(obs=0, drop=True) == 0)
+)
+ds = ds.where(~on_land)
+ds = ds.assign(
+    release_quarter=edge.time.isel(obs=0, drop=True).where(~on_land).dt.quarter,
+    subbasin=release_subbasin(lon0.where(~on_land), lat0.where(~on_land), subbasins),
+)
 ds
 ```
 
