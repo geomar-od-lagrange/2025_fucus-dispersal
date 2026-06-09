@@ -16,8 +16,8 @@ jupyter:
 
 # Time-horizon dispersal maps
 
-Hex particle-density maps at successive elapsed-time horizons (e.g. 20,
-40, 80, 160 days), showing how the dispersal cloud spreads over time.
+Hex particle-density maps at successive elapsed-time horizons (e.g. 10,
+20, 50, 100 days), showing how the dispersal cloud spreads over time.
 Reads the hex counts store built by 024a (key) + 024 (counts) — no
 trajectory zarrs, no Dask cluster. One regime per run; August/September
 releases pooled across all available years (empty month list ⇒ all
@@ -35,6 +35,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 from shapely.geometry import box
 from cartopy.io.shapereader import natural_earth
 ```
@@ -57,18 +58,14 @@ age_bin_days = 10
 release_months_csv = "8,9"
 # Elapsed-time horizons to map, in days. Each must be a multiple of
 # age_bin_days.
-time_horizons_days_csv = "20,40,80,160"
-
-# Baltic-wide map extent (degrees E / degrees N).
-baltic_lon_min, baltic_lon_max = 5, 32
-baltic_lat_min, baltic_lat_max = 53, 66
+time_horizons_days_csv = "10,20,50,100"
 
 # Colormap: log-density spans several decades, so a perceptually uniform
 # map is load-bearing (justified in docs/visualisations.md, as for 025).
 cmap = "viridis"
 
 # Per-panel height in inches (panel widths are aspect-derived).
-baltic_panel_height_in = 6
+panel_height_in = 6
 ```
 
 # Parse parameters
@@ -145,18 +142,19 @@ def to_hex_gdf(counts_df, key_df):
     )
 
 
-def log_density_plot(gdf, ax, extent, title=None, coast=None):
+def log_density_plot(gdf, ax, extent, norm, title=None, coast=None):
     """Plot hex density + coastline on a plain (non-cartopy) lon/lat axis.
     Everything stays in EPSG:4326 so hexes and coastline share one
-    coordinate system. Empty ``gdf`` skips the hex layer so empty panels
-    render with stable layout."""
+    coordinate system. Colour scales the raw ``count`` through a shared
+    ``LogNorm``, so each panel's colorbar reads in particle counts (not
+    log10) while spanning the several decades of density. Empty ``gdf``
+    skips the hex layer so empty panels render with stable layout."""
     if not gdf.empty:
-        gdf = gdf.copy()
-        gdf["log_count"] = np.log10(gdf["count"].where(gdf["count"] > 0))
-        # cmap/edgecolor/linewidth justified in docs/visualisations.md (as 025).
+        # cmap + log norm justified in docs/visualisations.md (as 025);
+        # legend=True draws a per-panel colorbar keyed to the shared scale.
         gdf.plot(
-            ax=ax, column="log_count", cmap=cmap, legend=False,
-            missing_kwds={"color": "none"}, edgecolor="face", linewidth=0.4, zorder=1,
+            ax=ax, column="count", cmap=cmap, norm=norm, legend=True,
+            edgecolor="face", linewidth=0.4, zorder=1,
         )
     if coast is not None:
         coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
@@ -171,18 +169,23 @@ def log_density_plot(gdf, ax, extent, title=None, coast=None):
 ```
 
 ```python
+# The hex key decides the extent — no manual crop. The key tiles the full
+# BSH model domain (North Sea included), so this shows the whole covered
+# area; the dispersal cloud occupies wherever it actually reaches.
+domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max = key.total_bounds
+domain_extent = [domain_lon_min, domain_lon_max, domain_lat_min, domain_lat_max]
+
 # Natural Earth 10m coastline via cartopy's shapereader (cached locally),
-# clipped to the Baltic extent once.
+# clipped to the domain extent once.
 _coast_gdf = gpd.read_file(
     natural_earth(resolution="10m", category="physical", name="coastline")
 )
-coast_baltic = _coast_gdf.clip(box(baltic_lon_min, baltic_lat_min, baltic_lon_max, baltic_lat_max))
+coast = _coast_gdf.clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
 
-baltic_extent = [baltic_lon_min, baltic_lon_max, baltic_lat_min, baltic_lat_max]
 # Aspect ratio that keeps 1° lon at lat_mean visually equal to 1° lat.
-baltic_aspect = (
-    (baltic_lon_max - baltic_lon_min) * np.cos(np.radians(0.5 * (baltic_lat_min + baltic_lat_max)))
-) / (baltic_lat_max - baltic_lat_min)
+domain_aspect = (
+    (domain_lon_max - domain_lon_min) * np.cos(np.radians(0.5 * (domain_lat_min + domain_lat_max)))
+) / (domain_lat_max - domain_lat_min)
 ```
 
 # Map per horizon
@@ -193,20 +196,28 @@ occupancy window `[horizon, horizon + age_bin_days)`.
 ```python
 horizon_age_bins = {h: h // age_bin_days for h in time_horizons_days}
 
+# Build every panel's hex GeoDataFrame up front so the colour scale is shared
+# across horizons — later horizons spread the cloud thinner, and a common
+# LogNorm makes that dilution legible across panels.
+gdfs = {
+    h: to_hex_gdf(counts[counts["age_bin"] == horizon_age_bins[h]], key)
+    for h in time_horizons_days
+}
+all_counts = pd.concat([g["count"] for g in gdfs.values() if not g.empty])
+norm = LogNorm(vmin=all_counts.min(), vmax=all_counts.max())
+
 ncols = 2
 nrows = int(np.ceil(len(time_horizons_days) / ncols))
 fig, axes = plt.subplots(
     nrows=nrows, ncols=ncols,
     figsize=(
-        baltic_panel_height_in * baltic_aspect * ncols,
-        baltic_panel_height_in * nrows,
+        panel_height_in * domain_aspect * ncols,
+        panel_height_in * nrows,
     ),
     layout="constrained",
 )
 for ax, h in zip(axes.flat, time_horizons_days):
-    counts_h = counts[counts["age_bin"] == horizon_age_bins[h]]
-    gdf_h = to_hex_gdf(counts_h, key)
-    log_density_plot(gdf_h, ax, baltic_extent, title=f"{h} d", coast=coast_baltic)
+    log_density_plot(gdfs[h], ax, domain_extent, norm, title=f"{h} d", coast=coast)
 for ax in axes.flat[len(time_horizons_days):]:
     ax.set_visible(False)
 plt.show()
@@ -219,6 +230,12 @@ print(f"regime={regime}, hex_radius={hex_radius} m, age_bin_days={age_bin_days}"
 print(f"release months: {release_months or 'all'}")
 for h in time_horizons_days:
     counts_h = counts[counts["age_bin"] == horizon_age_bins[h]]
+    # Drop the INVALID_HEX_ID (-1) sentinel so these match the mapped data
+    # (the to_hex_gdf join already excludes -1 from the panels). The hex key
+    # tiles the whole BSH domain — North Sea included — so a particle only
+    # goes target_hex=-1 by leaving the model entirely; in practice the only
+    # -1 here is land-seeded particles, masked to -1 in both hex columns.
+    counts_h = counts_h[counts_h["target_hex"] != -1]
     print(
         f"  {h:>4}d (age_bin {horizon_age_bins[h]}): "
         f"{counts_h['target_hex'].nunique():,} target hexes, "

@@ -16,7 +16,7 @@ listed here should be dropped.
 | 022      | Distance vs. time   | Overlaid (`hue="regime"`)     | Global · Per subbasin · German waters · Per quarter                        |
 | 023      | Density + mean-age maps | Per-run (papermill regime) | Whole Baltic · Per subbasin · German waters · Per quarter                  |
 | 025      | Hex density maps    | Per-run (regime + year + radius) | Panel A: Baltic · Panel B: per subbasin · Panel C: DE-zoom · Panel D: per quarter |
-| 026      | Hex time-horizon density maps | Per-run (regime + radius) | Elapsed-time horizons (20/40/80/160 d), Aug/Sep releases pooled across years |
+| 026      | Hex time-horizon density maps | Per-run (regime + radius) | Elapsed-time horizons (10/20/50/100 d), Aug/Sep releases pooled across years |
 | 027      | Hex distance-quantile maps | Per-run (regime + radius) | One map per quantile (0.1/0.5/0.9), Aug/Sep releases pooled across years     |
 
 ## Cross-cutting choices
@@ -82,12 +82,17 @@ A **counts-store consumer**, like 025 — not a trajectory-zarr reader. The
 024 counts store already carries an `age_bin` (elapsed-time) axis, so a
 time-horizon map is just 025's hex density with `age_bin =
 horizon // age_bin_days` selected and the release set filtered to Aug/Sep
-(pooled across years). It reuses 025's hex rendering verbatim
-(`to_hex_gdf`, `log_density_plot` on a plain EPSG:4326 axis) and therefore
-carries the **same justified overrides** as 025: `cmap="viridis"` (density
-is log over decades), hex `edgecolor="face"`/`linewidth=0.4`, black
-coastline `linewidth=0.5`, aspect-driven `figsize`. One panel per horizon;
-the only `set_title` is the horizon label (context the data lacks).
+(pooled across years). It shares 025's hex rendering (`to_hex_gdf`,
+`log_density_plot` on a plain EPSG:4326 axis) and the **same justified
+overrides**: `cmap="viridis"` (density is log over decades), hex
+`edgecolor="face"`/`linewidth=0.4`, black coastline `linewidth=0.5`,
+aspect-driven `figsize`. Two things differ from 025: the extent is the
+full hex-key domain (the BSH model bbox — North Sea included — so nothing
+is cropped and the geometry, not a hardcoded box, sets the range), and
+colour runs through a shared `LogNorm` so each panel's colorbar
+(`legend=True`) reads in particle counts (not log10) on one scale common
+to every horizon. One panel per horizon; the only `set_title` is the
+horizon label (context the data lacks).
 
 The horizon temporal window is `age_bin_days` wide (10 d) — each map is
 the occupancy over `[horizon, horizon+age_bin_days)`. Tighter snapshots
