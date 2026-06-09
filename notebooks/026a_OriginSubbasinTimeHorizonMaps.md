@@ -39,6 +39,7 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from shapely.geometry import box
@@ -74,6 +75,10 @@ cmap = "viridis"
 
 # Per-panel height in inches (panel widths are aspect-derived).
 panel_height_in = 6
+# Figure DPI as a multiple of the matplotlib default. >1 sharpens the
+# inline/embedded raster panels — the one plotting default we override here
+# (rationale in docs/visualisations.md).
+fig_dpi_scale = 2
 ```
 
 # Parse parameters
@@ -88,6 +93,8 @@ for h in time_horizons_days:
         f"horizon {h} d is not a multiple of age_bin_days {age_bin_days} d; "
         f"it would fall in a neighbouring age bin"
     )
+# Set from the stock default so re-running this cell is idempotent.
+mpl.rcParams["figure.dpi"] = fig_dpi_scale * mpl.rcParamsDefault["figure.dpi"]
 ```
 
 # Read key + subbasin names + pool counts across years

@@ -95,6 +95,11 @@ colour runs through a shared `LogNorm` so each panel's colorbar
 to every horizon. One panel per horizon; the only `set_title` is the
 horizon label (context the data lacks).
 
+`figure.dpi` is raised to `fig_dpi_scale`× the matplotlib default (2× by
+default) — the dense small-hex polygons alias badly at 100 dpi, and the
+embedded panels are the deliverable. Set from `rcParamsDefault` so
+re-running the cell is idempotent. 026a inherits the same override.
+
 The horizon temporal window is `age_bin_days` wide (10 d) — each map is
 the occupancy over `[horizon, horizon+age_bin_days)`. Tighter snapshots
 would mean rebuilding 024 at a finer `age_bin_days`, not a different plot.
