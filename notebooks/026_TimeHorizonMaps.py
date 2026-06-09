@@ -242,3 +242,33 @@ for h in time_horizons_days:
         f"{counts_h['target_hex'].nunique():,} target hexes, "
         f"sum(n_obs)={int(counts_h['n_obs'].sum()):,}"
     )
+
+# %% [markdown]
+# # Per-target-hex occupancy quantile function
+#
+# Quantile function of summed `n_obs` per target hex — one line per horizon,
+# log y-axis (occupancy spans decades). A lifting upper tail (high quantiles)
+# at later horizons means a few hexes are accumulating ever more trajectory
+# samples: the coastal/convergence trapping expected from an advection-only
+# run with no diffusion or beaching kernel. The total occupancy per bin is
+# roughly conserved, so an upper-tail rise is redistribution into fewer hexes,
+# not more particles.
+
+# %%
+q = np.linspace(0, 1, 31)
+occupancy_quantiles = pd.DataFrame(
+    {
+        f"{h} d": counts[
+            (counts["age_bin"] == horizon_age_bins[h]) & (counts["target_hex"] != -1)
+        ]
+        .groupby("target_hex")["n_obs"]
+        .sum()
+        .quantile(q)
+        .to_numpy()
+        for h in time_horizons_days
+    },
+    index=pd.Index(q, name="quantile"),
+)
+ax = occupancy_quantiles.plot(logy=True)
+ax.set_ylabel("n_obs per target hex")
+plt.show()
