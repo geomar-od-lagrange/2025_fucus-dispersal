@@ -138,7 +138,12 @@ def distance_km(ds):
     # load time, so this never re-reads obs=0 off the full concat.
     dlat = ds.lat - ds.release_lat
     dlon = (ds.lon - ds.release_lon) * np.cos(np.deg2rad(ds.release_lat))
-    return (111.0 * np.sqrt(dlat ** 2 + dlon ** 2)).rename("distance_km")
+    # assign_attrs overrides the units/long_name xarray now carries over from
+    # the left operand (ds.lat) through the arithmetic, which would otherwise
+    # mislabel this distance as "latitude [degrees_north]".
+    return (111.0 * np.sqrt(dlat ** 2 + dlon ** 2)).rename("distance_km").assign_attrs(
+        long_name="distance from release", units="km"
+    )
 ```
 
 # Compute per-scope means (per-batch accumulation)
@@ -273,15 +278,17 @@ da_sb = da_sb.isel(subbasin=np.flatnonzero(da_sb.notnull().any(["regime", "obs"]
 ```python
 fig, ax = plt.subplots(layout="constrained")
 da_global.plot.line(x="obs", hue="regime", ax=ax)
+ax.set_ylabel("mean distance from release [km]")
 ```
 
 # Per HELCOM release subbasin
 
 ```python
-da_sb.plot.line(
+fg = da_sb.plot.line(
     x="obs", hue="regime", col="subbasin", col_wrap=4,
     size=facet_line_size, aspect=facet_line_aspect,
 )
+fg.set_ylabels("mean distance from release [km]")
 ```
 
 # German waters (release cells inside bounding box)
@@ -289,13 +296,15 @@ da_sb.plot.line(
 ```python
 fig, ax = plt.subplots(layout="constrained")
 da_de.plot.line(x="obs", hue="regime", ax=ax)
+ax.set_ylabel("mean distance from release [km]")
 ```
 
 # Per release quarter (JFM/AMJ/JAS/OND)
 
 ```python
-da_quarter.plot.line(
+fg = da_quarter.plot.line(
     x="obs", hue="regime", col="release_quarter", col_wrap=2,
     size=facet_line_size, aspect=facet_line_aspect,
 )
+fg.set_ylabels("mean distance from release [km]")
 ```
