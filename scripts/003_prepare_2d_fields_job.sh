@@ -19,7 +19,7 @@ mkdir -p ${output_root}/2d_fields
 # Process one c_file: called by xargs with the c_file path as argument
 process_file() {
     local c_file="$1"
-    srun --ntasks=1 --exact --cpu-bind=none \
+    srun --ntasks=1 --exact \
         singularity run -B /sfs -B /gxfs_work -B ${repo_root}:/work --pwd /work \
         ${container} bash -c \
         ". /opt/conda/etc/profile.d/conda.sh && conda activate base \

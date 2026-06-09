@@ -38,7 +38,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-SRUN_STEP="srun --ntasks=1 --cpus-per-task=${SLURM_CPUS_PER_TASK} --exact --cpu-bind=none"
+SRUN_STEP="srun --ntasks=1 --cpus-per-task=${SLURM_CPUS_PER_TASK} --exact"
 WORKER_ARGS="--scheduler-file ${SCHEDULER_FILE} --interface ib0"
 
 # Task 0: scheduler + attached workers (shape auto-detected from cgroup).
