@@ -18,6 +18,7 @@ listed here should be dropped.
 | 025      | Hex density maps    | Per-run (regime + year + radius) | Panel A: Baltic · Panel B: per subbasin · Panel C: DE-zoom · Panel D: per quarter |
 | 026      | Hex time-horizon density maps | Per-run (regime + radius) | Elapsed-time horizons (10/20/50/100 d), Aug/Sep releases pooled across years |
 | 026a     | Hex time-horizon density maps per origin subbasin | Per-run (regime + radius) | One 026 four-panel figure per origin (HELCOM) subbasin |
+| 026b     | Hex time-horizon density maps per origin subbasin and year | Per-run (regime + radius) | One 026 four-panel figure per (origin subbasin, release year) |
 | 027      | Hex distance-quantile maps | Per-run (regime + radius) | One map per quantile (0.1/0.5/0.9), Aug/Sep releases pooled across years     |
 
 ## Cross-cutting choices
@@ -119,6 +120,20 @@ horizons) rather than sharing one global scale: cross-subbasin occupancy
 totals differ by orders of magnitude, so a global scale would wash out the
 smaller sources. The trade-off is that colour is not comparable *between*
 figures — read each on its own colorbar.
+
+## Notebook 026b — Time-horizon maps per origin subbasin and year (special case)
+
+026a split a second time, by release year: one four-panel figure per
+(origin subbasin, year), exposing the interannual variability that 026a
+hides by pooling. The release year is kept as a `release_year` column when
+pooling the counts partitions (parsed from each filename).
+
+Colour scaling differs from 026a by design: within a subbasin the
+`LogNorm` is shared **across that subbasin's years** (and horizons), so a
+faint year reads as genuinely lower occupancy rather than a rescaling
+artefact — years are magnitude-comparable. It stays independent between
+subbasins. Figures are kept per-year (not a single years×horizons grid) so
+the embedded rasters stay a sane size at the raised DPI.
 
 ## Notebook 027 — Hex distance-quantile maps (special case)
 
