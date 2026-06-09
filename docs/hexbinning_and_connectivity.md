@@ -1,7 +1,8 @@
 # Hex-aggregated dispersal store
 
-The store splits across two notebooks. The key file is shared by every
-counts file at the same `hex_radius`.
+The key file is shared by every counts/distance file at the same
+`hex_radius`. Two aggregations write per-`(regime, year)` partitions:
+024 occupancy counts and 024b distance histograms.
 
 ```
 output_root/HexAggregates/
@@ -9,13 +10,17 @@ output_root/HexAggregates/
   HexAgg_key_r<radius>m.json            ( ditto, sidecar metadata     )
   HexAgg_counts_r<radius>m_<regime>_<year>.parquet
                                         (notebook 024  — once per (regime, year))
+  HexAgg_distance_r<radius>m_<regime>_<year>.parquet
+                                        (notebook 024b — once per (regime, year))
 ```
 
-Flat layout deliberately: parallel 024 jobs (multiple regimes/years)
+Flat layout deliberately: parallel 024/024b jobs (multiple regimes/years)
 write disjoint filenames, so they can't race. Compact, query-friendly
-sister of the multi-TB raw zarrs; substrate behind every map in
-`notebooks/025_HexHeatmaps.md`. Raw zarrs stay the source of truth for
-per-trajectory diagnostics.
+sister of the multi-TB raw zarrs. The counts store is the substrate behind
+`notebooks/025_HexHeatmaps.md` (density) and `notebooks/026_TimeHorizonMaps.md`
+(density at a selected `age_bin`); the distance store is the substrate
+behind `notebooks/027_HexDistanceQuantiles.md`. Raw zarrs stay the source
+of truth for per-trajectory diagnostics.
 
 ## Counts schema
 
@@ -41,6 +46,29 @@ out-of-domain positions. Preserved on disk so the land-seeded fraction
 is queryable (`counts[counts.release_hex == -1].n_obs.sum()`); filter
 with `release_hex >= 0` / `target_hex >= 0` at query time when only
 valid hexes are wanted.
+
+## Distance schema
+
+One row per `(release_hex, release_doy, distance_bin)`: the distribution
+of per-trajectory crow-flies **final displacement** (release point → last
+valid position, equirectangular 111 km/deg metric) binned per source hex.
+
+| column         | meaning                                                         |
+|----------------|-----------------------------------------------------------------|
+| `release_hex`  | hex containing the particle's release point (≥ 0; land dropped) |
+| `release_doy`  | release day-of-year of the originating zarr                     |
+| `distance_bin` | floor(final displacement / `distance_bin_km`) — default 1 km, no cap |
+| `n_traj`       | number of trajectories in this bin                              |
+
+Unlike counts, land-seeded particles are **dropped** here (a displacement
+from a land seed is meaningless), so `release_hex` carries no `-1`.
+
+A histogram, not pre-computed quantiles, because histograms are
+**additive**: pooling Aug/Sep across years is summing partitions, then
+deriving quantiles from the pooled cumulative count (027). Per-year
+quantiles cannot be correctly averaged across years. `distance_bin_km` is
+the build↔consumer contract (like `hex_radius` / `age_bin_days`); it is
+not stored, so 027 must read with the same value.
 
 ## Key file (geoparquet, one row per hex)
 
@@ -150,4 +178,4 @@ independent reseeded reruns are summed additively by the groupby.
 - [seeding.md](seeding.md) — release set the `release_hex` derives from.
 - [h0_semantics.md](h0_semantics.md) — `mean_depth_m` filter.
 - [2d_field_extraction.md](2d_field_extraction.md) — coastline geojsons.
-- [visualisations.md](visualisations.md) — notebook 025.
+- [visualisations.md](visualisations.md) — notebooks 025–027.

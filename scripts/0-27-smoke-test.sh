@@ -1,5 +1,5 @@
 #!/bin/bash
-# Full pipeline smoke test (stages 000–025) against the BSH demo subset.
+# Full pipeline smoke test (stages 000–027) against the BSH demo subset.
 #
 # Runs every numbered notebook end-to-end on a single host (login node
 # is fine — no SLURM). Designed to flush out integration issues from a
@@ -8,10 +8,10 @@
 # regimes (surface, bottom, surface_stokes).
 #
 # Usage from the repo root:
-#     ./scripts/0-25-smoke-test.sh
+#     ./scripts/0-27-smoke-test.sh
 #
 # Override outputs location:
-#     OUTPUT_ROOT=/work/<user>/fucus_smoke ./scripts/0-25-smoke-test.sh
+#     OUTPUT_ROOT=/work/<user>/fucus_smoke ./scripts/0-27-smoke-test.sh
 #
 # Prerequisites (one-time, on the host):
 #     git clone --recurse-submodules https://github.com/geomar-od-lagrange/2025_fucus-dispersal.git
@@ -30,7 +30,7 @@ mkdir -p "${OUTPUT_ROOT}"
 
 REGIMES=(surface bottom surface_stokes)
 
-echo "=== Smoke test: stages 000–025 ==="
+echo "=== Smoke test: stages 000–027 ==="
 echo "Repo:        ${REPO_ROOT}"
 echo "Output root: ${OUTPUT_ROOT}"
 echo "Regimes:     ${REGIMES[*]}"
@@ -126,12 +126,46 @@ pixi run papermill notebooks/024_BuildHexAggregates.ipynb \
     --cwd notebooks/
 
 echo
+echo "==== 024b BuildHexDistance (surface_stokes) ===="
+pixi run papermill notebooks/024b_BuildHexDistance.ipynb \
+    "${OUTPUT_ROOT}/024b_smoke.ipynb" \
+    -p output_root "${OUTPUT_ROOT}" \
+    -p regime surface_stokes \
+    -p release_year 2020 \
+    --cwd notebooks/
+
+echo
 echo "==== 025 HexHeatmaps (surface_stokes) ===="
 pixi run papermill notebooks/025_HexHeatmaps.ipynb \
     "${OUTPUT_ROOT}/025_smoke.ipynb" \
     -p output_root "${OUTPUT_ROOT}" \
     -p regime "surface_stokes" \
     -p release_year 2020 \
+    --cwd notebooks/
+
+# 026/027 pool releases across all months/years; the smoke run only has a
+# January release, so pass release_months_csv="" (all months). 026 horizons
+# must be age_bin multiples that the 4 h run actually populates — only
+# age_bin 0 exists, so map the single "0 d" horizon. 027 has 1 particle per
+# cell, so drop the min-trajectory gate.
+echo
+echo "==== 026 TimeHorizonMaps (surface_stokes) ===="
+pixi run papermill notebooks/026_TimeHorizonMaps.ipynb \
+    "${OUTPUT_ROOT}/026_smoke.ipynb" \
+    -p output_root "${OUTPUT_ROOT}" \
+    -p regime "surface_stokes" \
+    -p release_months_csv "" \
+    -p time_horizons_days_csv "0" \
+    --cwd notebooks/
+
+echo
+echo "==== 027 HexDistanceQuantiles (surface_stokes) ===="
+pixi run papermill notebooks/027_HexDistanceQuantiles.ipynb \
+    "${OUTPUT_ROOT}/027_smoke.ipynb" \
+    -p output_root "${OUTPUT_ROOT}" \
+    -p regime "surface_stokes" \
+    -p release_months_csv "" \
+    -p min_traj_per_hex 1 \
     --cwd notebooks/
 
 echo

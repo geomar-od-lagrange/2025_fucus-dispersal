@@ -543,11 +543,21 @@ These are the first things a visitor sees; tidy before announcing.
 - [x] `scripts/000_FucusStartLocations_job.sh`: drop. Stage 000
       doesn't need a job script — it's quick local prep. Delete the
       `.sh`, leave the `.md` / `.ipynb` notebook in place.
-- [ ] Walk every other `scripts/0??_*_job.sh`: confirm each is still
+- [x] Walk every other `scripts/0??_*_job.sh`: confirm each is still
       load-bearing, names match the current notebook stage numbering,
       `output_root` plumbing is consistent, no stale `--region` /
       `--year` flags from the old filename-encoded era. Rewrite where
-      cleaner than patching.
+      cleaner than patching. (Audit done. Fixes: `023_Heatmaps_job.sh`
+      stale `experiment_type` → `regime` (was injecting a dead param,
+      `regime` stuck at default); `024`/`025` job scripts gained the
+      missing `hex_radius` positional + `-p hex_radius` plumbing —
+      both notebooks key their parquet paths on it, so non-6000 stores
+      were unreachable. `002`/`003` are plain `.py` scripts with
+      argparse, not papermill; `010_{surface,bottom,surface_stokes}`,
+      `020`/`021`/`022`, `024a` all clean — `output_root` shell-var +
+      `-p output_root`, `--cwd notebooks/`, sweeps bounded `n∈[0,72]`,
+      no `velocity_factor`/`vf{}`/`max_age`/`--region`/`--year`/
+      `doy==366` anywhere.)
 
 ## 8. Conventions to enforce across the whole pipeline
 
@@ -624,10 +634,19 @@ here as a final cross-notebook audit so nothing slips through.
       `git clone --recurse-submodules` → `pixi install` →
       `scripts/fetch_data.sh` no-op → run stages 000 through 025
       against the BSH demo subset.
-- [ ] `ATTRIBUTION.md` walkthrough: every dataset currently shipped
+- [x] `ATTRIBUTION.md` walkthrough: every dataset currently shipped
       in the twin still listed; no licence-incompatible additions
       since the last audit (cross-check against
-      `plans/data_licensing_public_bundle.md`).
+      `plans/data_licensing_public_bundle.md`). (All five bundled
+      datasets documented + minimal-rule compliant. Removed the
+      spurious WAVERYS block: it claimed `Lives in
+      data/cmems_stokes_sample/`, but the twin ships only the Baltic
+      high-res sample — WAVERYS is fetched at runtime into the NESH
+      outputs tree by 002, never redistributed. WAVERYS DOI
+      (`moi-00022`) belongs in the paper methods, not the twin's
+      redistribution-attribution file. Consequence: the fresh-clone
+      demo smoke-test won't exercise 003's German-Bight WAVERYS
+      fallback — flagged below.)
 - [ ] Review `AGENTS.md` shape after F + G have landed. Look for
       content trimmable to pointers (rules-vs-reference split),
       `Conventions › Notebooks` bullets that duplicate the jupytext

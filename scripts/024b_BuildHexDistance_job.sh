@@ -1,9 +1,9 @@
 #!/bin/bash
-#SBATCH --job-name=021_TimeStats
+#SBATCH --job-name=024b_BuildHexDistance
 #SBATCH --ntasks=3
 #SBATCH --cpus-per-task=8
 #SBATCH --mem-per-cpu=8G
-#SBATCH --time=12:00:00
+#SBATCH --time=08:00:00
 #SBATCH --partition=base
 
 # Multi-task dask layout, one task per SLURM task, adjust --ntasks at submit:
@@ -17,6 +17,15 @@
 export http_proxy=http://10.0.7.235:3128
 export https_proxy=http://10.0.7.235:3128
 export no_proxy=localhost,127.0.0.1,0.0.0.0,10.0.0.0/8
+
+# One (regime, release_year, hex_radius) per submit, e.g.
+# `sbatch <script> surface 2020 6000`.
+# 024a_BuildHexKey_job.sh must have run first for the matching hex_radius.
+# distance_bin_km falls back to the notebook default (1.0 km) and is NOT
+# stored in the parquet — 027 must read with the same value.
+regime="${1:-surface}"
+year="${2:-2019}"
+hex_radius="${3:-6000}"
 
 repo_root=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
@@ -45,11 +54,14 @@ ${SRUN_STEP} pixi run bash -c "
 
 sleep 30
 
-# Task 1: papermill.
+# Task 1: papermill, one (regime, year) per job.
 ${SRUN_STEP} pixi run papermill --cwd notebooks/ \
-    notebooks/021_TimeStats.ipynb \
-    notebooks_executed/Visualisations/021_TimeStats.ipynb \
+    notebooks/024b_BuildHexDistance.ipynb \
+    notebooks_executed/Visualisations/024b_BuildHexDistance_${regime}_${year}_r${hex_radius}m.ipynb \
     -p output_root ${output_root} \
+    -p regime ${regime} \
+    -p release_year ${year} \
+    -p hex_radius ${hex_radius} \
     -k python &
 PAPERMILL_PID=$!
 

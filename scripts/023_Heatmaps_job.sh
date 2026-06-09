@@ -3,7 +3,7 @@
 #SBATCH --ntasks=3
 #SBATCH --cpus-per-task=8
 #SBATCH --mem-per-cpu=8G
-#SBATCH --time=04:00:00
+#SBATCH --time=12:00:00
 #SBATCH --partition=base
 
 # Multi-task dask layout, one task per SLURM task, adjust --ntasks at submit:
@@ -18,7 +18,7 @@ export http_proxy=http://10.0.7.235:3128
 export https_proxy=http://10.0.7.235:3128
 export no_proxy=localhost,127.0.0.1,0.0.0.0,10.0.0.0/8
 
-experiment_type="${1:-surface}"
+regime="${1:-surface}"
 repo_root=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
 
@@ -49,10 +49,10 @@ sleep 30
 # Task 1: papermill.
 ${SRUN_STEP} pixi run papermill --cwd notebooks/ \
     notebooks/023_Heatmaps.ipynb \
-    notebooks_executed/Visualisations/023_Heatmaps_${experiment_type}.ipynb \
+    notebooks_executed/Visualisations/023_Heatmaps_${regime}.ipynb \
     -p data_root ${repo_root}/data \
     -p output_root ${output_root} \
-    -p experiment_type ${experiment_type} \
+    -p regime ${regime} \
     -k python &
 PAPERMILL_PID=$!
 

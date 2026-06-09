@@ -3,7 +3,7 @@
 #SBATCH --ntasks=3
 #SBATCH --cpus-per-task=8
 #SBATCH --mem-per-cpu=8G
-#SBATCH --time=04:00:00
+#SBATCH --time=12:00:00
 #SBATCH --partition=base
 
 # Multi-task dask layout, one task per SLURM task, adjust --ntasks at submit:
@@ -31,7 +31,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-SRUN_STEP="srun --ntasks=1 --cpus-per-task=${SLURM_CPUS_PER_TASK} --exact"
+SRUN_STEP="srun --ntasks=1 --cpus-per-task=${SLURM_CPUS_PER_TASK} --exact --cpu-bind=none"
 WORKER_ARGS="--scheduler-file ${SCHEDULER_FILE} --interface ib0"
 
 # Task 0: scheduler + attached workers (shape auto-detected from cgroup).

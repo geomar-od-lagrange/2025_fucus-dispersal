@@ -39,9 +39,12 @@ warnings.simplefilter("ignore", RuntimeWarning)
 ```
 
 ```python
-def assign_release_subbasin(ds, subbasins):
-    # Lazy per (trajectory,) chunk; STRtree built once, looked up per-chunk.
-    # The full-sweep concat reaches 60M+ trajectories — eager would OOM.
+def release_subbasin(lon0, lat0, subbasins):
+    # Nearest-subbasin lookup on the obs=0 release positions. Lazy per
+    # (trajectory,) chunk; STRtree built once, looked up per-chunk. lon0/lat0
+    # arrive already sliced to obs=0 at the zarr read (see the load cell), so
+    # the full (trajectory, obs) chunks never materialise — the full-sweep
+    # concat reaches 60M+ trajectories and reading whole obs-chunks would OOM.
     tree = shapely.STRtree(subbasins.geometry.values)
     names = subbasins["subbasin"].to_numpy()
 
@@ -53,13 +56,10 @@ def assign_release_subbasin(ds, subbasins):
             out[valid] = names[tree.nearest(pts)]
         return out
 
-    lon0 = ds.lon.isel(obs=0, drop=True)
-    lat0 = ds.lat.isel(obs=0, drop=True)
-    subbasin = xr.apply_ufunc(
+    return xr.apply_ufunc(
         _lookup, lon0, lat0,
         dask="parallelized", output_dtypes=[object],
     )
-    return ds.assign(subbasin=subbasin)
 ```
 
 # Parameters
@@ -155,15 +155,33 @@ regime_meta = {}
 for regime in regimes:
     zarr_files = sorted((trajectory_root / regime).glob("**/*.zarr"))
     print(f"{regime}: {len(zarr_files)} trajectory files")
-    ds = xr.concat(
+    # Full-obs lazy view, sliced below only to the sampled ~300/panel union —
+    # the full tracks are read for a bounded handful of trajectories.
+    regime_dsets[regime] = xr.concat(
         [xr.open_zarr(z) for z in zarr_files], dim="trajectory"
     )[["lon", "lat", "time"]]
-    ds = ds.assign(release_quarter=ds.time.isel(obs=0, drop=True).dt.quarter)
-    ds = assign_release_subbasin(ds, subbasins)
-    regime_dsets[regime] = ds
+    # obs=0 metadata view: slice obs *inside each per-file read* (then rechunk)
+    # so the slice fuses into the zarr read and the full (trajectory, obs)
+    # chunks never become lingering dask task results. A post-concat
+    # ds.isel(obs=0) instead reads — and retains — every full obs-chunk as a
+    # task result, exhausting worker memory at the 60M+-trajectory scale.
+    obs0 = xr.concat(
+        [
+            xr.open_zarr(z)[["lon", "lat", "time"]]
+            .isel(obs=slice(0, 1))
+            .chunk(obs=1)
+            for z in zarr_files
+        ],
+        dim="trajectory",
+    ).isel(obs=0, drop=True)
     # Materialise (trajectory,)-only metadata once per regime; reused by
-    # every panel filter below as a plain pandas/numpy comparison.
-    regime_meta[regime] = ds[["subbasin", "release_quarter"]].compute()
+    # every panel filter below as a plain numpy comparison.
+    regime_meta[regime] = xr.Dataset(
+        dict(
+            subbasin=release_subbasin(obs0.lon, obs0.lat, subbasins),
+            release_quarter=obs0.time.dt.quarter,
+        )
+    ).compute()
 ```
 
 # Map extents and aspects
@@ -220,7 +238,32 @@ for regime in regimes:
         picks["de"],
     ]))
     regime_picks[regime] = (picks, union)
-    regime_small[regime] = ds[["lon", "lat"]].isel(trajectory=union).compute()
+
+    # Streaming per-file gather of the sampled union. A single
+    # isel(trajectory=union).compute() over the full-obs concat builds one
+    # graph spanning every file; a scattered index then reads whole
+    # (trajectory=10000, obs=1000) chunks for a few rows each, and the freed
+    # buffers pile up as unmanaged memory until the graph ends. Instead map
+    # each global union index to its (file, local) slot via cumulative
+    # per-file trajectory sizes and open + isel + compute one file at a time:
+    # each file's buffers free before the next opens, so peak memory plateaus
+    # at one file. The same sorted glob that built the concat defines the
+    # global index order, so the offsets line up exactly.
+    zarr_files = sorted((trajectory_root / regime).glob("**/*.zarr"))
+    offsets = np.cumsum([0, *(xr.open_zarr(z).sizes["trajectory"] for z in zarr_files)])
+    file_of_union = np.searchsorted(offsets, union, side="right") - 1
+    parts = []
+    for fi, z in enumerate(zarr_files):
+        local = union[file_of_union == fi] - offsets[fi]
+        if local.size == 0:
+            continue
+        parts.append(
+            xr.open_zarr(z)[["lon", "lat"]].isel(trajectory=local).compute()
+        )
+    # Files iterate in offset order and union is sorted, so the concat keeps
+    # the trajectory axis in union order — the searchsorted slicing in the
+    # plot cells below is unchanged.
+    regime_small[regime] = xr.concat(parts, dim="trajectory")
 ```
 
 # Per HELCOM release subbasin
