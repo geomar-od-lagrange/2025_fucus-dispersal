@@ -31,7 +31,7 @@ run_experiment() {
     local rng_seed="$4"
     local start_stem="${start_time//[-:]/}"
 
-    srun --ntasks=1 --exact \
+    srun --ntasks=1 --exact --cpu-bind=none \
         singularity run -B /sfs -B /gxfs_work -B $PWD:/work --pwd /work \
         ${container} bash -c \
         ". /opt/conda/etc/profile.d/conda.sh && conda activate base \
