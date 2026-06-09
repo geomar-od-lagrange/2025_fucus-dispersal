@@ -17,6 +17,7 @@ listed here should be dropped.
 | 023      | Density + mean-age maps | Per-run (papermill regime) | Whole Baltic · Per subbasin · German waters · Per quarter                  |
 | 025      | Hex density maps    | Per-run (regime + year + radius) | Panel A: Baltic · Panel B: per subbasin · Panel C: DE-zoom · Panel D: per quarter |
 | 026      | Hex time-horizon density maps | Per-run (regime + radius) | Elapsed-time horizons (10/20/50/100 d), Aug/Sep releases pooled across years |
+| 026a     | Hex time-horizon density maps per origin subbasin | Per-run (regime + radius) | One 026 four-panel figure per origin (HELCOM) subbasin |
 | 027      | Hex distance-quantile maps | Per-run (regime + radius) | One map per quantile (0.1/0.5/0.9), Aug/Sep releases pooled across years     |
 
 ## Cross-cutting choices
@@ -97,6 +98,22 @@ horizon label (context the data lacks).
 The horizon temporal window is `age_bin_days` wide (10 d) — each map is
 the occupancy over `[horizon, horizon+age_bin_days)`. Tighter snapshots
 would mean rebuilding 024 at a finer `age_bin_days`, not a different plot.
+
+## Notebook 026a — Time-horizon maps per origin subbasin (special case)
+
+026 emitted once per origin (HELCOM) subbasin. Origin subbasin is the
+`helcom_subbasin` id of each `release_hex` (024a attaches it; the id→name
+map is in the key's `.json` sidecar), so the counts are filtered on the
+**release** side while target hexes still range over the whole domain — it
+answers "where do propagules *from this subbasin* go?". Releases outside
+any named polygon (`_outside`, id -1) and land-seeded releases
+(`release_hex` -1) carry no origin subbasin and are reported, not mapped.
+
+Each subbasin's figure self-scales (its own `LogNorm` across its four
+horizons) rather than sharing one global scale: cross-subbasin occupancy
+totals differ by orders of magnitude, so a global scale would wash out the
+smaller sources. The trade-off is that colour is not comparable *between*
+figures — read each on its own colorbar.
 
 ## Notebook 027 — Hex distance-quantile maps (special case)
 

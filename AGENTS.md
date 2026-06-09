@@ -116,10 +116,12 @@ filename.
   `notebooks/024_*` — occupancy counts store; `notebooks/024b_*` —
   per-source-hex distance histogram store. The two stores are the heavy
   per-`(regime, year)` trajectory-zarr aggregations.
-- `notebooks/025_*`, `notebooks/026_*`, `notebooks/027_*` — lightweight
-  parquet-only consumers of the hex store (no Dask cluster): hex density
-  (025), elapsed-time-horizon density via the counts `age_bin` axis (026),
-  per-source-hex crow-flies distance quantiles via the 024b store (027).
+- `notebooks/025_*`, `notebooks/026_*`, `notebooks/026a_*`,
+  `notebooks/027_*` — lightweight parquet-only consumers of the hex store
+  (no Dask cluster): hex density (025), elapsed-time-horizon density via
+  the counts `age_bin` axis (026), the same horizon maps split per origin
+  subbasin (026a), per-source-hex crow-flies distance quantiles via the
+  024b store (027).
 
 ## Data access
 
