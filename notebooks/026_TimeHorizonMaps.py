@@ -88,6 +88,12 @@ for h in time_horizons_days:
 # Set from the stock default so re-running this cell is idempotent.
 mpl.rcParams["figure.dpi"] = fig_dpi_scale * mpl.rcParamsDefault["figure.dpi"]
 
+# PNG figures land under the outputs tree (outside the repo), one subdir per
+# notebook stage. savefig inherits figure.dpi (set above), so saved panels are
+# as sharp as the inline ones — no dpi= kwarg needed.
+figure_dir = output_root / "Figures" / "026"
+figure_dir.mkdir(parents=True, exist_ok=True)
+
 # %% [markdown]
 # # Read key + pool counts across years
 #
@@ -228,6 +234,9 @@ for ax, h in zip(axes.flat, time_horizons_days):
     log_density_plot(gdfs[h], ax, domain_extent, norm, title=f"{h} d", coast=coast)
 for ax in axes.flat[len(time_horizons_days):]:
     ax.set_visible(False)
+fig_path = figure_dir / f"TimeHorizonMaps_{regime}_r{hex_radius}m.png"
+fig.savefig(fig_path)
+print(f"wrote {fig_path}")
 plt.show()
 
 # %% [markdown]

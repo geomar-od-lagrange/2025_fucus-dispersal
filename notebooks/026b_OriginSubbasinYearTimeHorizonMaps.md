@@ -35,6 +35,7 @@ regime per run; August/September releases kept, split by year.
 ```python
 import json
 import re
+import unicodedata
 from pathlib import Path
 
 import geopandas as gpd
@@ -98,6 +99,20 @@ for h in time_horizons_days:
     )
 # Set from the stock default so re-running this cell is idempotent.
 mpl.rcParams["figure.dpi"] = fig_dpi_scale * mpl.rcParamsDefault["figure.dpi"]
+
+# PNG figures land under the outputs tree (outside the repo), one subdir per
+# notebook stage. savefig inherits figure.dpi (set above), so saved panels are
+# as sharp as the inline ones — no dpi= kwarg needed.
+figure_dir = output_root / "Figures" / "026b"
+figure_dir.mkdir(parents=True, exist_ok=True)
+
+
+def _slug(name):
+    """Filename-safe slug of a HELCOM subbasin name, so per-subbasin PNGs get
+    clean names. NFKD + ASCII fold transliterates accents (Å → A) before
+    collapsing every non-alphanumeric run to a single underscore."""
+    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    return re.sub(r"[^0-9A-Za-z]+", "_", ascii_name).strip("_")
 ```
 
 # Read key + subbasin names + pool counts across years
@@ -303,6 +318,12 @@ for code in origin_codes:
             log_density_plot(gdfs[(y, h)], ax, domain_extent, norm, title=f"{h} d", coast=coast)
         for ax in axes.flat[len(time_horizons_days):]:
             ax.set_visible(False)
+        fig_path = (
+            figure_dir
+            / f"OriginSubbasinYearTimeHorizonMaps_{regime}_r{hex_radius}m_{_slug(subbasin_id_to_name[code])}_{y}.png"
+        )
+        fig.savefig(fig_path)
+        print(f"wrote {fig_path}")
         plt.show()
 ```
 

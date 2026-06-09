@@ -18,6 +18,26 @@ reads `notebooks/`, writes per-parameter copies under
 `notebooks_executed/`. Treat `notebooks_executed/` as artifact, not
 source.
 
+## Standalone figure PNGs
+
+The map notebooks `026`, `026a`, `026b` also write their four-panel
+time-horizon maps as standalone PNGs under the outputs tree (outside the
+repo), one subdir per stage — so the figures are usable without opening
+the executed notebook:
+
+```
+output_root/Figures/
+  026/  TimeHorizonMaps_<regime>_r<radius>m.png
+  026a/ OriginSubbasinTimeHorizonMaps_<regime>_r<radius>m_<subbasin>.png
+  026b/ OriginSubbasinYearTimeHorizonMaps_<regime>_r<radius>m_<subbasin>_<year>.png
+```
+
+`figure_dir` is derived from the `output_root` parameter inside each
+notebook (no extra job-script argument). Submit once per regime
+(`surface`, `bottom`, `surface_stokes`) to cover all regimes. `savefig`
+inherits the notebook's `figure.dpi` (the `fig_dpi_scale` 2× override),
+so saved panels match the inline ones.
+
 ## Multi-task dask layout
 
 `--ntasks=N ≥ 3` with one role per SLURM task:
