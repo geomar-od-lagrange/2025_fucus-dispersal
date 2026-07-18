@@ -164,7 +164,7 @@ the reader without units. The label supplies that missing context.
 ## Notebook 029 — Beaching maps (special case)
 
 A **beaching-store consumer**: reads the store built by 024d
-(`(release_hex, release_doy, beach_hex, beach_age_bin, shore_type)→n_traj`)
+(`(release_hex, release_doy, beach_hex, beach_age_bin, shore_type)→weight`)
 plus the 024a key for geometry. Three views on one plain EPSG:4326 axis, all
 reusing 025's hex-registration overrides (aspect-driven `figsize`,
 `edgecolor="face"`/`linewidth=0.4`, black coastline `linewidth=0.5`):
