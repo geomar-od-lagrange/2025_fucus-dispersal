@@ -1,6 +1,6 @@
 # Visualisations: per-plot rationale
 
-Why each notebook in `020`–`027` shows what it shows, and where
+Why each notebook in `020`–`029` shows what it shows, and where
 styling overrides earn their deviation from
 [../AGENTS.md](../AGENTS.md)'s plotting rules. AGENTS.md states the
 **rules** (no `cmap=`, no `figsize=`, no `color=` literals); this doc
@@ -20,6 +20,7 @@ listed here should be dropped.
 | 026a     | Hex time-horizon density maps per origin subbasin | Per-run (regime + radius) | One 026 four-panel figure per origin (HELCOM) subbasin |
 | 026b     | Hex time-horizon density maps per origin subbasin and year | Per-run (regime + radius) | One 026 four-panel figure per (origin subbasin, release year) |
 | 027      | Hex distance-quantile maps | Per-run (regime + radius) | One map per quantile (0.1/0.5/0.9), Aug/Sep releases pooled across years     |
+| 029      | Beaching maps       | Per-run (regime + radius) | Where-stranded (wall/flat) · beached fraction per source hex · age horizons (10/20/50 d) |
 
 ## Cross-cutting choices
 
@@ -160,8 +161,33 @@ unit-aware axis label from a column (unlike xarray reading
 `long_name`/`units`), so the bare column name `distance_km` would reach
 the reader without units. The label supplies that missing context.
 
+## Notebook 029 — Beaching maps (special case)
+
+A **beaching-store consumer**: reads the store built by 024d
+(`(release_hex, release_doy, beach_hex, beach_age_bin, shore_type)→n_traj`)
+plus the 024a key for geometry. Three views on one plain EPSG:4326 axis, all
+reusing 025's hex-registration overrides (aspect-driven `figsize`,
+`edgecolor="face"`/`linewidth=0.4`, black coastline `linewidth=0.5`):
+
+- **Where-stranded density**, wall vs. flat panels — beached weight
+  (expected particles) per stranding hex. Inherits 025's `cmap="viridis"` +
+  shared `LogNorm` (floored four decades below the peak, since weighted
+  deposition's sparse tail carries fractional weight): like occupancy,
+  stranding weight spans decades, kept on a common scale so the two shore
+  types are comparable.
+- **Beached fraction per source hex** — a ratio in [0, 1], so it uses the
+  **default (linear) norm** with no `cmap` override to defend (the log-map
+  colour choice is dropped, as 027 does for its linear distance quantiles).
+- **Age-horizon where-stranded maps** — the same log-density map at
+  cumulative age cut-offs (`beach_age_bin < T // age_bin_days`), a shared
+  `LogNorm` across horizons so the fill-in over time is legible; this mirrors
+  026's horizon logic on the beaching axis.
+
+The DPI-scale and per-panel-height parameters match 026's rationale above.
+
 ## Cross-references
 
+- [beaching.md](beaching.md) — 029's store, model, and limitations.
 - [seeding.md](seeding.md) — release-set semantics every viz reads.
 - [distance_calculation.md](distance_calculation.md) — 022's metric.
 - [hexbinning_and_connectivity.md](hexbinning_and_connectivity.md) —

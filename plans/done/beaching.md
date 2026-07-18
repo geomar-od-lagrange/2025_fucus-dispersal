@@ -1,5 +1,14 @@
 # Beaching (post-simulation) — design note
 
+**Implemented.** See [../../docs/beaching.md](../../docs/beaching.md) for
+the current state (`024d_BuildBeaching` + `029_BeachingMaps`). This note is
+the original design rationale and literature basis. **The production scheme
+is the weighted / fractional variant** — the deterministic expectation of
+the first-stranding rule sketched below, chosen for noise-free high-age
+tails and clean composition with a lifetime distribution; the stochastic
+per-particle draw described here was retired after a code-correctness
+comparison (the two agree to <0.2 % on totals, within MC noise per hex).
+
 ## Purpose
 
 Add a beaching diagnostic to the *Fucus* dispersal study: estimate where
@@ -26,7 +35,7 @@ is a cheap function of positions we already have, and its parameters
 kernel would force a full re-run per parameter choice. As a
 post-processing pass over the trajectory zarrs it is re-runnable in
 minutes and keeps the physics runs untouched — the same "aggregate once,
-consume cheaply" split the [hex store](../docs/hexbinning_and_connectivity.md)
+consume cheaply" split the [hex store](../../docs/hexbinning_and_connectivity.md)
 already uses.
 
 ## The three-ingredient beaching model
@@ -49,7 +58,7 @@ applied on the `age`/`obs` axis already present in the zarrs.
 ### 1. Distance to shore — *ready*
 
 Score against a **per-position** distance to the fine BSH coastline, not
-the per-hex `dist_to_coast_m` in the [`024a` key](../notebooks/024a_BuildHexKey.md).
+the per-hex `dist_to_coast_m` in the [`024a` key](../../notebooks/024a_BuildHexKey.md).
 Beaching is a metres-scale swash-zone process; a per-hex distance
 quantises it to the hex radius and ties the near-shore band width to the
 aggregation grid rather than to a physical length. A rasterised
@@ -61,11 +70,11 @@ as a coarse cross-check only.
 
 Separable from the two BSH coastlines already shipped in the data twin
 (`data/bsh_hbmnoku_static/`, produced by
-[`004_extract_coastline.py`](../notebooks/004_extract_coastline.py)):
+[`004_extract_coastline.py`](../../notebooks/004_extract_coastline.py)):
 
 - `coastline_always_wet.geojson` — cells with `H0 > 0` only.
 - `coastline.geojson` — includes tidal-flat cells (`H0 ≤ 0`, see
-  [h0_semantics.md](../docs/h0_semantics.md)).
+  [h0_semantics.md](../../docs/h0_semantics.md)).
 
 A shore fronted by tidal flats (in the second but not the first) reads as
 **flat**; a steep always-wet edge reads as **wall**. The weight
@@ -82,11 +91,11 @@ per-segment) `shore_type ∈ {flat, wall}` weight with no new data.
 The shoreward driver is the onshore component of the wave **Stokes
 drift**, not a wind proxy. It is the same CMEMS wave field the
 `surface_stokes` runs already use (`VSDX/VSDY`, downloaded by
-[`002_download_stokes.py`](../notebooks/002_download_stokes.py)) — and
+[`002_download_stokes.py`](../../notebooks/002_download_stokes.py)) — and
 specifically the *cross-shore transport the runs deliberately suppressed
-at the coast*: [`003`](../notebooks/003_prepare_2d_fields.py) zeros the
+at the coast*: [`003`](../../notebooks/003_prepare_2d_fields.py) zeros the
 Stokes contribution on blocked BSH faces so it can't push particles
-through no-slip walls (see [stokes_drift.md](../docs/stokes_drift.md)),
+through no-slip walls (see [stokes_drift.md](../../docs/stokes_drift.md)),
 which is exactly the onshore push that strands material. Beaching puts it
 back:
 
@@ -109,7 +118,7 @@ zero at exactly the coastal faces beaching needs — i.e. sample the raw
 CMEMS `VSDX/VSDY`; (b) use the raw 2 km wave-model field honouring its
 land/NaN topology, **not** the N=5 rolling-mean spread, whose known
 land-bridging (open-ocean Stokes leaking across the Curonian Spit;
-[stokes_drift.md](../docs/stokes_drift.md) "open concern") would
+[stokes_drift.md](../../docs/stokes_drift.md) "open concern") would
 manufacture onshore transport where the real fetch is zero.
 
 ## Beaching rule (rate-based, Δt-invariant)
@@ -304,7 +313,7 @@ DOIs for the lit database; all verified.
 
 ## Cross-references
 
-- [hexbinning_and_connectivity.md](../docs/hexbinning_and_connectivity.md) — the `024x` store pattern and key schema this reuses.
-- [h0_semantics.md](../docs/h0_semantics.md) — the `H0 ≤ 0` tidal-flat rule behind the wall/flat split.
-- [stokes_drift.md](../docs/stokes_drift.md) — the wave Stokes field that drives beaching, and the blocked-face mask this diagnostic reverses at the coast.
-- [../notebooks/004_extract_coastline.py](../notebooks/004_extract_coastline.py) — produces the two coastlines the shore classification reads.
+- [hexbinning_and_connectivity.md](../../docs/hexbinning_and_connectivity.md) — the `024x` store pattern and key schema this reuses.
+- [h0_semantics.md](../../docs/h0_semantics.md) — the `H0 ≤ 0` tidal-flat rule behind the wall/flat split.
+- [stokes_drift.md](../../docs/stokes_drift.md) — the wave Stokes field that drives beaching, and the blocked-face mask this diagnostic reverses at the coast.
+- [../notebooks/004_extract_coastline.py](../../notebooks/004_extract_coastline.py) — produces the two coastlines the shore classification reads.
