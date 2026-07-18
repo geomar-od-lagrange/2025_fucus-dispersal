@@ -21,6 +21,7 @@ listed here should be dropped.
 | 026b     | Hex time-horizon density maps per origin subbasin and year | Per-run (regime + radius) | One 026 four-panel figure per (origin subbasin, release year) |
 | 027      | Hex distance-quantile maps | Per-run (regime + radius) | One map per quantile (0.1/0.5/0.9), Aug/Sep releases pooled across years     |
 | 029      | Beaching maps       | Per-run (regime + radius) | Where-stranded (wall/flat) · beached fraction per source hex · age horizons (10/20/50 d) |
+| 030      | Survival heatmaps   | Per-run (regime + radius) | Per horizon (20/50/100 d): occupancy · survival-weighted · surviving fraction |
 
 ## Cross-cutting choices
 
@@ -185,9 +186,24 @@ reusing 025's hex-registration overrides (aspect-driven `figsize`,
 
 The DPI-scale and per-panel-height parameters match 026's rationale above.
 
+## Notebook 030 — Survival heatmaps (special case)
+
+A **survival-occupancy consumer**: reads the store built by 024e
+(`(release_doy, age_bin, target_hex) → occ, surv`) plus the 024a key. Per
+horizon, a 3-column row — plain occupancy, survival-weighted occupancy
+(beaching removed), and the surviving fraction `surv/occ` — reusing 025's hex
+registration. The two density columns **share one `LogNorm`** (029's
+four-decades-floored `log_norm`, since survival weights have a long sub-1
+tail) so the age-thinning and the beaching-removal read on the same scale;
+the fraction column uses a **fixed linear 0–1** scale (`vmin=0, vmax=1`) so it
+is comparable across horizons. The DPI-scale and per-panel-height parameters
+match 026's rationale.
+
 ## Cross-references
 
 - [beaching.md](beaching.md) — 029's store, model, and limitations.
+- [survival_occupancy.md](survival_occupancy.md) — 030's store and the
+  survival-weighting behind it.
 - [seeding.md](seeding.md) — release-set semantics every viz reads.
 - [distance_calculation.md](distance_calculation.md) — 022's metric.
 - [hexbinning_and_connectivity.md](hexbinning_and_connectivity.md) —
