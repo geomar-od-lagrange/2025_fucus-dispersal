@@ -143,6 +143,11 @@ w_half = 0.05          # onshore-Stokes half-saturation (m/s) in the g ramp
 trap_flat = 1.0
 trap_wall = 1.0
 
+# Max rounds of geodesic (through-water) propagation when extrapolating the
+# WAM field onto BSH water, in WAM cells (~1.6 km each). Caps how far a
+# sheltered cell may import wave conditions from; beyond it, w_onshore = 0.
+stokes_fill_max_cells = 32
+
 # Distance-to-coast raster resolution (m, EPSG:3035).
 raster_dx_m = 500.0
 
@@ -347,11 +352,47 @@ print(f"raster {rast['shape']} water={rast['water_cells']:,} "
 # WAM does not represent at all.
 
 # %%
+def bsh_water_on_grid(data_root, lon, lat):
+    """BSH water mask (fine H0 over coarse) on a lon/lat grid, by FOOTPRINT.
+
+    A cell counts as water if *any* of a 3x3 subsample spanning its footprint
+    is BSH water. Sampling the centre only is wrong here: WAM cells are ~1.6 km
+    and coastal ones are part water, part land, so a centre that happens to
+    land on BSH land excludes a cell that particles legitimately occupy —
+    which then never receives a donor and silently forces w_onshore = 0. That
+    misclassified 27.9 % of particle positions (56 % of in-band samples).
+    """
+    h0_fine = xr.open_dataset(
+        data_root / "bsh_hbmnoku_static/static_file_fine/H0_file_fine.nc"
+    )
+    h0_coarse = xr.open_dataset(
+        data_root / "bsh_hbmnoku_static/static_file_coarse/H0_file_coarse.nc"
+    )
+    sample_fine = _h0_nearest_sampler(h0_fine)
+    sample_coarse = _h0_nearest_sampler(h0_coarse)
+    lon2, lat2 = np.meshgrid(lon, lat)
+    dlon, dlat = lon[1] - lon[0], lat[1] - lat[0]
+    lon_lo, lon_hi = float(h0_fine.lon.min()), float(h0_fine.lon.max())
+    lat_lo, lat_hi = float(h0_fine.lat.min()), float(h0_fine.lat.max())
+
+    water = np.zeros(lon2.shape, dtype=bool)
+    for ox in (-0.5, 0.0, 0.5):
+        for oy in (-0.5, 0.0, 0.5):
+            lo = (lon2 + ox * dlon).ravel()
+            la = (lat2 + oy * dlat).ravel()
+            h0 = sample_coarse(lo, la)
+            in_fine = (lo >= lon_lo) & (lo <= lon_hi) & (la >= lat_lo) & (la <= lat_hi)
+            h0[in_fine] = sample_fine(lo[in_fine], la[in_fine])
+            water |= np.isfinite(h0).reshape(lon2.shape)
+    return water
+
+
 class OnshoreStokes:
     """Raw Stokes sampler, nearest-hour/cell, extrapolated over WAM static
     land so it covers the whole BSH water mask. One-day file cache."""
 
-    def __init__(self, stokes_dir, mask_sample_day=15):
+    def __init__(self, stokes_dir, bsh_water_fn, fill_max_cells=32,
+                 mask_sample_day=15):
         self.stokes_dir = Path(stokes_dir)
         self._day = None
         self._cube = None  # (VSDX, VSDY, times)
@@ -378,18 +419,54 @@ class OnshoreStokes:
         self.ever_wet = ever_wet
         self.mask_files = len(sample)
 
-        # Nearest static-water cell for every cell, + how far that reached.
-        dist_cells, (self._fy, self._fx) = ndimage.distance_transform_edt(
-            ~ever_wet, return_indices=True
-        )
+        # Geodesic donor map: which WAM-wet cell each BSH-water cell reads.
+        #
+        # Built by breadth-first propagation of the *flat source index* — one
+        # masked 4-neighbour dilation per round, so the front advances one
+        # cell (~1.6 km) at a time and BSH land blocks it. Propagating indices
+        # rather than values means this runs once on the static masks; per-hour
+        # sampling stays a single gather.
+        #
+        # 4-neighbour, not 8: a 3x3 dilation squeezes between diagonally
+        # touching land cells, which is exactly the thin-barrier bridging the
+        # surface_stokes N=5 Stokes spread is faulted for.
+        nrow, ncol = ever_wet.shape
+        bsh_water_on_wam = bsh_water_fn(self.lon, self.lat)
+        donor = np.where(ever_wet, np.arange(ever_wet.size).reshape(nrow, ncol), -1)
+        rounds = np.full((nrow, ncol), -1, dtype="int16")
+        rounds[ever_wet] = 0
+        # Propagate only through BSH water; land (and non-BSH cells) block.
+        allowed = bsh_water_on_wam & ~ever_wet
+        for r in range(1, fill_max_cells + 1):
+            todo = (donor < 0) & allowed
+            if not todo.any():
+                break
+            src = donor
+            for shifted in (
+                np.roll(src, 1, 0), np.roll(src, -1, 0),
+                np.roll(src, 1, 1), np.roll(src, -1, 1),
+            ):
+                take = todo & (donor < 0) & (shifted >= 0)
+                donor = np.where(take, shifted, donor)
+                rounds = np.where(take, r, rounds)
+        self.donor = donor
+        self.fill_max_cells = fill_max_cells
+        self.rounds = rounds
+        self.n_unreachable = int(((donor < 0) & bsh_water_on_wam).sum())
+        self.fill_rounds_used = int(rounds.max())
+
         dy_km = abs(self.lat[1] - self.lat[0]) * 111.32
         dx_km = abs(self.lon[1] - self.lon[0]) * 111.32 * np.cos(
             np.radians(float(np.mean(self.lat)))
         )
-        self.fill_km = (dist_cells * 0.5 * (dx_km + dy_km)).astype("float32")
+        # Path length along the propagation, not crow-flies distance.
+        self.fill_km = (
+            np.maximum(rounds, 0) * 0.5 * (dx_km + dy_km)
+        ).astype("float32")
         # Diagnostics accumulated over all sampled positions.
         self.n_sampled = 0
         self.n_filled = 0
+        self.n_unreachable_samples = 0
         self.n_outside_bbox = 0
         self.fill_km_sum = 0.0
         self.fill_km_max = 0.0
@@ -428,20 +505,22 @@ class OnshoreStokes:
         i = np.clip(np.nan_to_num(i), 0, len(self.lon) - 1).astype(np.int64)
         j = np.clip(np.nan_to_num(j), 0, len(self.lat) - 1).astype(np.int64)
 
-        # Redirect static-land (and clipped out-of-bbox) samples to the
-        # nearest static-water cell; ice cells are left where they are.
+        # Redirect static-land (and clipped out-of-bbox) samples along the
+        # geodesic donor map; ice cells are left where they are (their value
+        # is NaN this hour and falls through to zero below).
         need = ~self.ever_wet[j, i]
         km = np.where(need, self.fill_km[j, i], 0.0)
-        fj, fi = self._fy[j, i], self._fx[j, i]   # from the ORIGINAL (j, i)
-        j = np.where(need, fj, j)
-        i = np.where(need, fi, i)
-        sx = vsdx[t][j, i]
-        sy = vsdy[t][j, i]
+        donor = self.donor[j, i]
+        unreachable = need & (donor < 0)
+        flat = np.where(need & ~unreachable, donor, j * len(self.lon) + i)
+        sx = vsdx[t].ravel()[flat]
+        sy = vsdy[t].ravel()[flat]
         onsh = -(sx * n_out_x + sy * n_out_y)
-        onsh = np.where(finite & np.isfinite(onsh), onsh, 0.0)
+        onsh = np.where(finite & ~unreachable & np.isfinite(onsh), onsh, 0.0)
 
         self.n_sampled += int(finite.sum())
-        self.n_filled += int((need & finite).sum())
+        self.n_filled += int((need & ~unreachable & finite).sum())
+        self.n_unreachable_samples += int((unreachable & finite).sum())
         self.n_outside_bbox += int((finite & ~inside).sum())
         self.fill_km_sum += float(km[finite].sum())
         self.fill_km_max = max(self.fill_km_max, float(km[finite].max(initial=0.0)))
@@ -478,7 +557,11 @@ def deposit_one_zarr(path, release_doy, rast, stokes):
     ny_at = rast["n_out_y"][row, col].reshape(ntraj, nobs)
     flat_at = rast["nearest_flat"][row, col].reshape(ntraj, nobs)
     hex_at = rast["hex_id"][row, col].reshape(ntraj, nobs)
-    in_band = (dist_at < band_m) & ok.reshape(ntraj, nobs)
+    # Land-seeded particles are excluded here, not just at deposition: they sit
+    # motionless on BSH land at distance 0, so they read as in-band every hour,
+    # dominate the extrapolation diagnostics, and cost a third of the Stokes
+    # loop — while contributing nothing (dep[~real] = 0 below).
+    in_band = (dist_at < band_m) & ok.reshape(ntraj, nobs) & real[:, None]
 
     # Onshore Stokes at in-band positions, hour by hour (day-file cached).
     release_time = np.datetime64(ds.time.isel(trajectory=0, obs=0).values)
@@ -566,7 +649,14 @@ print(f"{len(parsed)} zarrs, release_doys "
       f"{release_doys[0]}..{release_doys[-1]} ({len(release_doys)} unique)")
 
 # %%
-stokes = OnshoreStokes(stokes_dir)
+stokes = OnshoreStokes(
+    stokes_dir,
+    lambda lon, lat: bsh_water_on_grid(data_root, lon, lat),
+    fill_max_cells=stokes_fill_max_cells,
+)
+print(f"WAM donor map: {stokes.fill_rounds_used} of {stokes.fill_max_cells} "
+      f"propagation rounds used; {stokes.n_unreachable:,} BSH-water cells "
+      f"unreachable through water (they keep w_onshore = 0)")
 
 t0 = time.time()
 frames = []
@@ -590,6 +680,7 @@ print(f"computed {len(beaching):,} rows in {time.time() - t0:.1f}s; "
 print(f"WAM extrapolation ({stokes.mask_files} files in the static-water mask): "
       f"{stokes.n_filled:,} / {stokes.n_sampled:,} in-band samples filled "
       f"({100 * stokes.n_filled / max(stokes.n_sampled, 1):.1f}%), "
+      f"{stokes.n_unreachable_samples:,} unreachable through water, "
       f"{stokes.n_outside_bbox:,} outside the WAM bbox "
       f"({100 * stokes.n_outside_bbox / max(stokes.n_sampled, 1):.1f}%); "
       f"mean fill {stokes.fill_km_sum / max(stokes.n_sampled, 1):.2f} km, "
