@@ -28,6 +28,8 @@
 #   sbatch scripts/024d_BuildBeaching_job.sh surface_stokes 6000 \
 #          "0.0125 0.025 0.05 0.1 0.2"                              # w_half sweep, 240 cells
 #   sbatch --ntasks=8 scripts/024d_BuildBeaching_job.sh             # throttle concurrency
+#   sbatch --ntasks=384 scripts/024d_BuildBeaching_job.sh surface_stokes 6000 \
+#          "0.0125 0.025 0.05 0.1 0.2 0.4 0.8 1.6" 30                 # one wave, 30s stagger
 # 024a_BuildHexKey_job.sh must have run first for the matching hex_radius.
 
 YEARS=(2016 2017 2018 2019)
@@ -44,15 +46,23 @@ hex_radius="${2:-6000}"
 # Deliberate word-split: a space-separated list of w_half values to sweep.
 # shellcheck disable=SC2206
 W_HALVES=(${3:-0.05})
+# Max random start delay per cell, in seconds, drawn at 0.1 s granularity.
+# This is a de-synchroniser for the Jupyter kernel start-up race (ZMQ
+# "Address already in use" when many kernels claim connection files/ports
+# at once — it cost us a cell at 48-way and again at 100-way). The race
+# window is milliseconds, so tenths of a second are the right unit and a
+# few seconds of total spread is plenty; this is NOT bandwidth throttling.
+stagger_max_s="${4:-30}"
 
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
-export output_root regime hex_radius
+export output_root regime hex_radius stagger_max_s
 
 mkdir -p notebooks_executed/Visualisations/
 
 echo "grid: ${#W_HALVES[@]} w_half x ${#YEARS[@]} years x 12 months" \
      "= $((${#W_HALVES[@]} * ${#YEARS[@]} * 12)) cells, ${SLURM_NTASKS} concurrent"
 echo "w_half: ${W_HALVES[*]}"
+echo "stagger: random 0..${stagger_max_s}s per cell, 0.1s granularity"
 
 # Emit every "year month w_half" triple; xargs runs up to ${SLURM_NTASKS} at
 # once, each dispatching one srun --ntasks=1 -c N --exact papermill step.
@@ -64,6 +74,9 @@ for wh in "${W_HALVES[@]}"; do
     done
 done | xargs -0 -P "${SLURM_NTASKS}" -n 1 bash -c '
     read -r year month wh <<< "$1"
+    # Bash seeds RANDOM per process, so each xargs child gets its own draw.
+    tenths=$(( RANDOM % (stagger_max_s * 10 + 1) ))
+    sleep "$(( tenths / 10 )).$(( tenths % 10 ))"
     ms=$(printf "_m%02d" "${month}")
     whtag="_wh${wh//./p}"
     srun --ntasks=1 --cpus-per-task=${SLURM_CPUS_PER_TASK} --exact \

@@ -32,9 +32,12 @@ unset SLURM_CPU_BIND SLURM_CPU_BIND_LIST SLURM_CPU_BIND_TYPE SLURM_CPU_BIND_VERB
 regime="${1:-surface_stokes}"
 hex_radius="${2:-6000}"
 w_half="${3:-0.05}"
+# Max random start delay per cell (s), 0.1 s granularity; see 024d job
+# script — de-synchronises the Jupyter kernel start-up race.
+stagger_max_s="${4:-30}"
 
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
-export output_root regime hex_radius w_half
+export output_root regime hex_radius w_half stagger_max_s
 
 mkdir -p notebooks_executed/Visualisations/
 
@@ -44,6 +47,8 @@ for year in "${YEARS[@]}"; do
     done
 done | xargs -0 -P "${SLURM_NTASKS}" -n 1 bash -c '
     read -r year month <<< "$1"
+    tenths=$(( RANDOM % (stagger_max_s * 10 + 1) ))
+    sleep "$(( tenths / 10 )).$(( tenths % 10 ))"
     ms=$(printf "_m%02d" "${month}")
     whtag="_wh${w_half//./p}"
     srun --ntasks=1 --cpus-per-task=${SLURM_CPUS_PER_TASK} --exact \
