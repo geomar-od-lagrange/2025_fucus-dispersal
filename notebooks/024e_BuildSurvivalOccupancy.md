@@ -492,6 +492,10 @@ Per real drifter, weight every in-window occupancy sample by `S = exp(−A)`;
 (=S) over `(target_hex, age_bin)` with `np.bincount`.
 
 ```python
+# Realized rate diagnostics, one entry per zarr (see the s(w) block below).
+RATE_STATS = []
+
+
 def occupancy_one_zarr(path, release_doy, rast, stokes):
     ds = xr.open_zarr(path).isel(obs=slice(0, occupancy_max_days * 24))
     lon = ds.lon.values.astype("float32")
@@ -528,8 +532,26 @@ def occupancy_one_zarr(path, release_doy, rast, stokes):
         )
 
     trap = np.where(flat_at, trap_flat, trap_wall).astype("float32")
-    g_w = w_on / (w_on + w_half)
-    a = np.where(in_band, output_dt_hours / (tau0_hours / (trap * np.maximum(g_w, 1e-6))), 0.0)
+    # s(w) = w/(w + w_half), the saturating wave-forcing factor. Named `s`
+    # (saturation), not `g`: `g` collides with gravitational acceleration and
+    # understates that this is the model's one term with no precedent in the
+    # cited beaching literature (see docs/beaching.md).
+    s_w = w_on / (w_on + w_half)
+    a = np.where(in_band, output_dt_hours / (tau0_hours / (trap * np.maximum(s_w, 1e-6))), 0.0)
+    # Realized rate diagnostics over in-band steps: the sweep reports totals,
+    # but whether a member is physically sensible is read off the timescale
+    # and forcing distributions, so record them rather than inferring.
+    _ib = in_band & (w_on > 0)
+    if _ib.any():
+        _tau = tau0_hours / np.maximum(s_w[_ib], 1e-6)
+        _wq = np.percentile(w_on[_ib], [10, 50, 90])
+        _tq = np.percentile(_tau, [10, 50, 90])
+        RATE_STATS.append({
+            'in_band_steps': int(in_band.sum()),
+            'forced_steps': int(_ib.sum()),
+            'w_on_p10': _wq[0], 'w_on_p50': _wq[1], 'w_on_p90': _wq[2],
+            'tau_h_p10': _tq[0], 'tau_h_p50': _tq[1], 'tau_h_p90': _tq[2],
+        })
     surv = np.exp(-np.cumsum(a, axis=1)).astype("float32")
 
     age_bin = (np.arange(nobs) // (age_bin_days * 24)).astype(np.int64)
@@ -600,6 +622,15 @@ survocc = (
 )
 print(f"computed {len(survocc):,} rows in {time.time() - t0:.1f}s; "
       f"missing Stokes days: {stokes.missing_days}")
+if RATE_STATS:
+    _rs = pd.DataFrame(RATE_STATS)
+    _forced = _rs["forced_steps"].sum() / max(_rs["in_band_steps"].sum(), 1)
+    print(f"realized rate over in-band steps ({100 * _forced:.1f}% with w_onshore > 0):")
+    print(f"  w_onshore m/s  p10/p50/p90: {_rs['w_on_p10'].mean():.4f} / "
+          f"{_rs['w_on_p50'].mean():.4f} / {_rs['w_on_p90'].mean():.4f}")
+    print(f"  tau hours      p10/p50/p90: {_rs['tau_h_p10'].mean():,.0f} / "
+          f"{_rs['tau_h_p50'].mean():,.0f} / {_rs['tau_h_p90'].mean():,.0f}"
+          f"   (tau0={tau0_hours:g} h, w_half={w_half:g} m/s)")
 print(f"WAM extrapolation ({stokes.mask_files} files in the static-water mask): "
       f"{stokes.n_filled:,} / {stokes.n_sampled:,} in-band samples filled "
       f"({100 * stokes.n_filled / max(stokes.n_sampled, 1):.1f}%), "
