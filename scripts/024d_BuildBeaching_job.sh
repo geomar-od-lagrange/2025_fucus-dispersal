@@ -1,29 +1,33 @@
 #!/bin/bash
 #SBATCH --job-name=024d_BuildBeaching
-#SBATCH --ntasks=48
-#SBATCH --cpus-per-task=1
-#SBATCH --mem-per-cpu=16G
-#SBATCH --time=01:00:00
+#SBATCH --ntasks=100
+#SBATCH --cpus-per-task=2
+#SBATCH --mem-per-cpu=12G
+#SBATCH --time=04:00:00
 #SBATCH --partition=base
+#SBATCH --constraint=sapphire
 
 # Post-simulation beaching pass: reads the trajectory zarrs + raw
 # baltic_highres Stokes + the 024a key, writes one beaching parquet per
-# (regime, release_year, release_month). A single-process numpy notebook
-# (no Dask) — each zarr fits in memory and the bottleneck is Stokes I/O, so
-# one papermill run processes a month's ~6 zarrs sequentially (~7 min).
+# (regime, release_year, release_month, w_half). A single-process numpy
+# notebook (no Dask) — each zarr fits in memory and the bottleneck is Stokes
+# I/O, so one papermill run processes a month's ~6 zarrs sequentially (~7 min).
 #
-# Parallelism fans out the full (year × month) grid with xargs dispatching
-# one `srun --ntasks=1 --exact` step per cell, like 010_FucusDispersal_*.
-# njobs is fixed (|YEARS|·12 = 48) but concurrency is whatever --ntasks the
-# scheduler grants (`xargs -P ${SLURM_NTASKS}`), so it rescales: request
-# fewer tasks under load without editing the job. The store is partitioned
-# per (regime, year, month) — each cell writes its own `_mMM` file, no shared
-# output, no merge; 029 pools the monthly partitions.
+# Parallelism fans out the full (w_half × year × month) grid with xargs
+# dispatching one `srun --ntasks=1 -c ${SLURM_CPUS_PER_TASK} --exact` step per
+# cell, like 010_FucusDispersal_*. njobs is fixed by the grid but concurrency
+# is whatever --ntasks the scheduler grants (`xargs -P ${SLURM_NTASKS}`), so
+# the two rescale independently: request fewer tasks under load without
+# editing the job. The store is partitioned per (regime, year, month, w_half)
+# — each cell writes its own file, no shared output, no merge; 029 pools the
+# monthly partitions of one w_half. Pinned to sapphire (srp) nodes via
+# --constraint for reliable IB networking.
 #
-# Usage: sbatch scripts/024d_BuildBeaching_job.sh [regime] [hex_radius]
-#   sbatch scripts/024d_BuildBeaching_job.sh                     # surface_stokes, all cells
-#   sbatch --ntasks=8 scripts/024d_BuildBeaching_job.sh          # throttle concurrency
-#   sbatch scripts/024d_BuildBeaching_job.sh surface 6000        # surface regime
+# Usage: sbatch scripts/024d_BuildBeaching_job.sh [regime] [hex_radius] ["w_half ..."]
+#   sbatch scripts/024d_BuildBeaching_job.sh                        # baseline w_half=0.05, 48 cells
+#   sbatch scripts/024d_BuildBeaching_job.sh surface_stokes 6000 \
+#          "0.0125 0.025 0.05 0.1 0.2"                              # w_half sweep, 240 cells
+#   sbatch --ntasks=8 scripts/024d_BuildBeaching_job.sh             # throttle concurrency
 # 024a_BuildHexKey_job.sh must have run first for the matching hex_radius.
 
 YEARS=(2016 2017 2018 2019)
@@ -37,30 +41,41 @@ unset SLURM_CPU_BIND SLURM_CPU_BIND_LIST SLURM_CPU_BIND_TYPE SLURM_CPU_BIND_VERB
 
 regime="${1:-surface_stokes}"
 hex_radius="${2:-6000}"
+# Deliberate word-split: a space-separated list of w_half values to sweep.
+# shellcheck disable=SC2206
+W_HALVES=(${3:-0.05})
 
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
 export output_root regime hex_radius
 
 mkdir -p notebooks_executed/Visualisations/
 
-# Emit every "year month" pair; xargs runs up to ${SLURM_NTASKS} at once,
-# each dispatching one srun --ntasks=1 --exact papermill step.
-for year in "${YEARS[@]}"; do
-    for month in $(seq 1 12); do
-        printf '%s\0' "${year} ${month}"
+echo "grid: ${#W_HALVES[@]} w_half x ${#YEARS[@]} years x 12 months" \
+     "= $((${#W_HALVES[@]} * ${#YEARS[@]} * 12)) cells, ${SLURM_NTASKS} concurrent"
+echo "w_half: ${W_HALVES[*]}"
+
+# Emit every "year month w_half" triple; xargs runs up to ${SLURM_NTASKS} at
+# once, each dispatching one srun --ntasks=1 -c N --exact papermill step.
+for wh in "${W_HALVES[@]}"; do
+    for year in "${YEARS[@]}"; do
+        for month in $(seq 1 12); do
+            printf '%s\0' "${year} ${month} ${wh}"
+        done
     done
 done | xargs -0 -P "${SLURM_NTASKS}" -n 1 bash -c '
-    read -r year month <<< "$1"
+    read -r year month wh <<< "$1"
     ms=$(printf "_m%02d" "${month}")
+    whtag="_wh${wh//./p}"
     srun --ntasks=1 --cpus-per-task=${SLURM_CPUS_PER_TASK} --exact \
         pixi run papermill --cwd notebooks/ \
         notebooks/024d_BuildBeaching.ipynb \
-        notebooks_executed/Visualisations/024d_BuildBeaching_${regime}_${year}${ms}_r${hex_radius}m.ipynb \
+        notebooks_executed/Visualisations/024d_BuildBeaching_${regime}_${year}${ms}${whtag}_r${hex_radius}m.ipynb \
         -p output_root ${output_root} \
         -p regime ${regime} \
         -p release_year ${year} \
         -p release_month ${month} \
         -p hex_radius ${hex_radius} \
+        -p w_half ${wh} \
         -k python
 ' _
 rc=$?

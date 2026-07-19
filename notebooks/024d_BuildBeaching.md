@@ -45,10 +45,17 @@ Fucus **lifetime** `L(t)` — survival is `exp(−∫dt/τ)·L(t)`, today's
   fraction of genuine water positions and are not used here.
 - **shore type** — the nearest land cell fronted by a tidal-flat
   (`H0 ≤ 0`) cell reads as `flat` (dissipative, retentive), else `wall`.
+  **Currently degenerate**: `trap_flat == trap_wall == 1.0`, so this term
+  contributes nothing and the rate is uniform along the coast for a given
+  wave forcing. The classification is still computed and carried into the
+  store as `shore_type` — a diagnostic label and the seam for a real
+  substrate classification, *not* an active model term. See the parameters
+  cell for why the H0 flag is not a usable Baltic retentiveness proxy.
 - **onshore wave forcing** — the onshore component of the raw
   `baltic_highres` Stokes drift (`VSDX/VSDY`), i.e. the cross-shore
   transport the `surface_stokes` runs masked at blocked faces, sampled
-  here *before* that mask.
+  here *before* that mask. With `trap` degenerate this is the *only* term
+  that modulates the rate.
 
 **Land-seeded particles are dropped** (zero first-step displacement),
 exactly as `024`/`024b` do. The key file from `024a_BuildHexKey.md` is a
@@ -121,9 +128,19 @@ output_dt_hours = 1
 # Rate-model parameters (see beaching.md "Open questions"). Sweep + report.
 band_m = 2000.0        # near-shore band width (m)
 tau0_hours = 24.0      # base e-folding beaching timescale (h)
-trap_flat = 2.0        # retention weight, dissipative flat shore
-trap_wall = 1.0        # retention weight, reflective wall shore
 w_half = 0.05          # onshore-Stokes half-saturation (m/s) in the g ramp
+
+# Shore-type retention weights, DELIBERATELY DEGENERATE (both 1.0) — the trap
+# term is wired but currently expresses nothing, so every shore beaches alike
+# for a given wave forcing. The only shore typing available here is the BSH
+# `H0 <= 0` tidal-flat flag, which is not a retentiveness proxy for *Baltic*
+# shores: the basin is effectively tide-free, so the flag fires only in the
+# German Bight (outside the wave grid, hence zero forcing anyway). A two-class
+# split would read as resolved coastal morphology while resolving none. The
+# plumbing stays so a real substrate/exposure classification can drive it
+# later without rebuilding the per-step lookup — set these apart to enable it.
+trap_flat = 1.0
+trap_wall = 1.0
 
 # Distance-to-coast raster resolution (m, EPSG:3035).
 raster_dx_m = 500.0
@@ -146,9 +163,12 @@ if not key_path.exists() or not meta_path.exists():
     )
 
 month_suffix = f"_m{release_month:02d}" if release_month else ""
+# w_half is the swept rate parameter, so it is part of the partition identity
+# — sweep members must not collide. 0.05 -> "wh0p05".
+wh_suffix = f"_wh{w_half:g}".replace(".", "p")
 beaching_path = (
     store_root
-    / f"HexAgg_beaching_r{hex_radius}m_{regime}_{release_year}{month_suffix}.parquet"
+    / f"HexAgg_beaching_r{hex_radius}m_{regime}_{release_year}{month_suffix}{wh_suffix}.parquet"
 )
 
 meta = json.loads(meta_path.read_text())
@@ -299,27 +319,79 @@ print(f"raster {rast['shape']} water={rast['water_cells']:,} "
       f"flat={rast['flat_cells']:,} in {time.time() - t0:.1f}s")
 ```
 
-# Onshore Stokes sampler
+# Onshore Stokes sampler (land-extrapolated)
 
 Sample the raw `baltic_highres` `VSDX/VSDY` by nearest hour and cell,
-caching one day-file at a time. Positions outside the Baltic wave grid
-(e.g. the German Bight strip < 9 °E) return zero onshore transport.
+caching one day-file at a time.
+
+**The WAM grid does not cover the BSH water mask**, and a bare nearest-cell
+lookup returns NaN→0 there — which for beaching means *rate zero*, i.e. a
+coastline that cannot strand at any `τ0`/`w_half`. That is a structural
+bias, not a parameter choice: ~20 % (coarse) / ~34 % (fine) of near-shore
+BSH water cells inside the WAM bbox sit on WAM **static land**, and WAM's
+bbox (lon ≥ 9.01°E) excludes the German Bight strip entirely. So the field
+is **extrapolated to full BSH coverage** by nearest-wet lookup.
+
+The subtlety is that WAM NaN is *not* a land mask: it is land **or ice**
+(the wet-cell count varies hour to hour, ~4.4 % of the grid is seasonally
+ice-blanked in the Bothnian Bay / Gulf of Finland). Extrapolating across ice
+would be wrong — ice genuinely suppresses waves, so zero forcing there is
+the physical answer. The two are separated by a **static water mask**
+(`ever_wet`: finite in *any* hour of a seasonal sample), and only static
+land is filled. Transient ice keeps `w_onshore = 0`.
+
+Fill distance is recorded per sample so the extrapolation is auditable:
+most of it is trivial (median ~1 cell — the two coastlines simply disagree
+by a cell), but a thin tail reaches tens of km into lagoons and fjords that
+WAM does not represent at all.
 
 ```python
 class OnshoreStokes:
-    """Nearest-neighbour raw Stokes sampler with a one-day file cache."""
+    """Raw Stokes sampler, nearest-hour/cell, extrapolated over WAM static
+    land so it covers the whole BSH water mask. One-day file cache."""
 
-    def __init__(self, stokes_dir):
+    def __init__(self, stokes_dir, mask_sample_day=15):
         self.stokes_dir = Path(stokes_dir)
         self._day = None
         self._cube = None  # (VSDX, VSDY, times)
-        first = sorted(self.stokes_dir.glob("stokes_*.nc"))
-        if not first:
+        files = sorted(self.stokes_dir.glob("stokes_*.nc"))
+        if not files:
             raise FileNotFoundError(f"no raw Stokes under {self.stokes_dir}")
-        g = xr.open_dataset(first[0])
+        g = xr.open_dataset(files[0])
         self.lon = g.longitude.values
         self.lat = g.latitude.values
         self.missing_days = 0
+
+        # Static water mask: wet in ANY hour of a monthly sample spanning the
+        # seasonal cycle, so seasonal ice does not read as land.
+        by_month = {}
+        for f in files:
+            stem = f.stem.split("_")[-1]
+            if int(stem[6:8]) == mask_sample_day:
+                by_month.setdefault(stem[4:6], f)
+        sample = sorted(by_month.values()) or files[:1]
+        ever_wet = None
+        for f in sample:
+            wet = np.isfinite(xr.open_dataset(f).VSDX.values).any(axis=0)
+            ever_wet = wet if ever_wet is None else (ever_wet | wet)
+        self.ever_wet = ever_wet
+        self.mask_files = len(sample)
+
+        # Nearest static-water cell for every cell, + how far that reached.
+        dist_cells, (self._fy, self._fx) = ndimage.distance_transform_edt(
+            ~ever_wet, return_indices=True
+        )
+        dy_km = abs(self.lat[1] - self.lat[0]) * 111.32
+        dx_km = abs(self.lon[1] - self.lon[0]) * 111.32 * np.cos(
+            np.radians(float(np.mean(self.lat)))
+        )
+        self.fill_km = (dist_cells * 0.5 * (dx_km + dy_km)).astype("float32")
+        # Diagnostics accumulated over all sampled positions.
+        self.n_sampled = 0
+        self.n_filled = 0
+        self.n_outside_bbox = 0
+        self.fill_km_sum = 0.0
+        self.fill_km_max = 0.0
 
     def _load(self, day):
         if day == self._day:
@@ -335,7 +407,12 @@ class OnshoreStokes:
         return self._cube
 
     def onshore(self, lon_q, lat_q, when, n_out_x, n_out_y):
-        """Onshore Stokes magnitude max(0, -(VSDX,VSDY)·n_out) at each point."""
+        """Onshore Stokes magnitude max(0, -(VSDX,VSDY)·n_out) at each point.
+
+        Positions on WAM static land (or outside the WAM bbox, which clips to
+        the edge) read the nearest static-water cell. Positions on water that
+        is NaN *this hour* — ice — stay at zero.
+        """
         cube = self._load(pd.Timestamp(when).normalize())
         if cube is None:
             return np.zeros(lon_q.shape, dtype="float32")
@@ -343,16 +420,30 @@ class OnshoreStokes:
         t = np.argmin(np.abs(times - np.datetime64(when)))
         i = np.round((lon_q - self.lon[0]) / (self.lon[1] - self.lon[0]))
         j = np.round((lat_q - self.lat[0]) / (self.lat[1] - self.lat[0]))
-        ok = (
-            np.isfinite(lon_q)
-            & (i >= 0) & (i < len(self.lon)) & (j >= 0) & (j < len(self.lat))
+        finite = np.isfinite(lon_q) & np.isfinite(lat_q)
+        inside = (
+            finite & (i >= 0) & (i < len(self.lon)) & (j >= 0) & (j < len(self.lat))
         )
         i = np.clip(np.nan_to_num(i), 0, len(self.lon) - 1).astype(np.int64)
         j = np.clip(np.nan_to_num(j), 0, len(self.lat) - 1).astype(np.int64)
+
+        # Redirect static-land (and clipped out-of-bbox) samples to the
+        # nearest static-water cell; ice cells are left where they are.
+        need = ~self.ever_wet[j, i]
+        km = np.where(need, self.fill_km[j, i], 0.0)
+        fj, fi = self._fy[j, i], self._fx[j, i]   # from the ORIGINAL (j, i)
+        j = np.where(need, fj, j)
+        i = np.where(need, fi, i)
         sx = vsdx[t][j, i]
         sy = vsdy[t][j, i]
         onsh = -(sx * n_out_x + sy * n_out_y)
-        onsh = np.where(ok & np.isfinite(onsh), onsh, 0.0)
+        onsh = np.where(finite & np.isfinite(onsh), onsh, 0.0)
+
+        self.n_sampled += int(finite.sum())
+        self.n_filled += int((need & finite).sum())
+        self.n_outside_bbox += int((finite & ~inside).sum())
+        self.fill_km_sum += float(km[finite].sum())
+        self.fill_km_max = max(self.fill_km_max, float(km[finite].max(initial=0.0)))
         return np.maximum(0.0, onsh).astype("float32")
 ```
 
@@ -495,6 +586,13 @@ beaching = (
 )
 print(f"computed {len(beaching):,} rows in {time.time() - t0:.1f}s; "
       f"missing Stokes days: {stokes.missing_days}")
+print(f"WAM extrapolation ({stokes.mask_files} files in the static-water mask): "
+      f"{stokes.n_filled:,} / {stokes.n_sampled:,} in-band samples filled "
+      f"({100 * stokes.n_filled / max(stokes.n_sampled, 1):.1f}%), "
+      f"{stokes.n_outside_bbox:,} outside the WAM bbox "
+      f"({100 * stokes.n_outside_bbox / max(stokes.n_sampled, 1):.1f}%); "
+      f"mean fill {stokes.fill_km_sum / max(stokes.n_sampled, 1):.2f} km, "
+      f"max {stokes.fill_km_max:.1f} km")
 ```
 
 ```python
@@ -523,15 +621,17 @@ print(f"regime={regime}, release_year={release_year}"
       + (f", month={release_month}" if release_month else "")
       + f", hex_radius={hex_radius} m")
 print(f"  params: max_float_days={max_float_days}, band_m={band_m:g}, "
-      f"tau0_hours={tau0_hours:g}, trap_flat/wall={trap_flat:g}/{trap_wall:g}, "
-      f"w_half={w_half:g}")
+      f"tau0_hours={tau0_hours:g}, trap_flat/wall={trap_flat:g}/{trap_wall:g}"
+      + (" (degenerate — shore type inert)" if trap_flat == trap_wall else "")
+      + f", w_half={w_half:g}")
 print(f"  drifters (Σweight): {total:,.0f}")
 print(f"  beached:           {beached:,.0f} ({100 * beached / max(total, 1):.1f}%)")
 print(f"  release_doys:      {beaching['release_doy'].nunique()} "
       f"({beaching['release_doy'].min()}..{beaching['release_doy'].max()})")
 print(f"  beach hexes:       {beaching.loc[beaching['beach_hex'] >= 0, 'beach_hex'].nunique():,}")
 print(f"  shore_type split:  "
-      + ", ".join(f"{k}={float(v):,.0f}" for k, v in by_type.items()))
+      + ", ".join(f"{k}={float(v):,.0f}" for k, v in by_type.items())
+      + ("  [label only — trap degenerate]" if trap_flat == trap_wall else ""))
 beach_bins = beaching.loc[beaching["beach_age_bin"] >= 0]
 if len(beach_bins):
     print(f"  beach age bins:    {beach_bins['beach_age_bin'].min()}.."

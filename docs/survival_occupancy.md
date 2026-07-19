@@ -10,9 +10,12 @@ S(t) = exp(−A(t)),   A(t) = cumsum(Δt/τ) over in-band steps
 ```
 
 with the same near-shore beaching rate `τ = τ0/(trap·g(w_onshore))` as the
-[beaching diagnostic](beaching.md). `A` grows only inside the near-shore
-band, so open-water residence is undiluted while mass lingering near a
-retentive shore decays fast. This is the occupancy analogue of 024d's
+[beaching diagnostic](beaching.md) — including its degenerate `trap`
+(`trap_flat = trap_wall = 1.0`), so onshore wave forcing is the only term
+that modulates the rate and no shore is treated as more retentive than
+another. `A` grows only inside the near-shore band, so open-water residence
+is undiluted while mass lingering in a wave-exposed near-shore band decays
+fast. This is the occupancy analogue of 024d's
 fractional stranding: **024d records where the weight leaves (`beach_hex`);
 024e records where the still-drifting weight is (`target_hex`)**. It composes
 with a future Fucus lifetime `L(t)` — survival becomes `exp(−A)·L`.
@@ -54,10 +57,11 @@ survival maps would need it back and a different aggregation.
 
 At each horizon `T`, `030` selects the snapshot bin `age_bin = T/age_bin_days`
 and draws occupancy vs. survival-weighted (shared `LogNorm`) vs. surviving
-fraction (linear 0–1). The drifting fraction falls with age — e.g. ~0.86 at
-0–10 d to ~0.40 by 110–120 d for the default parameters — most steeply near
-retentive (flat) shores. Absolute rates are parameter-sensitive (see
-[beaching.md](beaching.md)); read the *pattern*.
+fraction (linear 0–1). The drifting fraction falls with age, most steeply
+where near-shore residence coincides with onshore waves — with `trap`
+degenerate the depletion pattern is a *wave-exposure* field, not a substrate
+one. Absolute rates are parameter-sensitive (see [beaching.md](beaching.md));
+read the *pattern*.
 
 ## Cross-references
 

@@ -1,6 +1,6 @@
 # Visualisations: per-plot rationale
 
-Why each notebook in `020`–`029` shows what it shows, and where
+Why each notebook in `020`–`031` shows what it shows, and where
 styling overrides earn their deviation from
 [../AGENTS.md](../AGENTS.md)'s plotting rules. AGENTS.md states the
 **rules** (no `cmap=`, no `figsize=`, no `color=` literals); this doc
@@ -20,8 +20,9 @@ listed here should be dropped.
 | 026a     | Hex time-horizon density maps per origin subbasin | Per-run (regime + radius) | One 026 four-panel figure per origin (HELCOM) subbasin |
 | 026b     | Hex time-horizon density maps per origin subbasin and year | Per-run (regime + radius) | One 026 four-panel figure per (origin subbasin, release year) |
 | 027      | Hex distance-quantile maps | Per-run (regime + radius) | One map per quantile (0.1/0.5/0.9), Aug/Sep releases pooled across years     |
-| 029      | Beaching maps       | Per-run (regime + radius) | Where-stranded (wall/flat) · beached fraction per source hex · age horizons (10/20/50 d) |
+| 029      | Beaching maps       | Per-run (regime + radius) | Where-stranded · beached fraction per source hex · age horizons (10/20/50 d) |
 | 030      | Survival heatmaps   | Per-run (regime + radius) | Per horizon (20/50/100 d): occupancy · survival-weighted · surviving fraction |
+| 031      | Beaching sweep      | Per-run (regime + radius) | Beached fraction + Gini vs `w_half` · where-stranded maps across sweep members |
 
 ## Cross-cutting choices
 
@@ -170,12 +171,16 @@ plus the 024a key for geometry. Three views on one plain EPSG:4326 axis, all
 reusing 025's hex-registration overrides (aspect-driven `figsize`,
 `edgecolor="face"`/`linewidth=0.4`, black coastline `linewidth=0.5`):
 
-- **Where-stranded density**, wall vs. flat panels — beached weight
-  (expected particles) per stranding hex. Inherits 025's `cmap="viridis"` +
-  shared `LogNorm` (floored four decades below the peak, since weighted
-  deposition's sparse tail carries fractional weight): like occupancy,
-  stranding weight spans decades, kept on a common scale so the two shore
-  types are comparable.
+- **Where-stranded density** — beached weight (expected particles) per
+  stranding hex, pooled over shore types. Inherits 025's `cmap="viridis"` +
+  `LogNorm` (floored four decades below the peak, since weighted deposition's
+  sparse tail carries fractional weight): like occupancy, stranding weight
+  spans decades. The store's `shore_type` is deliberately *not* faceted:
+  024d runs with a degenerate `trap` (`trap_flat == trap_wall`), so the label
+  doesn't affect the rate and a wall/flat split map would imply resolved
+  coastal morphology where there is only BSH's tidal-flat flag. Facet it when
+  a real substrate classification drives `trap` — see
+  [beaching.md](beaching.md).
 - **Beached fraction per source hex** — a ratio in [0, 1], so it uses the
   **default (linear) norm** with no `cmap` override to defend (the log-map
   colour choice is dropped, as 027 does for its linear distance quantiles).
@@ -210,3 +215,23 @@ match 026's rationale.
   the store 025 reads.
 - [../AGENTS.md](../AGENTS.md) — the styling rules this doc defends
   exceptions to.
+
+## Notebook 031 — Beaching parameter sweep (special case)
+
+Pools the `w_half` members of the 024d store (each a full `(year, month)`
+set) and reports a **range** rather than a number, because in the Baltic the
+beaching scheme can dominate the result. Two panels plus a map row:
+
+- **Beached fraction vs `w_half`** and **Gini concentration vs `w_half`**,
+  both on a log x-axis (the members are log-spaced). Two separate axes rather
+  than a twin-y: the quantities share no units and a twin-y invites reading a
+  crossing point that means nothing. Default linear norm, default colours —
+  two single-series line plots need no overrides.
+- **Where-stranded maps across members**, one column per `w_half`, on a
+  **shared `LogNorm`** so the difference read off the row is pattern, not
+  scale — the same reasoning as 026's horizon row.
+
+The Gini panel is the load-bearing one: totals are degenerate along the
+`τ0`·`w_half` ridge (see [beaching.md](beaching.md)), so concentration is
+what distinguishes a wave-selective parameterisation from a
+residence-driven one.

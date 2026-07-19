@@ -54,6 +54,10 @@ age_bin_days = 10
 # 0 = pool all monthly partitions across years; 1..12 = that month only.
 release_month = 0
 
+# Onshore-Stokes half-saturation (m/s) of the partitions to read — part of
+# the store filename, so this selects one member of the w_half sweep.
+w_half = 0.05
+
 # Elapsed-time horizons to map (days); each a multiple of age_bin_days and
 # within the store's occupancy_max_days.
 time_horizons_days_csv = "20,50,100"
@@ -86,8 +90,9 @@ key = gpd.read_parquet(store_root / f"HexAgg_key_r{hex_radius}m.parquet")
 
 month_suffix = f"_m{release_month:02d}" if release_month else ""
 month_re = rf"_m{release_month:02d}" if release_month else r"_m\d{2}"
+wh_suffix = f"_wh{w_half:g}".replace(".", "p")
 _PART_RE = re.compile(
-    rf"HexAgg_survocc_r{hex_radius}m_{regime}_(\d{{4}}){month_re}\.parquet$"
+    rf"HexAgg_survocc_r{hex_radius}m_{regime}_(\d{{4}}){month_re}{re.escape(wh_suffix)}\.parquet$"
 )
 survocc_files = [
     f for f in sorted(store_root.glob(f"HexAgg_survocc_r{hex_radius}m_{regime}_*.parquet"))
@@ -193,7 +198,7 @@ for i, h in enumerate(time_horizons_days):
     hex_map(surv_gdfs[h], axes[i, 1], norm=dens_norm, title=f"survival-weighted — {h} d")
     # Surviving fraction on a fixed linear 0–1 scale for cross-horizon reading.
     hex_map(frac_gdfs[h], axes[i, 2], vmin=0.0, vmax=1.0, title=f"surviving fraction — {h} d")
-fig_path = figure_dir / f"SurvivalHeatmaps_{regime}_r{hex_radius}m{month_suffix}.png"
+fig_path = figure_dir / f"SurvivalHeatmaps_{regime}_r{hex_radius}m{month_suffix}{wh_suffix}.png"
 fig.savefig(fig_path)
 print(f"wrote {fig_path}")
 plt.show()

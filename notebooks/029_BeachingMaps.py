@@ -24,7 +24,8 @@
 # leap-correct (as `026`). Draws:
 #
 # 1. **Where-stranded density** — beached weight (expected particles) per
-#    `beach_hex` (log scale), split wall vs. flat.
+#    `beach_hex` (log scale), pooled over shore types (`trap` is degenerate
+#    in 024d, so the wall/flat label is not a model result).
 # 2. **Beached fraction per source hex** — of the drifters released in each
 #    hex, what fraction strands within the viability window (linear 0–1).
 # 3. **Beaching age horizons** — cumulative where-stranded density for
@@ -61,6 +62,10 @@ age_bin_days = 10
 # across years); 1..12 = keep just that month. Selects which monthly
 # partitions 024d wrote are read.
 release_month = 0
+
+# Onshore-Stokes half-saturation (m/s) of the partitions to read — part of
+# the store filename, so this selects one member of the w_half sweep.
+w_half = 0.05
 
 # Beaching age horizons to map, in days. Each must be a multiple of
 # age_bin_days.
@@ -107,8 +112,9 @@ key = gpd.read_parquet(store_root / f"HexAgg_key_r{hex_radius}m.parquet")
 # Figure-filename tag: a specific month, or "" when pooling all months.
 month_suffix = f"_m{release_month:02d}" if release_month else ""
 month_re = rf"_m{release_month:02d}" if release_month else r"_m\d{2}"
+wh_suffix = f"_wh{w_half:g}".replace(".", "p")
 _PART_RE = re.compile(
-    rf"HexAgg_beaching_r{hex_radius}m_{regime}_(\d{{4}}){month_re}\.parquet$"
+    rf"HexAgg_beaching_r{hex_radius}m_{regime}_(\d{{4}}){month_re}{re.escape(wh_suffix)}\.parquet$"
 )
 beaching_files = [
     f for f in sorted(store_root.glob(f"HexAgg_beaching_r{hex_radius}m_{regime}_*.parquet"))
@@ -187,24 +193,25 @@ domain_aspect = (
 beached = beaching[beaching["beach_hex"] >= 0]
 
 # %% [markdown]
-# # Where-stranded density, wall vs. flat
+# # Where-stranded density
 #
-# Log-scale beached weight (expected particles) per stranding hex, split by
-# shore type. A shared `LogNorm` across the two panels keeps them comparable.
+# Log-scale beached weight (expected particles) per stranding hex, pooled over
+# shore types. The store's `shore_type` is *not* split out here: `024d` runs
+# with a degenerate `trap` (`trap_flat == trap_wall`), so the `wall`/`flat`
+# label does not affect the rate and a split map would invite reading resolved
+# coastal morphology into what is only the BSH tidal-flat flag. Split it again
+# when a real substrate classification drives `trap`.
 
 # %%
-gdf_wall = hex_gdf(beached[beached["shore_type"] == "wall"], "beach_hex")
-gdf_flat = hex_gdf(beached[beached["shore_type"] == "flat"], "beach_hex")
-all_vals = pd.concat([g["value"] for g in (gdf_wall, gdf_flat) if not g.empty])
-strand_norm = log_norm(all_vals)
+gdf_stranded = hex_gdf(beached, "beach_hex")
+strand_norm = log_norm(gdf_stranded["value"])
 
-fig, axes = plt.subplots(
-    1, 2, figsize=(panel_height_in * domain_aspect * 2, panel_height_in),
+fig, ax = plt.subplots(
+    figsize=(panel_height_in * domain_aspect, panel_height_in),
     layout="constrained",
 )
-hex_map(gdf_wall, axes[0], norm=strand_norm, title="stranded on wall shore")
-hex_map(gdf_flat, axes[1], norm=strand_norm, title="stranded on flat shore")
-fig_path = figure_dir / f"WhereStranded_{regime}_r{hex_radius}m{month_suffix}.png"
+hex_map(gdf_stranded, ax, norm=strand_norm, title="stranded weight")
+fig_path = figure_dir / f"WhereStranded_{regime}_r{hex_radius}m{month_suffix}{wh_suffix}.png"
 fig.savefig(fig_path)
 print(f"wrote {fig_path}")
 plt.show()
@@ -233,7 +240,7 @@ fig, ax = plt.subplots(
 )
 # Linear default scale (fraction in [0, 1]); no norm override needed.
 hex_map(frac, ax, norm=None, title="beached fraction per source hex")
-fig_path = figure_dir / f"BeachedFraction_{regime}_r{hex_radius}m{month_suffix}.png"
+fig_path = figure_dir / f"BeachedFraction_{regime}_r{hex_radius}m{month_suffix}{wh_suffix}.png"
 fig.savefig(fig_path)
 print(f"wrote {fig_path}")
 plt.show()
@@ -262,7 +269,7 @@ fig, axes = plt.subplots(
 )
 for ax, h in zip(axes.flat, time_horizons_days):
     hex_map(gdfs[h], ax, norm=horizon_norm, title=f"stranded by {h} d")
-fig_path = figure_dir / f"BeachingHorizons_{regime}_r{hex_radius}m{month_suffix}.png"
+fig_path = figure_dir / f"BeachingHorizons_{regime}_r{hex_radius}m{month_suffix}{wh_suffix}.png"
 fig.savefig(fig_path)
 print(f"wrote {fig_path}")
 plt.show()
@@ -270,25 +277,20 @@ plt.show()
 # %% [markdown]
 # # Cumulative beached fraction vs. age
 #
-# Share of all released drifters stranded by each elapsed-time horizon —
-# the stranding time course, split by shore type.
+# Share of all released drifters stranded by each elapsed-time horizon — the
+# stranding time course. Pooled over shore types, for the reason given at the
+# where-stranded map.
 
 # %%
 total_released = float(beaching["weight"].sum())
 age_bins_present = sorted(beached["beach_age_bin"].unique())
-curve = pd.DataFrame(
-    {
-        st: [
-            beached[
-                (beached["shore_type"] == st) & (beached["beach_age_bin"] <= b)
-            ]["weight"].sum() / total_released
-            for b in age_bins_present
-        ]
-        for st in ("wall", "flat")
-    },
+curve = pd.Series(
+    [
+        beached[beached["beach_age_bin"] <= b]["weight"].sum() / total_released
+        for b in age_bins_present
+    ],
     index=pd.Index([(b + 1) * age_bin_days for b in age_bins_present], name="age_days"),
 )
-curve["total"] = curve.sum(axis=1)
 ax = curve.plot()
 ax.set_ylabel("cumulative beached fraction")
 plt.show()
@@ -306,6 +308,7 @@ print(f"  drifters (Σweight): {total_released:,.0f}")
 print(f"  beached:           {n_beached:,.0f} "
       f"({100 * n_beached / max(total_released, 1):.1f}%)")
 print(f"  shore_type split:  "
-      + ", ".join(f"{k}={float(v):,.0f}" for k, v in by_type.items()))
+      + ", ".join(f"{k}={float(v):,.0f}" for k, v in by_type.items())
+      + "  [classification label only; trap is degenerate in 024d]")
 print(f"  stranding hexes:   {beached['beach_hex'].nunique():,}")
 print(f"  source hexes:      {frac['release_hex'].nunique():,}")

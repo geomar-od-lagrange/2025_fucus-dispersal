@@ -43,6 +43,10 @@ e-folding rate (Onink et al. 2021):
 τ = τ0 / (trap(shore_type) · g(w_onshore))
 ```
 
+with `trap ≡ 1` as configured, so in practice `τ = τ0 / g(w_onshore)` and
+**onshore wave forcing is the only term that modulates the rate** (see the
+shore-type bullet for why the factor is kept but left degenerate).
+
 The surviving weight decays by `exp(−Δt/τ)` each in-band step; the weight
 deposited at step `h` is the telescoping survival difference
 `dep = exp(−A_before) − exp(−A_after)` (with `A` the cumulative
@@ -62,18 +66,51 @@ never-beached residual. The three factors:
   normal `n_out`, rotated from the projected grid frame into geographic
   east/north so it dots consistently with the geographic Stokes components
   (LAEA meridian convergence reaches ~17° in the eastern Baltic).
-- **Shore type** sets `trap`. The nearest land cell fronted by a tidal-flat
-  cell reads as `flat` (dissipative, retentive: `trap_flat`); else `wall`
-  (reflective: `trap_wall`). The Baltic is wall-dominated; flats concentrate
-  in the German Bight.
-- **Onshore wave forcing** sets `g`. The onshore Stokes component
+- **Shore type** sets `trap` — **currently degenerate and contributing
+  nothing** (`trap_flat = trap_wall = 1.0`), so the rate is uniform along the
+  coast for a given wave forcing. The classification still runs: the nearest
+  land cell fronted by a tidal-flat cell reads as `flat`, else `wall`, and the
+  label is carried into the store. It is kept wired, not deleted, because the
+  per-step classification lookup is the expensive part and a real substrate
+  dataset should be able to drive `trap` without rebuilding it — set the two
+  weights apart to activate. It is kept *inert* because the only typing
+  available is BSH's `H0 ≤ 0` tidal-flat flag, which is not a retentiveness
+  proxy for Baltic shores: the basin is effectively tide-free, so the flag
+  fires essentially only in the German Bight — which is outside the wave grid
+  and therefore has zero forcing regardless. Two classes would read as
+  resolved coastal morphology while resolving none. Treat `shore_type` in the
+  store and in `029`'s summary as a diagnostic label, never as a model result;
+  `029` deliberately does not map the split.
+- **Onshore wave forcing** sets `g`, and with `trap` degenerate it is the
+  *only* term that modulates the rate. The onshore Stokes component
   `w_onshore = max(0, −(VSDX, VSDY) · n_out)`, sampled from the **raw
-  `baltic_highres` field** by nearest hour and cell — the cross-shore
+  `baltic_highres` field** (CMEMS `BALTICSEA_MULTIYEAR_WAV_003_015`, FMI-WAM,
+  1 nmi ≈ 1.6 × 1.9 km, hourly) by nearest hour and cell — the cross-shore
   transport the `surface_stokes` runs zeroed at blocked faces
   ([stokes_drift.md](stokes_drift.md)), sampled *before* that mask and
-  *without* the N=5 spread (which bridges thin land barriers). Positions
-  outside the Baltic wave grid (German Bight < 9 °E) get `w_onshore = 0`.
+  *without* the N=5 spread (which bridges thin land barriers).
   `g(w) = w / (w + w_half)` is a saturating ramp.
+
+  **The WAM field is extrapolated to full BSH coverage.** WAM's water mask is
+  not BSH's: ~20 % (coarse) / ~34 % (fine) of near-shore BSH water cells
+  inside WAM's bbox sit on WAM *static land*, and WAM's bbox starts at
+  9.01 °E, excluding the German Bight. Left alone these return `w_onshore=0`,
+  which for beaching means *rate zero* — a coastline that cannot strand at any
+  `τ0`/`w_half`. That is a structural bias, not a parameter choice, and it
+  falls hardest on sheltered fjords and archipelago, i.e. prime Fucus habitat.
+  So static-land samples read the **nearest static-water cell** instead.
+
+  The distinction that makes this safe is that **WAM NaN means land *or*
+  ice** — the wet-cell count varies hour to hour, with ~4.4 % of the grid
+  seasonally ice-blanked in the Bothnian Bay and Gulf of Finland. Only
+  *static* land is filled, identified by an `ever_wet` mask (finite in any
+  hour of a monthly sample spanning the seasonal cycle). **Ice keeps
+  `w_onshore = 0`**, which is the physical answer: ice suppresses waves, so
+  no-beaching-under-ice falls out for free, consistent with the currents side
+  where Fucus simply rides the upper-cell velocity. Fill distance is recorded
+  per run and printed — mostly trivial (median ≈ 1 cell, the two coastlines
+  disagreeing by one) with a thin tail reaching tens of km into lagoons WAM
+  does not represent.
 
 **Land-seeded particles are dropped** (zero first-step displacement), as
 `024`/`024b` — ~35 % never enter the water and would strand instantly.
@@ -82,8 +119,8 @@ field); `surface`/`bottom` are sensitivity variants.
 
 ## Store schema
 
-`HexAgg_beaching_r<radius>m_<regime>_<year>_mMM.parquet` (one per
-`(regime, year, month)`) — a grouped weight table, additive across
+`HexAgg_beaching_r<radius>m_<regime>_<year>_mMM_wh<w_half>.parquet` (one per
+`(regime, year, month, w_half)`) — a grouped weight table, additive across
 `release_doy`/month/year like the other `024x` stores, so `029` pools the
 monthly partitions by summing. A single drifter contributes fractional
 weight to *every* coastal hex/age-bin it strands in, plus a residual row:
@@ -94,7 +131,7 @@ weight to *every* coastal hex/age-bin it strands in, plus a residual row:
 | `release_doy` | release day-of-year of the originating zarr |
 | `beach_hex` | hex where the weight stranded; `-1` = never-beached residual |
 | `beach_age_bin` | `floor(deposit_age_days / age_bin_days)`; `-1` for residual |
-| `shore_type` | `wall` / `flat` at the stranding site; `none` for residual |
+| `shore_type` | `wall` / `flat` label at the stranding site (`none` for residual) — diagnostic only while `trap` is degenerate |
 | `weight` | summed stranded weight (expected particles) in the group |
 
 The never-beached residual is kept (`beach_hex = -1`, …), and deposits +
@@ -104,11 +141,33 @@ fraction is `sum(weight | beach_hex ≥ 0) / sum(weight)` per source hex.
 ## Parameters and their defaults
 
 `max_float_days = 60`, `band_m = 2000`, `tau0_hours = 24`,
-`trap_flat = 2.0`, `trap_wall = 1.0`, `w_half = 0.05` m/s,
+`w_half = 0.05` m/s, `trap_flat = trap_wall = 1.0` (degenerate),
 `age_bin_days = 10`, `raster_dx_m = 500`. The scheme is deterministic (no
 RNG). Totals are highly parameter-sensitive — in the Baltic the beaching
 scheme can dominate the answer (Siht et al. 2024) — so these warrant a sweep
-reported as a range, not a single number.
+reported as a range, not a single number. The live knobs are `tau0_hours` and
+`w_half` (jointly the rate scale) plus `band_m` (how much trajectory time is
+exposed to any rate at all); `trap_*` is not a sweep axis while degenerate.
+
+`w_half` is part of the store filename, so sweep members coexist and
+[`031_BeachingSweep`](../notebooks/031_BeachingSweep.py) pools them into a
+range. Three things shape how to sweep:
+
+- **`τ0` and `w_half` are not independent.** `τ = τ0 + τ0·w_half/w`: `τ0` is
+  an additive floor, the *product* `τ0·w_half` is the weak-wave coefficient.
+  Where `w ≪ w_half` only the product matters, so totals trade off along a
+  ridge and cannot identify the two separately. Spatial *selectivity* (031's
+  Gini of stranded weight) is what discriminates: large `w_half` concentrates
+  stranding on wave-exposed coast, small `w_half` saturates `g → 1` and gives
+  a pure near-shore-residence map.
+- **`τ0` is free.** `A = (1/τ0)·Δt·Σ g(w)`, so `τ0` only scales the exponent —
+  caching the `g`-integral would make the whole `τ0` axis a re-reduction with
+  no zarr or Stokes I/O. Not yet implemented; `024d` runs one `τ0` per pass.
+- **`band_m` is quantised by the mask.** On the 5 km coarse grid (≈70 % of
+  release sites) the coastline is a 5 km staircase, so 1–4 km bands all select
+  a sub-cell strip of the same first cell ring; only ~5 km reaches a second
+  ring. It resolves genuinely only inside the 0.9 km fine nest (western
+  Baltic). Sweep it coarsely and report fine-nest and coarse regions apart.
 
 ## Limitations
 

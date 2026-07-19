@@ -88,14 +88,16 @@ note is archived at [done/beaching.md](done/beaching.md). Beaching uses the
 **weighted / fractional** deposition scheme (each particle deposits
 fractional stranding weight along its coastal path; deterministic, noise-free
 at the high-age tail, composes with a Fucus lifetime `L(t)`) — the retired
-stochastic first-stranding draw agreed to <0.2 % on totals. A POC run
-(surface_stokes, Aug 2019, defaults) strands ~57 % of drifter weight within
-the 60-day viability window, wall-dominated with flat strandings correctly
-concentrated in the western Baltic / German Bight.
+stochastic first-stranding draw agreed to <0.2 % on totals. `trap(shore_type)`
+is wired but degenerate (`trap_flat = trap_wall = 1.0`), so onshore wave
+forcing is the only term modulating the rate — see
+[beaching.md](../docs/beaching.md).
 
-Open follow-ups (not blocking): a **parameter sweep** of `τ0` / band width /
-`trap(flat,wall)` reported as a range (totals are highly parameter-sensitive
-in the Baltic); a **Fucus lifetime `L(t)`** replacing the step-function
+Open follow-ups (not blocking): a **parameter sweep** of `τ0` / `w_half` /
+band width reported as a range (totals are highly parameter-sensitive in the
+Baltic) — `trap(flat, wall)` is *not* a sweep axis, being deliberately
+degenerate until a real coastal-substrate classification can drive it; a
+**Fucus lifetime `L(t)`** replacing the step-function
 viability cutoff; and recomputing the free-drifting occupancy/connectivity
 weighted by the surviving (un-beached) fraction.
 
