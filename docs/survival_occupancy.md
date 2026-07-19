@@ -9,7 +9,7 @@ particle's surviving (un-beached) fraction at that age,
 S(t) = exp(−A(t)),   A(t) = cumsum(Δt/τ) over in-band steps
 ```
 
-with the same near-shore beaching rate `τ = τ0/(trap·g(w_onshore))` as the
+with the same near-shore beaching rate `τ = τ0/(trap·s(w_onshore))` as the
 [beaching diagnostic](beaching.md) — including its degenerate `trap`
 (`trap_flat = trap_wall = 1.0`), so onshore wave forcing is the only term
 that modulates the rate and no shore is treated as more retentive than
@@ -70,3 +70,5 @@ read the *pattern*.
 - [hexbinning_and_connectivity.md](hexbinning_and_connectivity.md) — the
   plain occupancy (024 counts) this re-weights, and the key schema.
 - [visualisations.md](visualisations.md) — `030`'s plot rationale.
+- [wam_extrapolation.md](wam_extrapolation.md) — the wave-field fill the
+  survival rate depends on.

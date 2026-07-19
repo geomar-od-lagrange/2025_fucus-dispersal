@@ -12,8 +12,8 @@ free-drifting/beached split is decided. It also composes multiplicatively
 with a Fucus **lifetime** `L(t)`: survival is `exp(−∫dt/τ)·L(t)`, today's
 `max_float_days` being a step-function `L`. Run as a cheap re-runnable pass
 over the trajectory zarrs — the same "aggregate once, consume cheaply" split
-the [hex store](hexbinning_and_connectivity.md) uses — so the trapping
-parameters can be tuned without touching the physics runs. Design rationale
+the [hex store](hexbinning_and_connectivity.md) uses — so the rate
+parameters can be swept without touching the physics runs. Design rationale
 and literature basis: [../plans/done/beaching.md](../plans/done/beaching.md).
 
 ## Pipeline
@@ -22,14 +22,15 @@ and literature basis: [../plans/done/beaching.md](../plans/done/beaching.md).
 |-------|------|-------|--------|
 | Build | [`024d_BuildBeaching`](../notebooks/024d_BuildBeaching.py) | trajectory zarrs + raw `baltic_highres` Stokes + `024a` key | `HexAgg_beaching_*.parquet` |
 | Consume | [`029_BeachingMaps`](../notebooks/029_BeachingMaps.py) | beaching parquet + key | PNGs under `Figures/029/` |
+| Sweep | [`031_BeachingSweep`](../notebooks/031_BeachingSweep.py) | all `w_half` members + key | PNGs under `Figures/031/` |
 
 `024d` is a single-process numpy notebook (no Dask): each zarr fits in
 memory and the bottleneck is Stokes I/O, so it processes a partition's zarrs
 sequentially (~70 s each). Production partitions per `(regime, year, month)`
 — the job fans out the whole `year × month` grid with `xargs`, throttled to
 `--ntasks` (so `njobs ≠ ntasks`: request fewer tasks under load without
-editing the job). Each task writes its own `_mMM` file; `029` pools the
-monthly partitions. `release_month = 0` still builds a single whole-year
+editing the job). Each task writes its own `_mMM_wh<w_half>` file; `029`
+pools the monthly partitions of one member, `031` compares members. `release_month = 0` still builds a single whole-year
 file for ad-hoc use, but the pooled store is the monthly partitions.
 
 ## The rate model
@@ -140,62 +141,15 @@ never-beached residual. The three factors:
   transport the `surface_stokes` runs zeroed at blocked faces
   ([stokes_drift.md](stokes_drift.md)), sampled *before* that mask and
   *without* the N=5 spread (which bridges thin land barriers).
-  `g(w) = w / (w + w_half)` is a saturating ramp.
+  `s(w) = w / (w + w_half)` is a saturating ramp.
 
-  **The WAM field is extrapolated to full BSH coverage**, by geodesic
-  (through-water) propagation. WAM's water mask is not BSH's, and its bbox
-  starts at 9.01 °E, excluding the German Bight. Left alone, positions on WAM
-  land return `w_onshore = 0`, which for beaching means *rate zero* — a
-  coastline that cannot strand at any `τ0`/`w_half`. That is a structural
-  bias, not a parameter choice, and it is large: **78.7 % of in-band samples
-  need filling**, because WAM masks its own coastal cells and the 2 km band
-  hugs the shore.
-
-  The fill is a breadth-first expansion of the **donor index** over the static
-  masks — one 4-neighbour dilation per round, front advancing ~1.6 km, BSH
-  land blocking it. Propagating indices rather than values keeps it a one-off
-  precompute; per-hour sampling stays a single gather. Three details carry
-  weight:
-
-  - **Geodesic, not Euclidean.** A nearest-wet lookup by straight-line
-    distance can draw from across a headland or outside a fjord mouth,
-    importing an open-water wave climate into sheltered water that WAM
-    excluded *because* it is not open water. Geodesic donors instead share
-    the particle's water body. **Measured effect: none.** Rebuilding the full
-    sweep on the geodesic fill reproduced the Euclidean numbers to within
-    0.15 points on every member (e.g. 60.1 % → 60.2 % at `w_half = 0.4`), and
-    fill distance barely moved (2.74 → 2.67 km). So Euclidean nearest-wet
-    rarely crossed land in a way that mattered. Geodesic is kept because it
-    cannot do so *by construction* and because it distinguishes unreachable
-    water (capped and counted) from reachable, which the Euclidean version
-    could not — not because it changes the answer.
-  - **4-neighbour, not 8.** A 3×3 dilation squeezes between diagonally
-    touching land cells — the same thin-barrier bridging the `surface_stokes`
-    N=5 Stokes spread is faulted for.
-  - **Capped and counted.** Cells not reached within `stokes_fill_max_cells`
-    rounds keep `w_onshore = 0` and are reported (currently 0.09 % of
-    samples), rather than silently importing from an absurd distance as the
-    Euclidean version did.
-
-  The mask that makes this safe is that **WAM NaN means land *or* ice** — the
-  wet-cell count varies hour to hour, ~4.4 % of the grid seasonally
-  ice-blanked in the Bothnian Bay and Gulf of Finland. Only *static* land is
-  filled, identified by an `ever_wet` mask (finite in any hour of a monthly
-  sample spanning the seasonal cycle). **Ice keeps `w_onshore = 0`**, the
-  physical answer: ice suppresses waves, so no-beaching-under-ice falls out
-  for free, consistent with the currents side where Fucus rides the upper-cell
-  velocity.
-
-  The BSH water mask on the WAM grid uses a **3×3 footprint** rule, not centre
-  sampling: WAM cells are ~1.6 km and coastal ones are part land, so a centre
-  landing on BSH land would exclude cells particles legitimately occupy, which
-  would then never receive a donor and be silently forced to zero.
-
-  Known bias: filled values are read 1–3 km offshore, where Stokes drift is
-  stronger than at the shoreline. Zero was a large negative bias; this is a
-  smaller positive one. A depth taper is *not* the obvious remedy — Baltic
-  wind seas are short-period (Tp 3–6 s), so depth-limited breaking is confined
-  to a strip far narrower than the 500 m raster or the 1.6 km WAM cell.
+  **The WAM field is extrapolated to full BSH coverage** by geodesic
+  (through-water) propagation of the nearest wet cell, because WAM's water
+  mask is not BSH's and 78.7 % of in-band samples would otherwise return
+  `w_onshore = 0` — i.e. *rate zero*, a coastline that cannot strand at any
+  parameter. Ice is excluded from the fill and correctly keeps zero forcing.
+  Method, measured effect and known biases:
+  [wam_extrapolation.md](wam_extrapolation.md).
 
 **Land-seeded particles are dropped** (zero first-step displacement), as
 `024`/`024b` — ~35 % never enter the water and would strand instantly.
@@ -229,7 +183,7 @@ fraction is `sum(weight | beach_hex ≥ 0) / sum(weight)` per source hex.
 `w_half = 0.05` m/s, `trap_flat = trap_wall = 1.0` (degenerate),
 `age_bin_days = 10`, `raster_dx_m = 500`. The scheme is deterministic (no
 RNG). Totals are highly parameter-sensitive — in the Baltic the beaching
-scheme can dominate the answer (Siht et al. 2024) — so these warrant a sweep
+scheme can dominate the answer (Siht et al. 2025) — so these warrant a sweep
 reported as a range, not a single number. The live knobs are `tau0_hours` and
 `w_half` (jointly the rate scale) plus `band_m` (how much trajectory time is
 exposed to any rate at all); `trap_*` is not a sweep axis while degenerate.
@@ -255,7 +209,7 @@ range. Three things shape how to sweep:
   while the stranding support stays flat (~2,200 hexes). Large `w_half`
   concentrates stranding on wave-exposed coast; small `w_half` saturates
   `s → 1` and gives a pure near-shore-residence map.
-- **`τ0` is free.** `A = (1/τ0)·Δt·Σ g(w)`, so `τ0` only scales the exponent —
+- **`τ0` is free.** `A = (1/τ0)·Δt·Σ s(w)`, so `τ0` only scales the exponent —
   caching the `g`-integral would make the whole `τ0` axis a re-reduction with
   no zarr or Stokes I/O. Not yet implemented; `024d` runs one `τ0` per pass.
 - **`band_m` is quantised by the mask.** On the 5 km coarse grid (≈70 % of
@@ -263,6 +217,40 @@ range. Three things shape how to sweep:
   a sub-cell strip of the same first cell ring; only ~5 km reaches a second
   ring. It resolves genuinely only inside the 0.9 km fine nest (western
   Baltic). Sweep it coarsely and report fine-nest and coarse regions apart.
+
+## Sweep result
+
+Production sweep: 8 `w_half` members x 4 years x 12 months = 384 partitions,
+`surface_stokes`, `r6000m`, `tau0 = 24 h`, geodesic fill.
+
+| `w_half` (m/s) | beached fraction | Gini | beach hexes | median stranding age (d) |
+|---|---|---|---|---|
+| 0.0125 | 0.897 | 0.668 | 2170 | 5.0 |
+| 0.025 | 0.881 | 0.675 | 2176 | 5.0 |
+| 0.05 | 0.854 | 0.685 | 2183 | 5.0 |
+| 0.1 | 0.806 | 0.701 | 2200 | 7.6 |
+| 0.2 | 0.725 | 0.720 | 2201 | 11.0 |
+| 0.4 | 0.603 | 0.740 | 2200 | 14.5 |
+| 0.8 | 0.448 | 0.759 | 2206 | 18.3 |
+| 1.6 | 0.295 | 0.773 | 2205 | 21.0 |
+
+**The beached fraction is not a reportable number.** It spans 29.5-89.7 % over
+defensible rate parameters, so any single value is a parameter choice
+presented as a result. What is robust is the pattern: Gini moves only
+0.67 -> 0.77 and the stranding support is flat at ~2,200 hexes across that
+whole range, so *where* material strands barely changes while *how much* does.
+
+**Low-`w_half` members are confounded by the release geometry.** Fucus release
+points are coastal by definition, so particles start inside the 2 km band and
+the beaching clock runs from t = 0. At `w_half <= 0.05` the median stranding
+age is 5 d — the first age bin — meaning those members mostly measure
+propagules that never dispersed, not dispersal outcomes. Members at
+`w_half >= 0.4` (median age 14-21 d) are where stranding reflects transport.
+Conditioning on a minimum dispersal distance (the `024b` store supports it)
+would separate the two properly and is not yet done.
+
+There is also a strong seasonal signal that pooling hides: at `w_half = 0.4`,
+August 2019 alone strands 75.0 % against the 60.2 % all-month mean.
 
 ## Limitations
 
