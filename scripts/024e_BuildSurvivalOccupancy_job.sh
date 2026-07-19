@@ -49,19 +49,38 @@ done | xargs -0 -P "${SLURM_NTASKS}" -n 1 bash -c '
     read -r year month <<< "$1"
     tenths=$(( RANDOM % (stagger_max_s * 10 + 1) ))
     sleep "$(( tenths / 10 )).$(( tenths % 10 ))"
+    # Per-cell Jupyter runtime dir; see 024d job script — shared connection
+    # files collide at high concurrency and the kernel never starts.
+    export JUPYTER_RUNTIME_DIR="${SLURM_TMPDIR:-/tmp}/jupyter-runtime-$$"
+    mkdir -p "${JUPYTER_RUNTIME_DIR}"
     ms=$(printf "_m%02d" "${month}")
     whtag="_wh${w_half//./p}"
-    srun --ntasks=1 --cpus-per-task=${SLURM_CPUS_PER_TASK} --exact \
-        pixi run papermill --cwd notebooks/ \
-        notebooks/024e_BuildSurvivalOccupancy.ipynb \
-        notebooks_executed/Visualisations/024e_BuildSurvivalOccupancy_${regime}_${year}${ms}${whtag}_r${hex_radius}m.ipynb \
-        -p output_root ${output_root} \
-        -p regime ${regime} \
-        -p release_year ${year} \
-        -p release_month ${month} \
-        -p hex_radius ${hex_radius} \
-        -p w_half ${w_half} \
-        -k python
+    # Retry kernel start-up. jupyter_client picks five free TCP ports by
+    # binding to port 0 and CLOSING the socket, then the kernel re-binds them
+    # later — a TOCTOU window in which a concurrent kernel on the same host
+    # can steal a port. The loser dies with ZMQ "Address already in use"
+    # before running any cell. The window is short and ports are re-drawn on
+    # each attempt, so a couple of retries removes the failure mode.
+    for attempt in 1 2 3; do
+        srun --ntasks=1 --cpus-per-task=${SLURM_CPUS_PER_TASK} --exact \
+            pixi run papermill --cwd notebooks/ \
+            notebooks/024e_BuildSurvivalOccupancy.ipynb \
+            notebooks_executed/Visualisations/024e_BuildSurvivalOccupancy_${regime}_${year}${ms}${whtag}_r${hex_radius}m.ipynb \
+            -p output_root ${output_root} \
+            -p regime ${regime} \
+            -p release_year ${year} \
+            -p release_month ${month} \
+            -p hex_radius ${hex_radius} \
+            -p w_half ${w_half} \
+            -k python
+        rc=$?
+        [ ${rc} -eq 0 ] && break
+        echo "cell attempt ${attempt} failed (rc=${rc}); retrying" >&2
+        sleep $(( RANDOM % 10 + 1 ))
+    done
+    # Propagate the final status: without this the loop ends on `sleep`,
+    # bash -c exits 0, and xargs reports success for an exhausted cell.
+    exit ${rc}
 ' _
 rc=$?
 
