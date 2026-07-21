@@ -22,7 +22,7 @@ listed here should be dropped.
 | 027      | Hex distance-quantile maps | Per-run (regime + radius) | One map per quantile (0.1/0.5/0.9), Aug/Sep releases pooled across years     |
 | 029      | Beaching maps       | Per-run (regime + radius) | Where-stranded · beached fraction per source hex · age horizons (10/20/50 d) |
 | 030      | Survival heatmaps   | Per-run (regime + radius) | Per horizon (20/50/100 d): occupancy · survival-weighted · surviving fraction |
-| 031      | Beaching sweep      | Per-run (regime + radius) | Beached fraction + Gini vs `w_half` · where-stranded maps across sweep members |
+| 031      | Beaching sweep      | Per-run (regime + radius) | Beached fraction + Gini vs `w_tau` · where-stranded maps across sweep members |
 
 ## Cross-cutting choices
 
@@ -218,20 +218,20 @@ match 026's rationale.
 
 ## Notebook 031 — Beaching parameter sweep (special case)
 
-Pools the `w_half` members of the 024d store (each a full `(year, month)`
+Pools the `w_tau` members of the 024d store (each a full `(year, month)`
 set) and reports a **range** rather than a number, because in the Baltic the
 beaching scheme can dominate the result. Two panels plus a map row:
 
-- **Beached fraction vs `w_half`** and **Gini concentration vs `w_half`**,
+- **Beached fraction vs `w_tau`** and **Gini concentration vs `w_tau`**,
   both on a log x-axis (the members are log-spaced). Two separate axes rather
   than a twin-y: the quantities share no units and a twin-y invites reading a
   crossing point that means nothing. Default linear norm, default colours —
   two single-series line plots need no overrides.
-- **Where-stranded maps across members**, one column per `w_half`, on a
+- **Where-stranded maps across members**, one column per `w_tau`, on a
   **shared `LogNorm`** so the difference read off the row is pattern, not
   scale — the same reasoning as 026's horizon row.
 
 The Gini panel is the load-bearing one: totals are degenerate along the
-`τ0`·`w_half` ridge (see [beaching.md](beaching.md)), so concentration is
+`τ0`·`w_tau` ridge (see [beaching.md](beaching.md)), so concentration is
 what distinguishes a wave-selective parameterisation from a
 residence-driven one.

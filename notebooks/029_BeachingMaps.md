@@ -63,9 +63,11 @@ age_bin_days = 10
 # partitions 024d wrote are read.
 release_month = 0
 
-# Onshore-Stokes half-saturation (m/s) of the partitions to read — part of
-# the store filename, so this selects one member of the w_half sweep.
-w_half = 0.05
+# Reference onshore-Stokes forcing (m/s) of the partitions to read — part of
+# the store filename. tau(w_tau) == tau0 by construction.
+w_tau = 0.05
+# Base timescale (h) of the partitions to read — also part of the filename.
+tau0_hours = 480.0
 
 # Beaching age horizons to map, in days. Each must be a multiple of
 # age_bin_days.
@@ -128,7 +130,7 @@ key = gpd.read_parquet(store_root / f"HexAgg_key_r{hex_radius}m.parquet")
 # Figure-filename tag: a specific month, or "" when pooling all months.
 month_suffix = f"_m{release_month:02d}" if release_month else ""
 month_re = rf"_m{release_month:02d}" if release_month else r"_m\d{2}"
-wh_suffix = f"_wh{w_half:g}".replace(".", "p")
+wh_suffix = f"_t{tau0_hours:g}_wt{w_tau:g}".replace(".", "p")
 _PART_RE = re.compile(
     rf"HexAgg_beaching_r{hex_radius}m_{regime}_(\d{{4}}){month_re}{re.escape(wh_suffix)}\.parquet$"
 )

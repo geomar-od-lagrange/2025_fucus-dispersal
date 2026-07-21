@@ -101,10 +101,20 @@ age_bin_days = 10
 # Zarr output cadence (hours).
 output_dt_hours = 1
 
-# Rate-model parameters — must match 024d for a consistent survival field.
-band_m = 2000.0
-tau0_hours = 24.0
-w_half = 0.05
+# Rate-model parameters. tau = tau0 / s(w_onshore), with the ramp NORMALISED
+# at the reference forcing:
+#
+#     s(w) = 2w / (w + w_tau)      so  s(w_tau) = 1  and  tau(w_tau) = tau0
+#
+# tau0 is therefore "the beaching e-folding time when onshore Stokes equals
+# w_tau" -- a statement that can be argued on its merits -- rather than an
+# asymptotic floor the forcing never approaches. The floor is tau0/2 as
+# w -> inf. w_tau = 0.05 m/s sits between the p50 (0.026) and p75 (0.057) of
+# measured w_onshore, so the ramp spans its useful range instead of running in
+# its linear tail. See plans/beaching_recalibration.md.
+band_m = 2000.0        # near-shore band width (m)
+tau0_hours = 480.0     # 20 d: beaching timescale at w_onshore = w_tau
+w_tau = 0.05           # reference onshore-Stokes forcing (m/s)
 
 # Shore-type retention weights, DELIBERATELY DEGENERATE (both 1.0) — see the
 # 024d parameters cell. The trap term is wired but expresses nothing, so the
@@ -139,9 +149,11 @@ if not key_path.exists() or not meta_path.exists():
     )
 
 month_suffix = f"_m{release_month:02d}" if release_month else ""
-# w_half is a rate parameter, so it is part of the partition identity — runs
-# at different w_half must not collide. 0.05 -> "wh0p05".
-wh_suffix = f"_wh{w_half:g}".replace(".", "p")
+# Both rate parameters are part of the partition identity, so runs at
+# different settings never collide: (480, 0.05) -> "_t480_wh0p05".
+# tau0 is the meaningful axis now that w_tau sits inside the measured
+# forcing range (see plans/beaching_recalibration.md).
+wh_suffix = f"_t{tau0_hours:g}_wt{w_tau:g}".replace(".", "p")
 survocc_path = (
     store_root
     / f"HexAgg_survocc_r{hex_radius}m_{regime}_{release_year}{month_suffix}{wh_suffix}.parquet"
@@ -291,7 +303,7 @@ print(f"raster {rast['shape']} water={rast['water_cells']:,} in {time.time() - t
 #
 # **The WAM grid does not cover the BSH water mask**, and a bare nearest-cell
 # lookup returns NaN→0 there — which for beaching means *rate zero*, i.e. a
-# coastline that cannot strand at any `τ0`/`w_half`. That is a structural
+# coastline that cannot strand at any `τ0`/`w_tau`. That is a structural
 # bias, not a parameter choice: ~20 % (coarse) / ~34 % (fine) of near-shore
 # BSH water cells inside the WAM bbox sit on WAM **static land**, and WAM's
 # bbox (lon ≥ 9.01°E) excludes the German Bight strip entirely. So the field
@@ -534,11 +546,13 @@ def occupancy_one_zarr(path, release_doy, rast, stokes):
         )
 
     trap = np.where(flat_at, trap_flat, trap_wall).astype("float32")
-    # s(w) = w/(w + w_half), the saturating wave-forcing factor. Named `s`
-    # (saturation), not `g`: `g` collides with gravitational acceleration and
-    # understates that this is the model's one term with no precedent in the
-    # cited beaching literature (see docs/beaching.md).
-    s_w = w_on / (w_on + w_half)
+    # s(w) = 2w/(w + w_tau), the wave-forcing factor, normalised so s(w_tau)
+    # == 1 and hence tau(w_tau) == tau0. Named `s` (saturation), not `g`:
+    # `g` collides with gravitational acceleration and understates that this
+    # is the model's one term with no precedent in the cited beaching
+    # literature (see docs/beaching.md).
+    # Normalised so s(w_tau) == 1, hence tau(w_tau) == tau0.
+    s_w = 2.0 * w_on / (w_on + w_tau)
     a = np.where(in_band, output_dt_hours / (tau0_hours / (trap * np.maximum(s_w, 1e-6))), 0.0)
     # Realized rate diagnostics over in-band steps: the sweep reports totals,
     # but whether a member is physically sensible is read off the timescale
@@ -553,7 +567,7 @@ def occupancy_one_zarr(path, release_doy, rast, stokes):
             _row[f'w_on_p{_q:g}'] = _w
             # tau AT this w quantile, not the quantile of tau: tau is monotonically
             # decreasing in w, so independent quantiles would pair opposite tails.
-            _row[f'tau_h_p{_q:g}'] = tau0_hours / max(_w / (_w + w_half), 1e-6)
+            _row[f'tau_h_p{_q:g}'] = tau0_hours / max(2.0 * _w / (_w + w_tau), 1e-6)
         RATE_STATS.append(_row)
     surv = np.exp(-np.cumsum(a, axis=1)).astype("float32")
 
@@ -628,7 +642,7 @@ if RATE_STATS:
     _rs = pd.DataFrame(RATE_STATS)
     _forced = _rs["forced_steps"].sum() / max(_rs["in_band_steps"].sum(), 1)
     print(f"realized rate over in-band steps ({100 * _forced:.1f}% with w_onshore > 0)"
-          f"   [tau0={tau0_hours:g} h, w_half={w_half:g} m/s]")
+          f"   [tau0={tau0_hours:g} h, w_tau={w_tau:g} m/s]")
     print(f"  {'quantile':>10s} {'w_onshore m/s':>15s} {'tau (h)':>12s} {'tau (d)':>10s}")
     for _c in [c for c in _rs.columns if c.startswith("w_on_p")]:
         _q = _c[len("w_on_p"):]

@@ -22,15 +22,15 @@ and literature basis: [../plans/done/beaching.md](../plans/done/beaching.md).
 |-------|------|-------|--------|
 | Build | [`024d_BuildBeaching`](../notebooks/024d_BuildBeaching.py) | trajectory zarrs + raw `baltic_highres` Stokes + `024a` key | `HexAgg_beaching_*.parquet` |
 | Consume | [`029_BeachingMaps`](../notebooks/029_BeachingMaps.py) | beaching parquet + key | PNGs under `Figures/029/` |
-| Sweep | [`031_BeachingSweep`](../notebooks/031_BeachingSweep.py) | all `w_half` members + key | PNGs under `Figures/031/` |
+| Sweep | [`031_BeachingSweep`](../notebooks/031_BeachingSweep.py) | all members of a sweep + key | PNGs under `Figures/031/` |
 
 `024d` is a single-process numpy notebook (no Dask): each zarr fits in
 memory and the bottleneck is Stokes I/O, so it processes a partition's zarrs
 sequentially (~70 s each). Production partitions per `(regime, year, month)`
 — the job fans out the whole `year × month` grid with `xargs`, throttled to
 `--ntasks` (so `njobs ≠ ntasks`: request fewer tasks under load without
-editing the job). Each task writes its own `_mMM_wh<w_half>` file; `029`
-pools the monthly partitions of one member, `031` compares members. `release_month = 0` still builds a single whole-year
+editing the job). Each task writes its own `_mMM_t<tau0>_wt<w_tau>` file;
+`029` pools the monthly partitions of one setting, `031` compares settings. `release_month = 0` still builds a single whole-year
 file for ad-hoc use, but the pooled store is the monthly partitions.
 
 ## The rate model
@@ -41,11 +41,20 @@ trajectory). Inside a near-shore band the beaching hazard is a Δt-invariant
 e-folding rate:
 
 ```
-τ = τ0 / (trap(shore_type) · s(w_onshore))
+τ = τ0 / (trap(shore_type) · s(w_onshore)),    s(w) = 2w / (w + w_tau)
 ```
 
 with `trap ≡ 1` as configured, so in practice `τ = τ0 / s(w_onshore)` and
 **onshore wave forcing is the only term that modulates the rate**.
+
+The ramp is **normalised at the reference forcing**: `s(w_tau) = 1`, hence
+`τ(w_tau) = τ0`. So `τ0` reads as *"the beaching e-folding time when onshore
+Stokes equals `w_tau`"* — a claim that can be argued on its merits — rather
+than an asymptotic floor the forcing never approaches. The floor is `τ0/2` as
+`w → ∞`. `w_tau` is chosen **inside** the measured forcing distribution
+(between its p50 and p75) so the ramp spans its useful range; setting it above
+the physical maximum would collapse the model to `τ ∝ 1/w` with a single
+effective parameter.
 
 ### What is borrowed and what is new
 
@@ -56,7 +65,7 @@ standing:
 |---|---|
 | Δt-invariant e-folding hazard, `p = 1 − exp(−Δt/τ)` | Standard. Onink et al. 2021 (also Hernandez et al. 2024, Daily et al. 2021, Siht et al. 2025). |
 | `trap(shore_type)` — terrain-dependent rate | Has precedent (Onink, Siht). **Deliberately switched off here** — see below. |
-| `s(w_onshore)` — forcing-dependent rate | **This study's extension. No precedent in the cited set**, all of which effectively use a constant rate (`s ≡ 1`). |
+| `s(w_onshore)` — forcing-dependent rate | **This study's extension. No precedent in the cited set**, all of which effectively use a constant rate. |
 
 So the scheme **inverts** the literature's structure: the cited work varies
 the rate by terrain and holds it constant in forcing; this varies it by
@@ -83,7 +92,7 @@ here it is not.
 
 That is an argument, not a validation. There is no observational constraint
 on `s` in this study, which is why the headline number is reported as a sweep
-range over `w_half` ([`031`](../notebooks/031_BeachingSweep.py)) rather than
+range over the rate scale ([`031`](../notebooks/031_BeachingSweep.py)) rather than
 as a value.
 
 `s` is named for "saturation"; it was `g` earlier, which collides with
@@ -141,7 +150,8 @@ never-beached residual. The three factors:
   transport the `surface_stokes` runs zeroed at blocked faces
   ([stokes_drift.md](stokes_drift.md)), sampled *before* that mask and
   *without* the N=5 spread (which bridges thin land barriers).
-  `s(w) = w / (w + w_half)` is a saturating ramp.
+  `s(w) = 2w / (w + w_tau)` is a saturating ramp normalised so that
+  `s(w_tau) = 1`.
 
   **The WAM field is extrapolated to full BSH coverage** by geodesic
   (through-water) propagation of the nearest wet cell, because WAM's water
@@ -158,8 +168,8 @@ field); `surface`/`bottom` are sensitivity variants.
 
 ## Store schema
 
-`HexAgg_beaching_r<radius>m_<regime>_<year>_mMM_wh<w_half>.parquet` (one per
-`(regime, year, month, w_half)`) — a grouped weight table, additive across
+`HexAgg_beaching_r<radius>m_<regime>_<year>_mMM_t<tau0>_wt<w_tau>.parquet`
+(one per `(regime, year, month, tau0, w_tau)`) — a grouped weight table, additive across
 `release_doy`/month/year like the other `024x` stores, so `029` pools the
 monthly partitions by summing. A single drifter contributes fractional
 weight to *every* coastal hex/age-bin it strands in, plus a residual row:
@@ -179,43 +189,47 @@ fraction is `sum(weight | beach_hex ≥ 0) / sum(weight)` per source hex.
 
 ## Parameters and their defaults
 
-`max_float_days = 60`, `band_m = 2000`, `tau0_hours = 24`,
-`w_half = 0.05` m/s, `trap_flat = trap_wall = 1.0` (degenerate),
+`max_float_days = 60`, `band_m = 2000`, `tau0_hours = 480` (20 d at
+`w_tau`), `w_tau = 0.05` m/s, `trap_flat = trap_wall = 1.0` (degenerate),
 `age_bin_days = 10`, `raster_dx_m = 500`. The scheme is deterministic (no
 RNG). Totals are highly parameter-sensitive — in the Baltic the beaching
 scheme can dominate the answer (Siht et al. 2025) — so these warrant a sweep
-reported as a range, not a single number. The live knobs are `tau0_hours` and
-`w_half` (jointly the rate scale) plus `band_m` (how much trajectory time is
-exposed to any rate at all); `trap_*` is not a sweep axis while degenerate.
+reported as a range, not a single number. **`tau0_hours` is the sweep axis**
+now that `w_tau` is pinned inside the forcing distribution by construction;
+`band_m` (how much trajectory time is exposed to any rate at all) is a
+secondary one, and `trap_*` is not an axis while degenerate.
 
-`w_half` is part of the store filename, so sweep members coexist and
+Both rate parameters are part of the store filename
+(`_t<tau0>_wt<w_tau>`), so settings coexist and
 [`031_BeachingSweep`](../notebooks/031_BeachingSweep.py) pools them into a
 range. Three things shape how to sweep:
 
-- **`w_half` is currently set outside the forcing range**, which makes it a
-  rate scale rather than a half-saturation point. Measured `w_onshore` over
-  in-band steps runs p50 = 0.026, p99 = 0.153, max 0.457 m/s, and `|VSD|`
-  anywhere in the Baltic never exceeds **0.544 m/s** — so at the production
-  `w_half = 1.5` the ramp `s` only ever spans 0.003–0.23 and never saturates.
-  A recalibration onto `(τ0 ≈ 490 h, w_half = 0.05)` gives the same median
-  timescale with both parameters inside their meaningful range:
-  [../plans/beaching_recalibration.md](../plans/beaching_recalibration.md).
-- **`τ0` and `w_half` are not independent, and here they are nearly
-  degenerate.** `τ = τ0 + τ0·w_half/w`: `τ0` is an additive floor, the
-  *product* `τ0·w_half` is the weak-wave coefficient. Where `w ≪ w_half` only
-  the product matters. The measured forcing puts us there: over in-band steps
-  **only 57.5 % have `w_onshore > 0` at all** (elsewhere waves are offshore,
-  alongshore, or ice-suppressed), and among those the distribution is
-  p10/p50/p90 = **0.0037 / 0.0256 / 0.0884 m/s** — a median below every sweep
-  member. So for `w_half ≳ 0.2` the `w_half` sweep is effectively a sweep of
-  the rate scale `τ0·w_half`, not an independent axis; reporting it as
-  "sensitivity to `w_half`" would overstate what varies. `024d` prints this
-  distribution and the realized `τ` quantiles every run so the regime is
-  visible rather than assumed.
+- **`w_tau` is set inside the measured forcing range**, which is what keeps
+  the two parameters separately meaningful. Measured `w_onshore` over in-band
+  steps (only **57.5 % have `w_onshore > 0` at all** — elsewhere waves are
+  offshore, alongshore, or ice-suppressed):
+
+  | quantile | p10 | p25 | p50 | p75 | p90 | p99 | max |
+  |---|---|---|---|---|---|---|---|
+  | `w_onshore` (m/s) | 0.0037 | 0.0109 | 0.0256 | 0.0566 | 0.0884 | 0.1527 | 0.457 |
+
+  and the field itself is bounded harder: over 42 M samples of `|VSD|`
+  spanning 2019 the **global maximum anywhere in the Baltic is 0.544 m/s**.
+  `w_tau = 0.05` sits between p50 and p75, so `s` spans ≈0.14 → 1.8 across the
+  realised forcing and both the suppressed and saturated limbs are exercised.
+  `024d` prints the distribution and the realised `τ` quantiles every run, so
+  the regime is visible rather than assumed.
+- **Choosing `w_tau` above the forcing range collapses the model.** If
+  `w ≪ w_tau` everywhere then `s ≈ 2w/w_tau` and `τ ≈ τ0·w_tau/(2w)` — a pure
+  inverse law whose only effective parameter is the product, leaving `τ0` and
+  `w_tau` unidentifiable. An earlier production setting (`τ0 = 24 h`,
+  `w_half = 1.5 m/s`, unnormalised ramp) sat exactly there; the migration off
+  it is recorded in
+  [../plans/done/beaching_recalibration.md](../plans/done/beaching_recalibration.md).
 - **Spatial selectivity is what discriminates**, since totals trade along the
   ridge: 031's Gini of stranded weight rises 0.668 → 0.772 across the sweep
-  while the stranding support stays flat (~2,200 hexes). Large `w_half`
-  concentrates stranding on wave-exposed coast; small `w_half` saturates
+  while the stranding support stays flat (~2,200 hexes). A large forcing
+  scale concentrates stranding on wave-exposed coast; a small one saturates
   `s → 1` and gives a pure near-shore-residence map.
 - **`τ0` is free.** `A = (1/τ0)·Δt·Σ s(w)`, so `τ0` only scales the exponent —
   caching the `g`-integral would make the whole `τ0` axis a re-reduction with
@@ -228,10 +242,13 @@ range. Three things shape how to sweep:
 
 ## Sweep result
 
-Production sweep: 8 `w_half` members x 4 years x 12 months = 384 partitions,
-`surface_stokes`, `r6000m`, `tau0 = 24 h`, geodesic fill.
+Sweep over the forcing scale: 8 members x 4 years x 12 months = 384
+partitions, `surface_stokes`, `r6000m`, geodesic fill. Built before the ramp
+was normalised, but **exactly representable in the current parameterisation**
+— `s_old/τ0_old = s_new/τ0_new` requires `τ0_new = 2·τ0_old`, so these are a
+`w_tau` sweep at **`τ0 = 48 h`** and the numbers carry over unchanged.
 
-| `w_half` (m/s) | beached fraction | Gini | beach hexes | median stranding age (d) |
+| `w_tau` (m/s) | beached fraction | Gini | beach hexes | median stranding age (d) |
 |---|---|---|---|---|
 | 0.0125 | 0.897 | 0.668 | 2170 | 5.0 |
 | 0.025 | 0.881 | 0.675 | 2176 | 5.0 |
@@ -244,20 +261,20 @@ Production sweep: 8 `w_half` members x 4 years x 12 months = 384 partitions,
 
 **The beached fraction is not a reportable number.** It spans 29.5-89.7 % over
 defensible rate parameters, so any single value is a parameter choice
-presented as a result. What is robust is the pattern: Gini moves only
+presented as a result. Production sits at `τ0 = 480 h`, `w_tau = 0.05`. What is robust is the pattern: Gini moves only
 0.67 -> 0.77 and the stranding support is flat at ~2,200 hexes across that
 whole range, so *where* material strands barely changes while *how much* does.
 
-**Low-`w_half` members are confounded by the release geometry.** Fucus release
+**Low-`w_tau` members are confounded by the release geometry.** Fucus release
 points are coastal by definition, so particles start inside the 2 km band and
-the beaching clock runs from t = 0. At `w_half <= 0.05` the median stranding
+the beaching clock runs from t = 0. At `w_tau <= 0.05` the median stranding
 age is 5 d — the first age bin — meaning those members mostly measure
 propagules that never dispersed, not dispersal outcomes. Members at
-`w_half >= 0.4` (median age 14-21 d) are where stranding reflects transport.
+`w_tau >= 0.4` (median age 14-21 d) are where stranding reflects transport.
 Conditioning on a minimum dispersal distance (the `024b` store supports it)
 would separate the two properly and is not yet done.
 
-There is also a strong seasonal signal that pooling hides: at `w_half = 0.4`,
+There is also a strong seasonal signal that pooling hides: at `w_tau = 0.4`,
 August 2019 alone strands 75.0 % against the 60.2 % all-month mean.
 
 ## Limitations

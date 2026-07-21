@@ -31,7 +31,7 @@ weight:
   excluded *because* it is not open water. Geodesic donors instead share
   the particle's water body. **Measured effect: none.** Rebuilding the full
   sweep on the geodesic fill reproduced the Euclidean numbers to within
-  0.15 points on every member (e.g. 60.1 % → 60.2 % at `w_half = 0.4`), and
+  0.15 points on every member (e.g. 60.1 % → 60.2 % at `w_tau = 0.4`), and
   fill distance barely moved (2.74 → 2.67 km). So Euclidean nearest-wet
   rarely crossed land in a way that mattered. Geodesic is kept because it
   cannot do so *by construction* and because it distinguishes unreachable

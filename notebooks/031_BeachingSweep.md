@@ -16,23 +16,23 @@ jupyter:
 
 # Beaching parameter sweep: reporting a range, not a number
 
-Parquet-only consumer that pools the `w_half` members of the beaching store
+Parquet-only consumer that pools the `w_tau` members of the beaching store
 written by `024d_BuildBeaching`. In the Baltic the beaching scheme can
 dominate the answer, so the headline stranding number is only meaningful as
 a **range over the rate parameters** — this notebook produces that range and
 the pattern metric that actually discriminates between members.
 
-`w_half` is the onshore-Stokes half-saturation in `s(w) = w/(w + w_half)`,
-and with `trap` degenerate the rate is `τ = τ0/s(w_onshore)` — so `w_half`
+`w_tau` is the onshore-Stokes half-saturation in `s(w) = w/(w + w_tau)`,
+and with `trap` degenerate the rate is `τ = τ0/s(w_onshore)` — so `w_tau`
 and `τ0` are the whole rate model. They are **not independent**: rewriting
-`τ = τ0 + τ0·w_half/w` shows `τ0` as an additive floor and the *product*
-`τ0·w_half` as the weak-wave coefficient. Where `w ≪ w_half` only the
+`τ = τ0 + τ0·w_tau/w` shows `τ0` as an additive floor and the *product*
+`τ0·w_tau` as the weak-wave coefficient. Where `w ≪ w_tau` only the
 product matters, so the two trade off along a ridge and the total beached
 fraction alone cannot separate them.
 
-What *does* separate them is **spatial selectivity**: large `w_half` keeps
+What *does* separate them is **spatial selectivity**: large `w_tau` keeps
 `g` far from saturation, so stranding concentrates where onshore waves are
-strong; small `w_half` saturates `g → 1` everywhere and the map collapses
+strong; small `w_tau` saturates `g → 1` everywhere and the map collapses
 to a pure near-shore-residence field. So this notebook reports, per member:
 
 1. **total beached fraction** — the range (degenerate along the ridge);
@@ -64,11 +64,17 @@ age_bin_days = 10
 # 0 = pool all monthly partitions across years; 1..12 = that month only.
 release_month = 0
 
-# w_half members to compare (m/s), comma-separated. Each must have been built
+# w_tau members to compare (m/s), comma-separated. Each must have been built
 # by 024d; missing members are reported and skipped rather than raising.
-w_half_csv = "0.0125,0.025,0.05,0.1,0.2"
+w_tau_csv = "0.0125,0.025,0.05,0.1,0.2,0.4,0.8,1.6"
 # The member treated as the baseline in the narrative summary.
-w_half_baseline = 0.05
+w_tau_baseline = 0.05
+# Base timescale (h) of the members being compared — the other half of the
+# partition identity. The existing forcing-scale sweep was built under the
+# unnormalised ramp at tau0 = 24 h, which is exactly equivalent to tau0 = 48 h
+# under the current normalised ramp (see docs/beaching.md), and the partitions
+# were relabelled accordingly.
+tau0_hours = 48.0
 
 # Map extent (degrees). The 024a key tiles the whole BSH domain including the
 # North Sea, which is empty for Fucus and costs ~35% of panel height; cropping
@@ -88,7 +94,7 @@ fig_dpi_scale = 3
 
 ```python
 output_root = Path(output_root)
-w_half_values = [float(x) for x in w_half_csv.split(",") if x]
+w_tau_values = [float(x) for x in w_tau_csv.split(",") if x]
 mpl.rcParams["figure.dpi"] = fig_dpi_scale * mpl.rcParamsDefault["figure.dpi"]
 # Hex seam stroke. edgecolor="face" means this is not a visible outline -- it
 # closes the ~1 px anti-aliasing seam between adjacent polygons so the grid
@@ -110,12 +116,12 @@ month_re = rf"_m{release_month:02d}" if release_month else r"_m\d{2}"
 
 # Pool each sweep member
 
-One member = every `(year, month)` partition at a given `w_half`. Members
+One member = every `(year, month)` partition at a given `w_tau`. Members
 are additive over release_doy/month/year exactly as a single member is.
 
 ```python
-def load_member(w_half):
-    wh_suffix = f"_wh{w_half:g}".replace(".", "p")
+def load_member(w_tau):
+    wh_suffix = f"_t{tau0_hours:g}_wt{w_tau:g}".replace(".", "p")
     part_re = re.compile(
         rf"HexAgg_beaching_r{hex_radius}m_{regime}_(\d{{4}}){month_re}"
         rf"{re.escape(wh_suffix)}\.parquet$"
@@ -132,13 +138,13 @@ def load_member(w_half):
 
 
 members = {}
-for wh in w_half_values:
+for wh in w_tau_values:
     df, n = load_member(wh)
     if df is None:
-        print(f"w_half={wh:g}: no partitions found — skipped")
+        print(f"w_tau={wh:g}: no partitions found — skipped")
         continue
     members[wh] = df
-    print(f"w_half={wh:g}: {n} partitions, {len(df):,} rows")
+    print(f"w_tau={wh:g}: {n} partitions, {len(df):,} rows")
 if not members:
     raise FileNotFoundError(
         f"no sweep members found for regime {regime!r} at {store_root} — run 024d."
@@ -170,7 +176,7 @@ for wh, df in members.items():
     per_hex = beached.groupby("beach_hex")["weight"].sum()
     total = float(df["weight"].sum())
     rows.append({
-        "w_half": wh,
+        "w_tau": wh,
         "beached_fraction": float(beached["weight"].sum()) / max(total, 1.0),
         "gini": gini(per_hex.to_numpy()),
         "beach_hexes": int(per_hex.size),
@@ -180,13 +186,13 @@ for wh, df in members.items():
             ) + 0.5) * age_bin_days
         ) if len(beached) else np.nan,
     })
-stats = pd.DataFrame(rows).set_index("w_half").sort_index()
+stats = pd.DataFrame(rows).set_index("w_tau").sort_index()
 print(stats.to_string(float_format=lambda v: f"{v:,.4f}"))
 ```
 
 # The range, and what breaks the degeneracy
 
-Left: total beached fraction against `w_half` — the headline number's
+Left: total beached fraction against `w_tau` — the headline number's
 sensitivity. Right: concentration of stranded weight — the statistic that
 distinguishes a wave-selective member from a residence-driven one even where
 totals coincide.
@@ -195,10 +201,10 @@ totals coincide.
 fig, axes = plt.subplots(1, 2, layout="constrained")
 stats["beached_fraction"].plot(ax=axes[0], marker="o", logx=True)
 axes[0].set_ylabel("beached fraction of released weight")
-axes[0].set_xlabel("w_half (m/s)")
+axes[0].set_xlabel("w_tau (m/s)")
 stats["gini"].plot(ax=axes[1], marker="o", logx=True)
 axes[1].set_ylabel("Gini concentration of stranded weight")
-axes[1].set_xlabel("w_half (m/s)")
+axes[1].set_xlabel("w_tau (m/s)")
 fig_path = figure_dir / f"BeachingSweepStats_{regime}_r{hex_radius}m{month_suffix}.png"
 fig.savefig(fig_path)
 print(f"wrote {fig_path}")
@@ -255,7 +261,7 @@ for ax, (wh, g) in zip(axes[0], sorted(gdfs.items())):
     ax.set_aspect(1 / np.cos(np.radians(0.5 * (extent[2] + extent[3]))))
     ax.set_xticks([])
     ax.set_yticks([])
-    ax.set_title(f"w_half = {wh:g} m/s")
+    ax.set_title(f"w_tau = {wh:g} m/s")
 fig_path = figure_dir / f"BeachingSweepMaps_{regime}_r{hex_radius}m{month_suffix}.png"
 fig.savefig(fig_path)
 print(f"wrote {fig_path}")
@@ -270,11 +276,11 @@ print(f"regime={regime}, hex_radius={hex_radius} m, "
       + (f"month={release_month}, " if release_month else "all months, ")
       + f"{len(stats)} sweep members")
 print(f"  beached fraction range: {100 * lo:.1f}% .. {100 * hi:.1f}% "
-      f"(spread {100 * (hi - lo):.1f} points over w_half "
+      f"(spread {100 * (hi - lo):.1f} points over w_tau "
       f"{stats.index.min():g}..{stats.index.max():g} m/s)")
-if w_half_baseline in stats.index:
-    print(f"  baseline w_half={w_half_baseline:g}: "
-          f"{100 * stats.loc[w_half_baseline, 'beached_fraction']:.1f}%")
+if w_tau_baseline in stats.index:
+    print(f"  baseline w_tau={w_tau_baseline:g}: "
+          f"{100 * stats.loc[w_tau_baseline, 'beached_fraction']:.1f}%")
 print(f"  Gini range: {stats['gini'].min():.3f} .. {stats['gini'].max():.3f} "
       "(higher = stranding concentrated on fewer, wave-exposed hexes)")
 ```

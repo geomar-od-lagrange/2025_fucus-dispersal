@@ -1,7 +1,17 @@
 # Beaching recalibration: move the rate scale into `τ0`
 
-**Status:** proposed, not implemented. Current production is `τ0 = 24 h`,
-`w_half = 1.5 m/s` — see [../docs/beaching.md](../docs/beaching.md).
+**Implemented.** Current state is documented in
+[../../docs/beaching.md](../../docs/beaching.md); this file records the intent
+and the measurements that motivated it.
+
+Implemented slightly differently from the proposal below: rather than only
+retuning `τ0`, the ramp was **normalised** at the reference forcing —
+`s(w) = 2w/(w + w_tau)`, so `s(w_tau) = 1` and `τ(w_tau) = τ0` exactly. That
+makes `τ0` "the beaching timescale at forcing `w_tau`" instead of an
+unreachable asymptote, which is the property the proposal was reaching for.
+Production is `τ0 = 480 h` (20 d) at `w_tau = 0.05 m/s`. Existing partitions
+built under the old unnormalised ramp at `τ0 = 24 h` are exactly equivalent to
+`τ0 = 48 h` under the new one, and were relabelled rather than rebuilt.
 
 ## Problem
 
@@ -76,6 +86,6 @@ reviewer reading `w_half = 1.5 m/s` as a half-saturation constant for a field
 that never exceeds 0.54 m/s will conclude the parameterisation was never
 checked against its own forcing. Cheaper to fix than to defend.
 
-Related: [../docs/beaching.md](../docs/beaching.md) (rate model and provenance),
-[../docs/wam_extrapolation.md](../docs/wam_extrapolation.md) (how `w_onshore`
+Related: [../../docs/beaching.md](../../docs/beaching.md) (rate model and provenance),
+[../../docs/wam_extrapolation.md](../../docs/wam_extrapolation.md) (how `w_onshore`
 is obtained).
