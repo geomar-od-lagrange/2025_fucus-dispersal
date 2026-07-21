@@ -55,6 +55,13 @@ survival maps would need it back and a different aggregation.
 
 ## Reading the maps
 
+The surviving-fraction panel is the mean un-beached fraction of the particles
+*occupying* a hex, not a local beaching rate — `A` accumulates along the path
+before arrival, so a hex reads low when its supply routed through
+wave-exposed near-shore water. The sink field is [beaching.md](beaching.md)'s
+`beach_hex`. Conditioning on age bin means every particle in a panel shares
+an elapsed time, so the contrast is route, not age.
+
 At each horizon `T`, `030` selects the snapshot bin `age_bin = T/age_bin_days`
 and draws occupancy vs. survival-weighted (shared `LogNorm`) vs. surviving
 fraction (linear 0–1). The drifting fraction falls with age, most steeply

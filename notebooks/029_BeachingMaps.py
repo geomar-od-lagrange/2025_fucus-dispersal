@@ -24,8 +24,9 @@
 # leap-correct (as `026`). Draws:
 #
 # 1. **Where-stranded density** — beached weight (expected particles) per
-#    `beach_hex` (log scale), pooled over shore types (`trap` is degenerate
-#    in 024d, so the wall/flat label is not a model result).
+#    `beach_hex` (log scale). Shore type is not shown anywhere in this
+#    notebook: `trap` is degenerate in 024d, so the `wall`/`flat` label
+#    expresses nothing and reporting it would invite over-reading.
 # 2. **Beached fraction per source hex** — of the drifters released in each
 #    hex, what fraction strands within the viability window (linear 0–1).
 # 3. **Beaching age horizons** — cumulative where-stranded density for
@@ -71,6 +72,15 @@ w_half = 0.05
 # age_bin_days.
 time_horizons_days_csv = "10,20,50"
 
+# Map extent (degrees). The 024a key tiles the whole BSH domain including the
+# North Sea, which is empty for Fucus and costs ~35% of panel height; cropping
+# to the Baltic proper buys ~1.35x px/km for free. Set all four to 0 to fall
+# back to the key's full bounds.
+extent_lon_min = 9.0
+extent_lon_max = 30.7
+extent_lat_min = 53.0
+extent_lat_max = 66.0
+
 # Colormap: log where-stranded density spans several decades, so a
 # perceptually uniform map is load-bearing (as 025/026; docs/visualisations.md).
 cmap = "viridis"
@@ -78,7 +88,7 @@ cmap = "viridis"
 panel_height_in = 6
 # Figure DPI as a multiple of the matplotlib default (sharpens raster panels;
 # the one plotting default overridden here, as 026 — docs/visualisations.md).
-fig_dpi_scale = 2
+fig_dpi_scale = 3
 
 # %% [markdown]
 # # Parse parameters
@@ -91,6 +101,13 @@ for h in time_horizons_days:
         f"horizon {h} d is not a multiple of age_bin_days {age_bin_days} d"
     )
 mpl.rcParams["figure.dpi"] = fig_dpi_scale * mpl.rcParamsDefault["figure.dpi"]
+# Hex seam stroke. edgecolor="face" means this is not a visible outline -- it
+# closes the ~1 px anti-aliasing seam between adjacent polygons so the grid
+# reads as a continuous field. The seam is a fixed PIXEL artifact, so a fixed
+# point width makes the resulting hex dilation DPI-invariant (17.5% of hex
+# width at every dpi). Pinning it to ~1 px instead lets dilation fall as
+# resolution rises: ~8.6% at fig_dpi_scale=3 on the Baltic crop.
+hex_seam_lw = 1.1 * 72 / (100 * fig_dpi_scale)
 
 figure_dir = output_root / "Figures" / "029"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -166,7 +183,7 @@ def hex_map(gdf, ax, norm=None, title=None):
     if not gdf.empty:
         gdf.plot(
             ax=ax, column="value", cmap=cmap, norm=norm, legend=True,
-            edgecolor="face", linewidth=0.4, zorder=1,
+            edgecolor="face", linewidth=hex_seam_lw, zorder=1,
         )
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
     ax.set_xlim(extent[0], extent[1])
@@ -181,7 +198,12 @@ def hex_map(gdf, ax, norm=None, title=None):
 # %%
 # The hex key tiles the full BSH domain (North Sea included); the extent
 # follows it, and beaching occupies wherever it actually reaches.
-lon_min, lat_min, lon_max, lat_max = key.total_bounds
+if any((extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max)):
+    lon_min, lat_min, lon_max, lat_max = (
+        extent_lon_min, extent_lat_min, extent_lon_max, extent_lat_max
+    )
+else:
+    lon_min, lat_min, lon_max, lat_max = key.total_bounds
 extent = [lon_min, lon_max, lat_min, lat_max]
 coast = gpd.read_file(
     natural_earth(resolution="10m", category="physical", name="coastline")
@@ -196,11 +218,12 @@ beached = beaching[beaching["beach_hex"] >= 0]
 # # Where-stranded density
 #
 # Log-scale beached weight (expected particles) per stranding hex, pooled over
-# shore types. The store's `shore_type` is *not* split out here: `024d` runs
-# with a degenerate `trap` (`trap_flat == trap_wall`), so the `wall`/`flat`
-# label does not affect the rate and a split map would invite reading resolved
-# coastal morphology into what is only the BSH tidal-flat flag. Split it again
-# when a real substrate classification drives `trap`.
+# shore types. `shore_type` is not shown anywhere in this notebook -- not as a
+# faceted map, not in the summary. `024d` runs with a degenerate `trap`
+# (`trap_flat == trap_wall`), so the label expresses nothing about the model,
+# and reporting it would invite reading resolved coastal morphology into what
+# is only the BSH tidal-flat flag. Surface it again when a real substrate
+# classification drives `trap`.
 
 # %%
 gdf_stranded = hex_gdf(beached, "beach_hex")
@@ -299,7 +322,6 @@ plt.show()
 # # Validation / summary
 
 # %%
-by_type = beaching.groupby("shore_type")["weight"].sum()
 n_beached = float(beached["weight"].sum())
 print(f"regime={regime}, hex_radius={hex_radius} m, "
       + (f"month={release_month}, " if release_month else "")
@@ -307,8 +329,5 @@ print(f"regime={regime}, hex_radius={hex_radius} m, "
 print(f"  drifters (Σweight): {total_released:,.0f}")
 print(f"  beached:           {n_beached:,.0f} "
       f"({100 * n_beached / max(total_released, 1):.1f}%)")
-print(f"  shore_type split:  "
-      + ", ".join(f"{k}={float(v):,.0f}" for k, v in by_type.items())
-      + "  [classification label only; trap is degenerate in 024d]")
 print(f"  stranding hexes:   {beached['beach_hex'].nunique():,}")
 print(f"  source hexes:      {frac['release_hex'].nunique():,}")

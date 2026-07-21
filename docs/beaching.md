@@ -170,7 +170,7 @@ weight to *every* coastal hex/age-bin it strands in, plus a residual row:
 | `release_doy` | release day-of-year of the originating zarr |
 | `beach_hex` | hex where the weight stranded; `-1` = never-beached residual |
 | `beach_age_bin` | `floor(deposit_age_days / age_bin_days)`; `-1` for residual |
-| `shore_type` | `wall` / `flat` label at the stranding site (`none` for residual) — diagnostic only while `trap` is degenerate |
+| `shore_type` | `wall` / `flat` label at the stranding site (`none` for residual). Carried as the seam for a future substrate classification; **not reported by any consumer** while `trap` is degenerate |
 | `weight` | summed stranded weight (expected particles) in the group |
 
 The never-beached residual is kept (`beach_hex = -1`, …), and deposits +

@@ -36,7 +36,7 @@ field as a smooth expectation. It also composes multiplicatively with a
 Fucus **lifetime** `L(t)` — survival is `exp(−∫dt/τ)·L(t)`, today's
 `max_float_days` being a step-function `L`.
 
-**Three-ingredient rate model.** `τ = τ0 / (trap(shore_type)·g(w_onshore))`:
+**Rate model.** `τ = τ0 / (trap(shore_type)·s(w_onshore))`:
 
 - **distance to shore** — a rasterised distance-to-coast field built from
   the **BSH H0 land-sea mask** (finite `H0` = water, NaN = land, `H0 ≤ 0`
@@ -48,9 +48,11 @@ Fucus **lifetime** `L(t)` — survival is `exp(−∫dt/τ)·L(t)`, today's
   **Currently degenerate**: `trap_flat == trap_wall == 1.0`, so this term
   contributes nothing and the rate is uniform along the coast for a given
   wave forcing. The classification is still computed and carried into the
-  store as `shore_type` — a diagnostic label and the seam for a real
-  substrate classification, *not* an active model term. See the parameters
-  cell for why the H0 flag is not a usable Baltic retentiveness proxy.
+  store as `shore_type` — the seam for a real substrate classification, not
+  an active model term. It is deliberately **not reported** by this notebook
+  or by any consumer while `trap` is degenerate: a label that expresses
+  nothing about the model invites over-reading. See the parameters cell for
+  why the H0 flag is not a usable Baltic retentiveness proxy.
 - **onshore wave forcing** — the onshore component of the raw
   `baltic_highres` Stokes drift (`VSDX/VSDY`), i.e. the cross-shore
   transport the `surface_stokes` runs masked at blocked faces, sampled
@@ -128,7 +130,7 @@ output_dt_hours = 1
 # Rate-model parameters (see beaching.md "Open questions"). Sweep + report.
 band_m = 2000.0        # near-shore band width (m)
 tau0_hours = 24.0      # base e-folding beaching timescale (h)
-w_half = 0.05          # onshore-Stokes half-saturation (m/s) in the g ramp
+w_half = 0.05          # onshore-Stokes half-saturation (m/s) in the s ramp
 
 # Shore-type retention weights, DELIBERATELY DEGENERATE (both 1.0) — the trap
 # term is wired but currently expresses nothing, so every shore beaches alike
@@ -738,7 +740,6 @@ else:
 ```python
 total = float(beaching["weight"].sum())
 beached = float(beaching.loc[beaching["beach_hex"] >= 0, "weight"].sum())
-by_type = beaching.groupby("shore_type")["weight"].sum()
 print(f"regime={regime}, release_year={release_year}"
       + (f", month={release_month}" if release_month else "")
       + f", hex_radius={hex_radius} m")
@@ -751,9 +752,6 @@ print(f"  beached:           {beached:,.0f} ({100 * beached / max(total, 1):.1f}
 print(f"  release_doys:      {beaching['release_doy'].nunique()} "
       f"({beaching['release_doy'].min()}..{beaching['release_doy'].max()})")
 print(f"  beach hexes:       {beaching.loc[beaching['beach_hex'] >= 0, 'beach_hex'].nunique():,}")
-print(f"  shore_type split:  "
-      + ", ".join(f"{k}={float(v):,.0f}" for k, v in by_type.items())
-      + ("  [label only — trap degenerate]" if trap_flat == trap_wall else ""))
 beach_bins = beaching.loc[beaching["beach_age_bin"] >= 0]
 if len(beach_bins):
     print(f"  beach age bins:    {beach_bins['beach_age_bin'].min()}.."

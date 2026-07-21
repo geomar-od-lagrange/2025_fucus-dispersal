@@ -1,11 +1,18 @@
 #!/bin/bash
 #SBATCH --job-name=024e_BuildSurvivalOccupancy
-#SBATCH --ntasks=100
+# Default matches the base grid: |YEARS| x 12 = 48 cells. Asking for more
+# tasks than cells just inflates the allocation (idle slots) and makes the
+# job harder to schedule. A w_half sweep multiplies the grid, so raise
+# --ntasks on the command line for those (e.g. 8 members -> 384 cells).
+#SBATCH --ntasks=48
 #SBATCH --cpus-per-task=2
 #SBATCH --mem-per-cpu=12G
 #SBATCH --time=04:00:00
 #SBATCH --partition=base
-#SBATCH --constraint=sapphire
+# No --constraint: these cells are embarrassingly parallel single-process
+# papermill runs with no MPI and no Dask cluster, so the IB-reliability
+# rationale for pinning to sapphire (srp) does not apply to them. Leaving
+# the whole base partition eligible cuts queue time substantially.
 
 # Survival-weighted occupancy pass: reads the trajectory zarrs + raw
 # baltic_highres Stokes + the 024a key, writes one survocc parquet per

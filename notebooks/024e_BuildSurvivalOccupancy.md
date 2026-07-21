@@ -25,7 +25,7 @@ fraction** at that age,
 S(t) = exp(−A(t)),   A(t) = cumsum(Δt/τ) over in-band steps
 ```
 
-— the same near-shore beaching rate `τ = τ0/(trap·g(w_onshore))` as
+— the same near-shore beaching rate `τ = τ0/(trap·s(w_onshore))` as
 `024d_BuildBeaching` (see [beaching.md](../docs/beaching.md)), with `trap`
 currently degenerate (`trap_flat == trap_wall == 1.0`), so wave forcing is
 the only term that modulates it. `A` only grows inside the near-shore band,

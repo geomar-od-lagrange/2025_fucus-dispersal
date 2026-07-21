@@ -23,8 +23,8 @@
 # a **range over the rate parameters** — this notebook produces that range and
 # the pattern metric that actually discriminates between members.
 #
-# `w_half` is the onshore-Stokes half-saturation in `g(w) = w/(w + w_half)`,
-# and with `trap` degenerate the rate is `τ = τ0/g(w_onshore)` — so `w_half`
+# `w_half` is the onshore-Stokes half-saturation in `s(w) = w/(w + w_half)`,
+# and with `trap` degenerate the rate is `τ = τ0/s(w_onshore)` — so `w_half`
 # and `τ0` are the whole rate model. They are **not independent**: rewriting
 # `τ = τ0 + τ0·w_half/w` shows `τ0` as an additive floor and the *product*
 # `τ0·w_half` as the weak-wave coefficient. Where `w ≪ w_half` only the
@@ -71,9 +71,18 @@ w_half_csv = "0.0125,0.025,0.05,0.1,0.2"
 # The member treated as the baseline in the narrative summary.
 w_half_baseline = 0.05
 
+# Map extent (degrees). The 024a key tiles the whole BSH domain including the
+# North Sea, which is empty for Fucus and costs ~35% of panel height; cropping
+# to the Baltic proper buys ~1.35x px/km for free. Set all four to 0 to fall
+# back to the key's full bounds.
+extent_lon_min = 9.0
+extent_lon_max = 30.7
+extent_lat_min = 53.0
+extent_lat_max = 66.0
+
 cmap = "viridis"
 panel_height_in = 6
-fig_dpi_scale = 2
+fig_dpi_scale = 3
 
 # %% [markdown]
 # # Parse parameters
@@ -82,6 +91,13 @@ fig_dpi_scale = 2
 output_root = Path(output_root)
 w_half_values = [float(x) for x in w_half_csv.split(",") if x]
 mpl.rcParams["figure.dpi"] = fig_dpi_scale * mpl.rcParamsDefault["figure.dpi"]
+# Hex seam stroke. edgecolor="face" means this is not a visible outline -- it
+# closes the ~1 px anti-aliasing seam between adjacent polygons so the grid
+# reads as a continuous field. The seam is a fixed PIXEL artifact, so a fixed
+# point width makes the resulting hex dilation DPI-invariant (17.5% of hex
+# width at every dpi). Pinning it to ~1 px instead lets dilation fall as
+# resolution rises: ~8.6% at fig_dpi_scale=3 on the Baltic crop.
+hex_seam_lw = 1.1 * 72 / (100 * fig_dpi_scale)
 
 figure_dir = output_root / "Figures" / "031"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -197,7 +213,12 @@ plt.show()
 # not in the colour scale.
 
 # %%
-lon_min, lat_min, lon_max, lat_max = key.total_bounds
+if any((extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max)):
+    lon_min, lat_min, lon_max, lat_max = (
+        extent_lon_min, extent_lat_min, extent_lon_max, extent_lat_max
+    )
+else:
+    lon_min, lat_min, lon_max, lat_max = key.total_bounds
 extent = [lon_min, lon_max, lat_min, lat_max]
 coast = gpd.read_file(
     natural_earth(resolution="10m", category="physical", name="coastline")
@@ -229,7 +250,7 @@ fig, axes = plt.subplots(
 for ax, (wh, g) in zip(axes[0], sorted(gdfs.items())):
     if not g.empty:
         g.plot(ax=ax, column="value", cmap=cmap, norm=norm, legend=True,
-               edgecolor="face", linewidth=0.4, zorder=1)
+               edgecolor="face", linewidth=hex_seam_lw, zorder=1)
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
     ax.set_xlim(extent[0], extent[1])
     ax.set_ylim(extent[2], extent[3])

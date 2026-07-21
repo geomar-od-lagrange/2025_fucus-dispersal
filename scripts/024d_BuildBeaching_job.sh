@@ -1,11 +1,22 @@
 #!/bin/bash
 #SBATCH --job-name=024d_BuildBeaching
-#SBATCH --ntasks=100
+# Default matches the base grid: |YEARS| x 12 = 48 cells. Asking for more
+# tasks than cells just inflates the allocation (idle slots) and makes the
+# job harder to schedule. A w_half sweep multiplies the grid, so raise
+# --ntasks on the command line for those (e.g. 8 members -> 384 cells).
+#SBATCH --ntasks=48
 #SBATCH --cpus-per-task=2
-#SBATCH --mem-per-cpu=12G
+# 8G x 2 CPU = 16 GB/task. Measured peak is ~10.6 GB (sacct MaxRSS over the
+# 384-cell sweep), so this is ~50% headroom. The previous 12G/cpu forced 5
+# nodes for 96 CPUs -- memory-bound, not CPU-bound -- and left the job
+# pending on (Resources) while the partition was busy.
+#SBATCH --mem-per-cpu=8G
 #SBATCH --time=04:00:00
 #SBATCH --partition=base
-#SBATCH --constraint=sapphire
+# No --constraint: these cells are embarrassingly parallel single-process
+# papermill runs with no MPI and no Dask cluster, so the IB-reliability
+# rationale for pinning to sapphire (srp) does not apply to them. Leaving
+# the whole base partition eligible cuts queue time substantially.
 
 # Post-simulation beaching pass: reads the trajectory zarrs + raw
 # baltic_highres Stokes + the 024a key, writes one beaching parquet per
