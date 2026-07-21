@@ -596,14 +596,15 @@ def deposit_one_zarr(path, release_doy, rast, stokes):
     _ib = in_band & (w_on > 0)
     if _ib.any():
         _tau = tau0_hours / np.maximum(s_w[_ib], 1e-6)
-        _wq = np.percentile(w_on[_ib], [10, 50, 90])
-        _tq = np.percentile(_tau, [10, 50, 90])
-        RATE_STATS.append({
-            'in_band_steps': int(in_band.sum()),
-            'forced_steps': int(_ib.sum()),
-            'w_on_p10': _wq[0], 'w_on_p50': _wq[1], 'w_on_p90': _wq[2],
-            'tau_h_p10': _tq[0], 'tau_h_p50': _tq[1], 'tau_h_p90': _tq[2],
-        })
+        _QS = [10, 25, 50, 75, 90, 95, 99, 99.9, 100]
+        _wq = np.percentile(w_on[_ib], _QS)
+        _row = {'in_band_steps': int(in_band.sum()), 'forced_steps': int(_ib.sum())}
+        for _q, _w in zip(_QS, _wq):
+            _row[f'w_on_p{_q:g}'] = _w
+            # tau AT this w quantile, not the quantile of tau: tau is monotonically
+            # decreasing in w, so independent quantiles would pair opposite tails.
+            _row[f'tau_h_p{_q:g}'] = tau0_hours / max(_w / (_w + w_half), 1e-6)
+        RATE_STATS.append(_row)
     A = np.cumsum(a, axis=1)
     dep = np.exp(-(A - a)) - np.exp(-A)
     dep[~real] = 0.0
@@ -704,12 +705,13 @@ print(f"computed {len(beaching):,} rows in {time.time() - t0:.1f}s; "
 if RATE_STATS:
     _rs = pd.DataFrame(RATE_STATS)
     _forced = _rs["forced_steps"].sum() / max(_rs["in_band_steps"].sum(), 1)
-    print(f"realized rate over in-band steps ({100 * _forced:.1f}% with w_onshore > 0):")
-    print(f"  w_onshore m/s  p10/p50/p90: {_rs['w_on_p10'].mean():.4f} / "
-          f"{_rs['w_on_p50'].mean():.4f} / {_rs['w_on_p90'].mean():.4f}")
-    print(f"  tau hours      p10/p50/p90: {_rs['tau_h_p10'].mean():,.0f} / "
-          f"{_rs['tau_h_p50'].mean():,.0f} / {_rs['tau_h_p90'].mean():,.0f}"
-          f"   (tau0={tau0_hours:g} h, w_half={w_half:g} m/s)")
+    print(f"realized rate over in-band steps ({100 * _forced:.1f}% with w_onshore > 0)"
+          f"   [tau0={tau0_hours:g} h, w_half={w_half:g} m/s]")
+    print(f"  {'quantile':>10s} {'w_onshore m/s':>15s} {'tau (h)':>12s} {'tau (d)':>10s}")
+    for _c in [c for c in _rs.columns if c.startswith("w_on_p")]:
+        _q = _c[len("w_on_p"):]
+        _w = _rs[_c].mean(); _t = _rs[f"tau_h_p{_q}"].mean()
+        print(f"  {'p' + _q:>10s} {_w:15.4f} {_t:12,.0f} {_t / 24:10,.1f}")
 print(f"WAM extrapolation ({stokes.mask_files} files in the static-water mask): "
       f"{stokes.n_filled:,} / {stokes.n_sampled:,} in-band samples filled "
       f"({100 * stokes.n_filled / max(stokes.n_sampled, 1):.1f}%), "

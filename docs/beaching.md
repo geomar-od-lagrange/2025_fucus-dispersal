@@ -192,6 +192,14 @@ exposed to any rate at all); `trap_*` is not a sweep axis while degenerate.
 [`031_BeachingSweep`](../notebooks/031_BeachingSweep.py) pools them into a
 range. Three things shape how to sweep:
 
+- **`w_half` is currently set outside the forcing range**, which makes it a
+  rate scale rather than a half-saturation point. Measured `w_onshore` over
+  in-band steps runs p50 = 0.026, p99 = 0.153, max 0.457 m/s, and `|VSD|`
+  anywhere in the Baltic never exceeds **0.544 m/s** — so at the production
+  `w_half = 1.5` the ramp `s` only ever spans 0.003–0.23 and never saturates.
+  A recalibration onto `(τ0 ≈ 490 h, w_half = 0.05)` gives the same median
+  timescale with both parameters inside their meaningful range:
+  [../plans/beaching_recalibration.md](../plans/beaching_recalibration.md).
 - **`τ0` and `w_half` are not independent, and here they are nearly
   degenerate.** `τ = τ0 + τ0·w_half/w`: `τ0` is an additive floor, the
   *product* `τ0·w_half` is the weak-wave coefficient. Where `w ≪ w_half` only
