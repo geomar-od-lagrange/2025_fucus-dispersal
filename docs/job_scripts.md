@@ -74,6 +74,45 @@ export SCHEDULER_FILE=${repo_root}/.scheduler_${SLURM_JOB_ID}.json
 (e.g. CMEMS in 002); `no_proxy` excludes intra-cluster TCP so dask
 node addresses don't dial the proxy.
 
+## Horizontal scaling for GPFS-bound cells (024d / 024e)
+
+The beaching and survival-occupancy passes fan out one independent
+single-process papermill run per `(year, month)` cell. They hold no MPI
+communicator and no Dask cluster; the bottleneck is streaming trajectory
+zarrs and hourly Stokes files off GPFS. Three consequences, all defaults in
+`scripts/024{d,e}_*_job.sh`:
+
+- **`--spread-job`.** Maximise horizontal reach into the filesystem rather
+  than node locality. Packing is a tail-latency disaster: the same 48 cells
+  ran steps min/med/max `11:54 / 17:55 / 54:51` on 8 nodes against
+  `10:51 / 16:43 / 20:54` on 22 — identical median, 2.6x worse tail, and
+  since wall time is set by the slowest cell `024e` took 1:13:44 against
+  20:54. The flag disables the topology/tree plugin, which costs nothing
+  without MPI.
+- **No `--constraint`.** Pinning to sapphire (srp) nodes was inherited from
+  Dask-backed jobs where IB reliability mattered. For these it only shrinks
+  the eligible pool and leaves jobs pending indefinitely.
+- **`--ntasks` matched to the cell count** (`|YEARS| x 12 = 48`). More tasks
+  than cells inflates the allocation with idle slots and makes the job harder
+  to place. Sweeps multiply the grid, so raise it on the command line.
+
+Memory is sized from measured `sacct MaxRSS`, not guessed: 024d peaks
+~10.6 GB (8G/cpu x 2), 024e ~20.3 GB (12G/cpu x 2). Over-requesting is what
+forces a job onto more nodes than it needs and pushes it into `(Resources)`.
+
+**Kernel start-up race.** At high concurrency `jupyter_client` reserves five
+ZMQ ports by binding to port 0 and closing, then the kernel re-binds moments
+later; a concurrent kernel on the same host can take one in that window and
+the loser dies with `Address already in use` before executing a cell
+(papermill then writes an output notebook with zero executed cells and no
+exception). The collision domain is the host's ephemeral port space, so it
+scales with per-node concurrency. Handled by a bounded retry (3 attempts,
+1-10 s jitter) with the exit status propagated explicitly — without that the
+loop ends on `sleep`, `bash -c` exits 0, and `xargs` reports success for a
+cell that never wrote a partition. A per-cell `JUPYTER_RUNTIME_DIR` on
+node-local scratch is also set; it does not fix the port race (connection
+filenames carry UUIDs) but keeps those files off GPFS.
+
 ## Cross-references
 
 - [seeding.md](seeding.md), [hexbinning_and_connectivity.md](hexbinning_and_connectivity.md) — what the runs produce.

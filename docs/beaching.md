@@ -259,11 +259,35 @@ was normalised, but **exactly representable in the current parameterisation**
 | 0.8 | 0.448 | 0.759 | 2206 | 18.3 |
 | 1.6 | 0.295 | 0.773 | 2205 | 21.0 |
 
-**The beached fraction is not a reportable number.** It spans 29.5-89.7 % over
-defensible rate parameters, so any single value is a parameter choice
-presented as a result. Production sits at `τ0 = 480 h`, `w_tau = 0.05`. What is robust is the pattern: Gini moves only
+**The beached fraction is not a reportable number.** It spans 29.5-89.7 %
+over defensible rate parameters, so any single value is a parameter choice
+presented as a result. What is robust is the pattern: Gini moves only
 0.67 -> 0.77 and the stranding support is flat at ~2,200 hexes across that
 whole range, so *where* material strands barely changes while *how much* does.
+
+## Production run
+
+`τ0 = 480 h` (20 d at `w_tau`), `w_tau = 0.05` m/s, `surface_stokes`,
+`r6000m`, 2016-2019, 48 partitions each for the beaching and survival-occupancy
+stores:
+
+| quantity | value |
+|---|---|
+| beached within the 60 d window | **39.9 %** (6,611,841 of 16,578,935) |
+| drifting fraction at 20 d | 0.800 |
+| drifting fraction at 50 d | 0.625 |
+| drifting fraction at 100 d | 0.441 |
+| median realised `τ` | 29.5 d |
+
+Calibrated to treat stranding as the minority outcome — 60 % of propagules
+never beach inside the window. It is not the same answer as the earlier
+`(τ0 = 24 h, w_half = 1.5)` setting, which gave 30.8 % at a median `τ` of
+60 d; `τ0` is the single knob if that balance needs shifting, and it scales
+the exponent directly (doubling it roughly restores the earlier split).
+
+Figures: `Figures/029/*_t480_wt0p05.png` (stranding),
+`Figures/030/SurvivalHeatmaps_*` and `SurvivalFraction_*` (occupancy with and
+without beaching, and the surviving fraction).
 
 **Low-`w_tau` members are confounded by the release geometry.** Fucus release
 points are coastal by definition, so particles start inside the 2 km band and

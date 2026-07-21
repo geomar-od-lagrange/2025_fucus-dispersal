@@ -21,7 +21,7 @@ listed here should be dropped.
 | 026b     | Hex time-horizon density maps per origin subbasin and year | Per-run (regime + radius) | One 026 four-panel figure per (origin subbasin, release year) |
 | 027      | Hex distance-quantile maps | Per-run (regime + radius) | One map per quantile (0.1/0.5/0.9), Aug/Sep releases pooled across years     |
 | 029      | Beaching maps       | Per-run (regime + radius) | Where-stranded · beached fraction per source hex · age horizons (10/20/50 d) |
-| 030      | Survival heatmaps   | Per-run (regime + radius) | Per horizon (20/50/100 d): occupancy · survival-weighted · surviving fraction |
+| 030      | Survival heatmaps   | Per-run (regime + radius) | Per horizon (20/50/100 d): occupancy · survival-weighted; surviving fraction as a separate 1xN figure |
 | 031      | Beaching sweep      | Per-run (regime + radius) | Beached fraction + Gini vs `w_tau` · where-stranded maps across sweep members |
 
 ## Cross-cutting choices
