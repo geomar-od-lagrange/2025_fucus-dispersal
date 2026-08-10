@@ -1,6 +1,6 @@
 # Visualisations: per-plot rationale
 
-Why each notebook in `020`–`027` shows what it shows, and where
+Why each notebook in `020`–`031` shows what it shows, and where
 styling overrides earn their deviation from
 [../AGENTS.md](../AGENTS.md)'s plotting rules. AGENTS.md states the
 **rules** (no `cmap=`, no `figsize=`, no `color=` literals); this doc
@@ -20,6 +20,9 @@ listed here should be dropped.
 | 026a     | Hex time-horizon density maps per origin subbasin | Per-run (regime + radius) | One 026 four-panel figure per origin (HELCOM) subbasin |
 | 026b     | Hex time-horizon density maps per origin subbasin and year | Per-run (regime + radius) | One 026 four-panel figure per (origin subbasin, release year) |
 | 027      | Hex distance-quantile maps | Per-run (regime + radius) | One map per quantile (0.1/0.5/0.9), Aug/Sep releases pooled across years     |
+| 029      | Beaching maps       | Per-run (regime + radius) | Where-stranded · beached fraction per source hex · age horizons (10/20/50 d) |
+| 030      | Survival heatmaps   | Per-run (regime + radius) | Per horizon (20/50/100 d): occupancy · survival-weighted; surviving fraction as a separate 1xN figure |
+| 031      | Beaching sweep      | Per-run (regime + radius) | Beached fraction + Gini vs `w_tau` · where-stranded maps across sweep members |
 
 ## Cross-cutting choices
 
@@ -160,11 +163,75 @@ unit-aware axis label from a column (unlike xarray reading
 `long_name`/`units`), so the bare column name `distance_km` would reach
 the reader without units. The label supplies that missing context.
 
+## Notebook 029 — Beaching maps (special case)
+
+A **beaching-store consumer**: reads the store built by 024d
+(`(release_hex, release_doy, beach_hex, beach_age_bin, shore_type)→weight`)
+plus the 024a key for geometry. Three views on one plain EPSG:4326 axis, all
+reusing 025's hex-registration overrides (aspect-driven `figsize`,
+`edgecolor="face"`/`linewidth=0.4`, black coastline `linewidth=0.5`):
+
+- **Where-stranded density** — beached weight (expected particles) per
+  stranding hex, pooled over shore types. Inherits 025's `cmap="viridis"` +
+  `LogNorm` (floored four decades below the peak, since weighted deposition's
+  sparse tail carries fractional weight): like occupancy, stranding weight
+  spans decades. The store's `shore_type` is deliberately **not shown at all**
+  — neither faceted into panels nor broken out in the summary. 024d runs with
+  a degenerate `trap` (`trap_flat == trap_wall`), so the label expresses
+  nothing about the model, and a wall/flat split would imply resolved coastal
+  morphology where there is only BSH's tidal-flat flag. Surface it when a real
+  substrate classification drives `trap` — see [beaching.md](beaching.md).
+- **Beached fraction per source hex** — a ratio in [0, 1], so it uses the
+  **default (linear) norm** with no `cmap` override to defend (the log-map
+  colour choice is dropped, as 027 does for its linear distance quantiles).
+- **Age-horizon where-stranded maps** — the same log-density map at
+  cumulative age cut-offs (`beach_age_bin < T // age_bin_days`), a shared
+  `LogNorm` across horizons so the fill-in over time is legible; this mirrors
+  026's horizon logic on the beaching axis.
+
+The DPI-scale and per-panel-height parameters match 026's rationale above.
+
+## Notebook 030 — Survival heatmaps (special case)
+
+A **survival-occupancy consumer**: reads the store built by 024e
+(`(release_doy, age_bin, target_hex) → occ, surv`) plus the 024a key. Per
+horizon, a 3-column row — plain occupancy, survival-weighted occupancy
+(beaching removed), and the surviving fraction `surv/occ` — reusing 025's hex
+registration. The two density columns **share one `LogNorm`** (029's
+four-decades-floored `log_norm`, since survival weights have a long sub-1
+tail) so the age-thinning and the beaching-removal read on the same scale;
+the fraction column uses a **fixed linear 0–1** scale (`vmin=0, vmax=1`) so it
+is comparable across horizons. The DPI-scale and per-panel-height parameters
+match 026's rationale.
+
 ## Cross-references
 
+- [beaching.md](beaching.md) — 029's store, model, and limitations.
+- [survival_occupancy.md](survival_occupancy.md) — 030's store and the
+  survival-weighting behind it.
 - [seeding.md](seeding.md) — release-set semantics every viz reads.
 - [distance_calculation.md](distance_calculation.md) — 022's metric.
 - [hexbinning_and_connectivity.md](hexbinning_and_connectivity.md) —
   the store 025 reads.
 - [../AGENTS.md](../AGENTS.md) — the styling rules this doc defends
   exceptions to.
+
+## Notebook 031 — Beaching parameter sweep (special case)
+
+Pools the `w_tau` members of the 024d store (each a full `(year, month)`
+set) and reports a **range** rather than a number, because in the Baltic the
+beaching scheme can dominate the result. Two panels plus a map row:
+
+- **Beached fraction vs `w_tau`** and **Gini concentration vs `w_tau`**,
+  both on a log x-axis (the members are log-spaced). Two separate axes rather
+  than a twin-y: the quantities share no units and a twin-y invites reading a
+  crossing point that means nothing. Default linear norm, default colours —
+  two single-series line plots need no overrides.
+- **Where-stranded maps across members**, one column per `w_tau`, on a
+  **shared `LogNorm`** so the difference read off the row is pattern, not
+  scale — the same reasoning as 026's horizon row.
+
+The Gini panel is the load-bearing one: totals are degenerate along the
+`τ0`·`w_tau` ridge (see [beaching.md](beaching.md)), so concentration is
+what distinguishes a wave-selective parameterisation from a
+residence-driven one.
