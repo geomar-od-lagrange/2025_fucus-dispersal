@@ -24,9 +24,9 @@
 # leap-correct (as `026`). Draws:
 #
 # 1. **Where-stranded density** — beached weight (expected particles) per
-#    `beach_hex` (log scale). Shore type is not shown anywhere in this
-#    notebook: `trap` is degenerate in 024d, so the `wall`/`flat` label
-#    expresses nothing and reporting it would invite over-reading.
+#    `beach_hex` (log scale), pooled over shore types. The substrate split is
+#    reported in the summary but not faceted into panels — see the
+#    where-stranded cell for why.
 # 2. **Beached fraction per source hex** — of the drifters released in each
 #    hex, what fraction strands within the viability window (linear 0–1).
 # 3. **Beaching age horizons** — cumulative where-stranded density for
@@ -218,12 +218,14 @@ beached = beaching[beaching["beach_hex"] >= 0]
 # # Where-stranded density
 #
 # Log-scale beached weight (expected particles) per stranding hex, pooled over
-# shore types. `shore_type` is not shown anywhere in this notebook -- not as a
-# faceted map, not in the summary. `024d` runs with a degenerate `trap`
-# (`trap_flat == trap_wall`), so the label expresses nothing about the model,
-# and reporting it would invite reading resolved coastal morphology into what
-# is only the BSH tidal-flat flag. Surface it again when a real substrate
-# classification drives `trap`.
+# shore types. `shore_type` now carries a real substrate classification (see
+# [beaching.md](../docs/beaching.md)), so it is reported -- but as a summary
+# breakdown, not as a faceted map. Two reasons the maps stay pooled: at the
+# shipped inert `trap` the split does not affect *where* weight strands, only
+# how it is labelled, so faceted panels would show the same field twice; and
+# the label is a threshold on a continuous `flat_fraction` that is smoothed
+# over one BSH cell face, which on the 5.5 km coarse grid is well below what a
+# per-hex panel would imply.
 
 # %%
 gdf_stranded = hex_gdf(beached, "beach_hex")
@@ -331,3 +333,8 @@ print(f"  beached:           {n_beached:,.0f} "
       f"({100 * n_beached / max(total_released, 1):.1f}%)")
 print(f"  stranding hexes:   {beached['beach_hex'].nunique():,}")
 print(f"  source hexes:      {frac['release_hex'].nunique():,}")
+print("  by shore type:")
+for shore_type, w in (
+    beached.groupby("shore_type")["weight"].sum().sort_values(ascending=False).items()
+):
+    print(f"    {shore_type:<13s} {w:12,.0f} ({100 * w / max(n_beached, 1):5.1f}%)")

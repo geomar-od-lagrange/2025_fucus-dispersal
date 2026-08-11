@@ -27,8 +27,8 @@ S(t) = exp(−A(t)),   A(t) = cumsum(Δt/τ) over in-band steps
 
 — the same near-shore beaching rate `τ = τ0/(trap·s(w_onshore))` as
 `024d_BuildBeaching` (see [beaching.md](../docs/beaching.md)), with `trap`
-currently degenerate (`trap_flat == trap_wall == 1.0`), so wave forcing is
-the only term that modulates it. `A` only grows inside the near-shore band,
+shipped inert (`trap_flat == trap_wall == 1.0`), so at the defaults wave
+forcing is the only term that modulates it. `A` only grows in the band,
 so open-water residence is undiluted; a particle that lingers in a
 wave-exposed near-shore band loses weight fast. This is the
 deterministic occupancy analogue of 024d's fractional stranding: 024d
@@ -105,13 +105,15 @@ band_m = 2000.0
 tau0_hours = 24.0
 w_half = 0.05
 
-# Shore-type retention weights, DELIBERATELY DEGENERATE (both 1.0) — see the
-# 024d parameters cell. The trap term is wired but expresses nothing, so the
-# beaching rate is uniform along the coast for a given wave forcing; the
-# `flat`/`wall` classification is computed and carried only as the seam for a
-# future real substrate/exposure dataset.
+# Shore-substrate retention weights — see the 024d parameters cell. The trap
+# multiplier at pure-flat (flat_fraction = 1) and pure-wall (0) shore, linearly
+# interpolated between. Equal values make the term inert, which is the shipped
+# default. Must match 024d's, or this store's survival and the beaching store
+# disagree on the same rate model.
 trap_flat = 1.0
 trap_wall = 1.0
+# flat_fraction assumed where the classification attributed nothing.
+ff_unattributed = 0.5
 
 # Max rounds of geodesic (through-water) propagation when extrapolating the
 # WAM field onto BSH water, in WAM cells (~1.6 km each).
@@ -164,7 +166,7 @@ stokes_dir = output_root / "stokes" / "baltic_highres" / str(release_year)
 # Beaching geometry raster (+ dense hex index per cell)
 
 Same field as 024d — distance to the BSH H0 coast, seaward normal rotated
-to geographic east/north, wall/flat shore type — plus, here, the dense hex
+to geographic east/north, shore `flat_fraction` — plus, here, the dense hex
 **index** (into the key's hex-id order) of each raster cell, so per-position
 hexing is a lookup ready for `np.bincount`.
 
@@ -185,6 +187,45 @@ def _h0_nearest_sampler(h0):
         return out
 
     return sample
+
+
+def flat_fraction_plane(path, xmin, ymax, dx_m, nrow, ncol):
+    """Nearest-sub-segment `flat_fraction` on the raster — same construction as
+    024d, which documents it. Kept in step with that notebook: the two share a
+    rate model, so a divergence here is a silent disagreement between the
+    survival store and the beaching store."""
+    seg = pd.read_parquet(
+        path, columns=["x_3035", "y_3035", "flat_fraction", "seg_len_m", "in_baltic"]
+    )
+    col = np.round((seg["x_3035"].values - xmin) / dx_m)
+    row = np.round((ymax - seg["y_3035"].values) / dx_m)
+    on = (col >= 0) & (col < ncol) & (row >= 0) & (row < nrow)
+    cell = row[on].astype(np.int64) * ncol + col[on].astype(np.int64)
+    w = seg["seg_len_m"].values[on]
+    ff = seg["flat_fraction"].values[on]
+    has = np.isfinite(ff)
+
+    n = nrow * ncol
+    seg_len = np.bincount(cell, weights=w, minlength=n)
+    attr_len = np.bincount(cell[has], weights=w[has], minlength=n)
+    attr_sum = np.bincount(cell[has], weights=(w * ff)[has], minlength=n)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        cell_ff = np.where(attr_len > 0, attr_sum / attr_len, np.nan)
+
+    touched = (seg_len > 0).reshape(nrow, ncol)
+    _, (jy, jx) = ndimage.distance_transform_edt(~touched, return_indices=True)
+    plane = cell_ff.reshape(nrow, ncol)[jy, jx].astype("float32")
+
+    baltic = seg["in_baltic"].values
+    km = seg["seg_len_m"].values / 1e3
+    got = np.isfinite(seg["flat_fraction"].values)
+    stats = dict(
+        km={"Baltic": float(km[baltic].sum()),
+            "non-Baltic": float(km[~baltic].sum())},
+        km_attributed={"Baltic": float(km[baltic & got].sum()),
+                       "non-Baltic": float(km[~baltic & got].sum())},
+    )
+    return plane, stats
 
 
 def build_survival_raster(data_root, dx_m, hp, hexid_to_idx):
@@ -224,12 +265,12 @@ def build_survival_raster(data_root, dx_m, hp, hexid_to_idx):
     h0r = h0r.reshape(nrow, ncol)
 
     water = np.isfinite(h0r)
-    flat = water & (h0r <= 0)
 
-    dist_cells, (jy, jx) = ndimage.distance_transform_edt(water, return_indices=True)
-    dist_m = (dist_cells * dx_m).astype("float32")
-    flat_fronted_land = (~water) & ndimage.binary_dilation(flat)
-    nearest_flat = flat_fronted_land[jy, jx]
+    dist_m = (ndimage.distance_transform_edt(water) * dx_m).astype("float32")
+    flat_fraction, ff_stats = flat_fraction_plane(
+        data_root / "shoreclass_bsh_coastline/bsh_coastline_k2_flatfraction.parquet",
+        xmin, ymax, dx_m, nrow, ncol,
+    )
 
     grad_row, grad_col = np.gradient(dist_m.astype("float64"), dx_m)
     proj_e = grad_col
@@ -272,7 +313,8 @@ def build_survival_raster(data_root, dx_m, hp, hexid_to_idx):
         return row, col, ok
 
     return dict(
-        dist_m=dist_m, n_out_x=n_out_x, n_out_y=n_out_y, nearest_flat=nearest_flat,
+        dist_m=dist_m, n_out_x=n_out_x, n_out_y=n_out_y,
+        flat_fraction=flat_fraction, ff_stats=ff_stats,
         hex_idx=hex_idx, to_rowcol=to_rowcol, water_cells=int(water.sum()),
         shape=(nrow, ncol),
     )
@@ -281,6 +323,9 @@ def build_survival_raster(data_root, dx_m, hp, hexid_to_idx):
 t0 = time.time()
 rast = build_survival_raster(data_root, raster_dx_m, hp, hexid_to_idx)
 print(f"raster {rast['shape']} water={rast['water_cells']:,} in {time.time() - t0:.1f}s")
+for _dom, _km in rast["ff_stats"]["km"].items():
+    print(f"  shore classification {_dom:<11s} {_km:8,.0f} km  "
+          f"{100 * rast['ff_stats']['km_attributed'][_dom] / max(_km, 1):5.1f}% attributed")
 ```
 
 # Onshore Stokes sampler (land-extrapolated)
@@ -511,7 +556,7 @@ def occupancy_one_zarr(path, release_doy, rast, stokes):
     dist_at = rast["dist_m"][row, col].reshape(ntraj, nobs)
     nx_at = rast["n_out_x"][row, col].reshape(ntraj, nobs)
     ny_at = rast["n_out_y"][row, col].reshape(ntraj, nobs)
-    flat_at = rast["nearest_flat"][row, col].reshape(ntraj, nobs)
+    ff_at = rast["flat_fraction"][row, col].reshape(ntraj, nobs)
     hex_idx = rast["hex_idx"][row, col].reshape(ntraj, nobs)
     ok = ok.reshape(ntraj, nobs)
     # Land-seeded particles are excluded here, not just at aggregation: they
@@ -531,7 +576,13 @@ def occupancy_one_zarr(path, release_doy, rast, stokes):
             lon[m, h], lat[m, h], abs_time[h], nx_at[m, h], ny_at[m, h]
         )
 
-    trap = np.where(flat_at, trap_flat, trap_wall).astype("float32")
+    # Linear in flat_fraction; unattributed coastline takes ff_unattributed.
+    # Must match 024d's trap exactly — see the parameters cell.
+    trap = (
+        trap_wall
+        + (trap_flat - trap_wall)
+        * np.where(np.isnan(ff_at), ff_unattributed, ff_at)
+    ).astype("float32")
     # s(w) = w/(w + w_half), the saturating wave-forcing factor. Named `s`
     # (saturation), not `g`: `g` collides with gravitational acceleration and
     # understates that this is the model's one term with no precedent in the
@@ -665,7 +716,7 @@ print(f"regime={regime}, release_year={release_year}"
       + f", hex_radius={hex_radius} m")
 print(f"  params: occupancy_max_days={occupancy_max_days}, band_m={band_m:g}, "
       f"tau0_hours={tau0_hours:g}, trap_flat/wall={trap_flat:g}/{trap_wall:g}"
-      + (" (degenerate — shore type inert)" if trap_flat == trap_wall else ""))
+      + (" (equal — trap inert)" if trap_flat == trap_wall else ""))
 per_bin = survocc.groupby("age_bin")[["occ", "surv"]].sum()
 per_bin["drifting"] = per_bin["surv"] / per_bin["occ"]
 print(per_bin.to_string(float_format=lambda v: f"{v:,.3f}"))

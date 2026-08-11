@@ -20,7 +20,7 @@ and literature basis: [../plans/done/beaching.md](../plans/done/beaching.md).
 
 | Stage | File | Reads | Writes |
 |-------|------|-------|--------|
-| Build | [`024d_BuildBeaching`](../notebooks/024d_BuildBeaching.py) | trajectory zarrs + raw `baltic_highres` Stokes + `024a` key | `HexAgg_beaching_*.parquet` |
+| Build | [`024d_BuildBeaching`](../notebooks/024d_BuildBeaching.py) | trajectory zarrs + raw `baltic_highres` Stokes + `024a` key + the shore classification | `HexAgg_beaching_*.parquet` |
 | Consume | [`029_BeachingMaps`](../notebooks/029_BeachingMaps.py) | beaching parquet + key | PNGs under `Figures/029/` |
 | Sweep | [`031_BeachingSweep`](../notebooks/031_BeachingSweep.py) | all `w_half` members + key | PNGs under `Figures/031/` |
 
@@ -41,11 +41,12 @@ trajectory). Inside a near-shore band the beaching hazard is a Δt-invariant
 e-folding rate:
 
 ```
-τ = τ0 / (trap(shore_type) · s(w_onshore))
+τ = τ0 / (trap(flat_fraction) · s(w_onshore))
 ```
 
-with `trap ≡ 1` as configured, so in practice `τ = τ0 / s(w_onshore)` and
-**onshore wave forcing is the only term that modulates the rate**.
+Both terms are live. `trap` is shipped with `trap_flat = trap_wall`, which
+makes it inert and reproduces the published sweep exactly; moving the two
+weights apart activates the substrate factor.
 
 ### What is borrowed and what is new
 
@@ -55,13 +56,15 @@ standing:
 | element | status |
 |---|---|
 | Δt-invariant e-folding hazard, `p = 1 − exp(−Δt/τ)` | Standard. Onink et al. 2021 (also Hernandez et al. 2024, Daily et al. 2021, Siht et al. 2025). |
-| `trap(shore_type)` — terrain-dependent rate | Has precedent (Onink, Siht). **Deliberately switched off here** — see below. |
+| `trap(flat_fraction)` — terrain-dependent rate | Has precedent (Onink, Siht). Driven here by a purpose-built substrate classification of this model's own coastline — see below. |
 | `s(w_onshore)` — forcing-dependent rate | **This study's extension. No precedent in the cited set**, all of which effectively use a constant rate (`s ≡ 1`). |
 
-So the scheme **inverts** the literature's structure: the cited work varies
-the rate by terrain and holds it constant in forcing; this varies it by
-forcing and holds it constant in terrain. That is a deliberate choice, not an
-inherited one, and it must not be presented as following Onink et al.
+So the scheme **extends** the literature's structure rather than following it:
+the cited work varies the rate by terrain and holds it constant in forcing,
+this varies it by both. The terrain half is inherited; the forcing half is
+not, and must not be presented as following Onink et al. Because `trap` ships
+inert, a run at the shipped defaults is the *forcing-only* scheme, and the
+terrain half is a sweep axis rather than part of the baseline.
 
 Two of the cited papers argue *against* forcing modulation. Onink et al.
 2021 keep the scheme "simplest possible" on principle. Daily et al. 2021
@@ -100,40 +103,69 @@ never-beached residual. The three factors:
 
 - **Distance to shore** gates the band. Built as a rasterised
   distance-to-coast field (EPSG:3035, `raster_dx_m`) from the **BSH H0
-  land-sea mask** — finite `H0` = water, NaN = land, `H0 ≤ 0` = tidal flat
+  land-sea mask** — finite `H0` = water, NaN = land
   ([h0_semantics.md](h0_semantics.md)), fine grid over coarse. This is the
   mask the particles were advected on; the coastline geojson polygons miss a
   large fraction of genuine water positions (their `shapely.contains` drops
   ~36 % of release points) and are not used. `scipy.ndimage` EDT gives the
-  distance and the nearest-land index; `∇distance` gives the seaward unit
-  normal `n_out`, rotated from the projected grid frame into geographic
-  east/north so it dots consistently with the geographic Stokes components
-  (LAEA meridian convergence reaches ~17° in the eastern Baltic).
-- **Shore type** sets `trap` — **currently degenerate and contributing
-  nothing** (`trap_flat = trap_wall = 1.0`), so the rate is uniform along the
-  coast for a given wave forcing. The classification still runs: the nearest
-  land cell fronted by a tidal-flat cell reads as `flat`, else `wall`, and the
-  label is carried into the store. It is kept wired, not deleted, because the
-  per-step classification lookup is the expensive part and a real substrate
-  dataset should be able to drive `trap` without rebuilding it — set the two
-  weights apart to activate. Treat `shore_type` in the store and in `029`'s
-  summary as a diagnostic label, never as a model result; `029` deliberately
-  does not map the split.
+  distance; `∇distance` gives the seaward unit normal `n_out`, rotated from
+  the projected grid frame into geographic east/north so it dots consistently
+  with the geographic Stokes components (LAEA meridian convergence reaches
+  ~17° in the eastern Baltic).
+- **Shore substrate** sets `trap`, from `flat_fraction` — the length-weighted
+  share of attributed evidence at a stretch of coast that is *flat*
+  (dissipative, retentive) rather than *wall* (reflective, hard).
+  `trap` interpolates linearly,
 
-  Switching off a term the literature *does* support needs a defence, and
-  there are three. **Validity**: the only typing available is BSH's `H0 ≤ 0`
-  tidal-flat flag, which is not a retentiveness proxy for Baltic shores — the
-  basin is effectively tide-free, so the flag fires essentially only in the
-  German Bight, which is outside the wave grid and has zero forcing anyway. A
-  two-class split would read as resolved coastal morphology while resolving
-  none. **Measured effect size**: switching `trap_flat` from 2.0 to 1.0 moved
-  the beached total by 0.9 points (57.3 % → 56.4 %, Aug 2019, Euclidean fill),
-  because `flat` covers 8,301 of 4,178,297 water cells and takes 6.5 % of
-  beached weight. **Literature effect size**: Daily et al. 2021 and Onink et
-  al. 2021 both report terrain variation having minimal impact on outcomes.
-  So the term is being dropped where it is least load-bearing and least
-  supportable, not to simplify the model.
-- **Onshore wave forcing** sets `g`, and with `trap` degenerate it is the
+  ```
+  trap = trap_wall + (trap_flat − trap_wall) · flat_fraction
+  ```
+
+  so `trap_wall` and `trap_flat` are the multipliers at pure wall and pure
+  flat. **Shipped equal (both 1.0), which makes the term inert** — the
+  published sweep reproduces exactly — and it is activated by moving them
+  apart. Linear rather than binary because the source applies no threshold: a
+  binary call is recoverable as `flat_fraction > 0.5` while the reverse is
+  not, and a threshold would push the genuinely mixed coast to one arbitrary
+  side. `trap_wall` stays a free parameter rather than being hard-zeroed —
+  an absorbing/reflecting dichotomy is a far stronger claim than a rate ratio
+  and makes the beached total swing on the flat share — with 0 available as
+  one sweep member.
+
+  The classification is **not derived here**. It comes from the sidecar
+  repository
+  [2025_fucus-dispersal_shoreclass](https://github.com/geomar-od-lagrange/2025_fucus-dispersal_shoreclass),
+  which types this model's own coastline — the staircase of BSH tracer-cell
+  faces, subdivided into 65,876 sub-segments of 420–465 m — from HELCOM BRISK
+  and Copernicus CLMS Coastal Zones evidence. See
+  [../plans/trap_from_shoreclass.md](../plans/trap_from_shoreclass.md) for
+  the handoff and [`scripts/obtain/obtain_shoreclass.sh`](../scripts/obtain/obtain_shoreclass.sh)
+  for how the table is produced.
+
+  Mapping it onto the beaching raster needs **no reprojection and no match
+  tolerance**: the sidecar derives its outline from the same BSH H0 statics
+  under the same fine-over-coarse merge and ships midpoints in EPSG:3035, so
+  the two coastlines are the same coastline. `024d` snaps the midpoints to the
+  500 m raster, averages by `seg_len_m` where a cell takes several, and
+  propagates by EDT so a near-shore cell reads the shore it faces.
+
+  Attribution is **93.3 % of the 18,668 km Baltic coastline** but only 33.6 %
+  of the 10,444 km outside it (North Sea, Kattegat), and the two are reported
+  separately because pooling them understates coverage where Fucus is.
+  `NaN` survives the propagation rather than borrowing an attributed
+  neighbour's value; those cells take `ff_unattributed` (default 0.5, the
+  neutral midpoint, close to the 0.527 attributed mean), and every run prints
+  the share of in-band steps and of beached weight that lands there. The
+  assumption is never silent.
+
+  Two cautions carry over from the source. The kernel smooths over one cell
+  face, so on the 5.5 km coarse grid `flat_fraction` is a kilometre-scale
+  quantity, not a sub-cell one. And **`trap` and `s(w_onshore)` are plausibly
+  collinear** — in the Baltic the wall shores are the exposed Fennoscandian
+  ones and the flat shores the sheltered lagoons and bays — so `024d` prints
+  `corr(flat_fraction, w_onshore)` over forced in-band steps. Read it before
+  reporting any run with both terms active.
+- **Onshore wave forcing** sets `s`. At the shipped inert `trap` it is the
   *only* term that modulates the rate. The onshore Stokes component
   `w_onshore = max(0, −(VSDX, VSDY) · n_out)`, sampled from the **raw
   `baltic_highres` field** (CMEMS `BALTICSEA_MULTIYEAR_WAV_003_015`, FMI-WAM,
@@ -170,7 +202,7 @@ weight to *every* coastal hex/age-bin it strands in, plus a residual row:
 | `release_doy` | release day-of-year of the originating zarr |
 | `beach_hex` | hex where the weight stranded; `-1` = never-beached residual |
 | `beach_age_bin` | `floor(deposit_age_days / age_bin_days)`; `-1` for residual |
-| `shore_type` | `wall` / `flat` label at the stranding site (`none` for residual). Carried as the seam for a future substrate classification; **not reported by any consumer** while `trap` is degenerate |
+| `shore_type` | substrate label at the stranding site: `flat` / `wall` at the classification's own binary threshold `flat_fraction > 0.5`, `unattributed` where it attributed nothing, `none` for the residual row. `trap` itself stays continuous — this is the store's categorical view of it |
 | `weight` | summed stranded weight (expected particles) in the group |
 
 The never-beached residual is kept (`beach_hex = -1`, …), and deposits +
@@ -180,13 +212,16 @@ fraction is `sum(weight | beach_hex ≥ 0) / sum(weight)` per source hex.
 ## Parameters and their defaults
 
 `max_float_days = 60`, `band_m = 2000`, `tau0_hours = 24`,
-`w_half = 0.05` m/s, `trap_flat = trap_wall = 1.0` (degenerate),
-`age_bin_days = 10`, `raster_dx_m = 500`. The scheme is deterministic (no
-RNG). Totals are highly parameter-sensitive — in the Baltic the beaching
-scheme can dominate the answer (Siht et al. 2025) — so these warrant a sweep
-reported as a range, not a single number. The live knobs are `tau0_hours` and
-`w_half` (jointly the rate scale) plus `band_m` (how much trajectory time is
-exposed to any rate at all); `trap_*` is not a sweep axis while degenerate.
+`w_half = 0.05` m/s, `trap_flat = trap_wall = 1.0` (inert),
+`ff_unattributed = 0.5`, `age_bin_days = 10`, `raster_dx_m = 500`. The scheme
+is deterministic (no RNG). Totals are highly parameter-sensitive — in the
+Baltic the beaching scheme can dominate the answer (Siht et al. 2025) — so
+these warrant a sweep reported as a range, not a single number. The live knobs
+are `tau0_hours` and `w_half` (jointly the rate scale) plus `band_m` (how much
+trajectory time is exposed to any rate at all). `trap_flat`/`trap_wall` is a
+sweep axis in its own right, but only once the collinearity check against
+`w_onshore` says the two rate factors are measuring different things; the
+shipped values leave it inert, so the sweep result below is unaffected.
 
 `w_half` is part of the store filename, so sweep members coexist and
 [`031_BeachingSweep`](../notebooks/031_BeachingSweep.py) pools them into a
@@ -275,8 +310,8 @@ bounds the effect and is deferred.
 
 - [hexbinning_and_connectivity.md](hexbinning_and_connectivity.md) — the
   `024x` store pattern + key schema this reuses.
-- [h0_semantics.md](h0_semantics.md) — the `H0 ≤ 0` tidal-flat rule behind
-  the wall/flat split and the land-sea mask.
+- [h0_semantics.md](h0_semantics.md) — the land-sea mask the distance field
+  and the classified coastline are both built on.
 - [stokes_drift.md](stokes_drift.md) — the wave field that drives beaching
   and the blocked-face mask this reverses at the coast.
 - [visualisations.md](visualisations.md) — `029`'s plot rationale.

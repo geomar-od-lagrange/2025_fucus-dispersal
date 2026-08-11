@@ -24,7 +24,7 @@
 # the pattern metric that actually discriminates between members.
 #
 # `w_half` is the onshore-Stokes half-saturation in `s(w) = w/(w + w_half)`,
-# and with `trap` degenerate the rate is `τ = τ0/s(w_onshore)` — so `w_half`
+# at the shipped inert `trap` the rate is `τ = τ0/s(w_onshore)` — so `w_half`
 # and `τ0` are the whole rate model. They are **not independent**: rewriting
 # `τ = τ0 + τ0·w_half/w` shows `τ0` as an additive floor and the *product*
 # `τ0·w_half` as the weak-wave coefficient. Where `w ≪ w_half` only the

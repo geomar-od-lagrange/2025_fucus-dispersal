@@ -37,28 +37,25 @@
 # Fucus **lifetime** `L(t)` — survival is `exp(−∫dt/τ)·L(t)`, today's
 # `max_float_days` being a step-function `L`.
 #
-# **Rate model.** `τ = τ0 / (trap(shore_type)·s(w_onshore))`:
+# **Rate model.** `τ = τ0 / (trap(flat_fraction)·s(w_onshore))`:
 #
 # - **distance to shore** — a rasterised distance-to-coast field built from
-#   the **BSH H0 land-sea mask** (finite `H0` = water, NaN = land, `H0 ≤ 0`
-#   = tidal flat), fine-over-coarse, in EPSG:3035. This is the mask the
-#   particles were advected on; the coastline geojson polygons miss a large
-#   fraction of genuine water positions and are not used here.
-# - **shore type** — the nearest land cell fronted by a tidal-flat
-#   (`H0 ≤ 0`) cell reads as `flat` (dissipative, retentive), else `wall`.
-#   **Currently degenerate**: `trap_flat == trap_wall == 1.0`, so this term
-#   contributes nothing and the rate is uniform along the coast for a given
-#   wave forcing. The classification is still computed and carried into the
-#   store as `shore_type` — the seam for a real substrate classification, not
-#   an active model term. It is deliberately **not reported** by this notebook
-#   or by any consumer while `trap` is degenerate: a label that expresses
-#   nothing about the model invites over-reading. See the parameters cell for
-#   why the H0 flag is not a usable Baltic retentiveness proxy.
+#   the **BSH H0 land-sea mask** (finite `H0` = water, NaN = land),
+#   fine-over-coarse, in EPSG:3035. This is the mask the particles were
+#   advected on; the coastline geojson polygons miss a large fraction of
+#   genuine water positions and are not used here.
+# - **shore type** — `flat_fraction`, the length-weighted share of attributed
+#   substrate evidence that is *flat* (dissipative, retentive) rather than
+#   *wall* (reflective, hard), from the sidecar classification of this model's
+#   own coastline (`data/shoreclass_bsh_coastline/`, built by
+#   <https://github.com/geomar-od-lagrange/2025_fucus-dispersal_shoreclass>).
+#   `trap` interpolates linearly between `trap_wall` at `flat_fraction = 0`
+#   and `trap_flat` at 1. Shipped with the two equal, which makes the term
+#   inert — move them apart to activate it.
 # - **onshore wave forcing** — the onshore component of the raw
 #   `baltic_highres` Stokes drift (`VSDX/VSDY`), i.e. the cross-shore
 #   transport the `surface_stokes` runs masked at blocked faces, sampled
-#   here *before* that mask. With `trap` degenerate this is the *only* term
-#   that modulates the rate.
+#   here *before* that mask.
 #
 # **Land-seeded particles are dropped** (zero first-step displacement),
 # exactly as `024`/`024b` do. The key file from `024a_BuildHexKey.md` is a
@@ -133,17 +130,20 @@ band_m = 2000.0        # near-shore band width (m)
 tau0_hours = 24.0      # base e-folding beaching timescale (h)
 w_half = 0.05          # onshore-Stokes half-saturation (m/s) in the s ramp
 
-# Shore-type retention weights, DELIBERATELY DEGENERATE (both 1.0) — the trap
-# term is wired but currently expresses nothing, so every shore beaches alike
-# for a given wave forcing. The only shore typing available here is the BSH
-# `H0 <= 0` tidal-flat flag, which is not a retentiveness proxy for *Baltic*
-# shores: the basin is effectively tide-free, so the flag fires only in the
-# German Bight (outside the wave grid, hence zero forcing anyway). A two-class
-# split would read as resolved coastal morphology while resolving none. The
-# plumbing stays so a real substrate/exposure classification can drive it
-# later without rebuilding the per-step lookup — set these apart to enable it.
+# Shore-substrate retention weights: the trap multiplier at pure-flat shore
+# (flat_fraction = 1) and at pure-wall shore (flat_fraction = 0), interpolated
+# linearly in between. Equal values make the term inert, which is the shipped
+# default so the existing w_half sweep reproduces exactly; move them apart to
+# activate it and sweep the ratio in 031. Kept a ratio rather than hard-zeroing
+# trap_wall: an absorbing/reflecting dichotomy is a much stronger claim, and it
+# makes the beached total swing on the flat share. 0 is available as one member.
 trap_flat = 1.0
 trap_wall = 1.0
+# flat_fraction assumed where the classification attributed nothing (6.7% of
+# Baltic model coastline). 0.5 is the neutral midpoint and close to the
+# attributed length-weighted mean, 0.527. Never silent: the run reports the
+# share of in-band steps and of beached weight that lands on such coast.
+ff_unattributed = 0.5
 
 # Max rounds of geodesic (through-water) propagation when extrapolating the
 # WAM field onto BSH water, in WAM cells (~1.6 km each). Caps how far a
@@ -192,9 +192,10 @@ stokes_dir = output_root / "stokes" / "baltic_highres" / str(release_year)
 # Build the near-shore geometry field once: a regular EPSG:3035 raster
 # carrying, per cell, the distance to the nearest BSH land cell, the seaward
 # unit normal `n_out` (∇distance, rotated into geographic east/north), the
-# `shore_type`, and the `024a` hex id of the cell centre (so per-position hex
-# labels are a lookup, not a per-point projection). Particle positions are
-# sampled against it by nearest cell.
+# `flat_fraction` of the nearest classified shore sub-segment, and the `024a`
+# hex id of the cell centre (so per-position hex labels are a lookup, not a
+# per-point projection). Particle positions are sampled against it by nearest
+# cell.
 
 # %%
 def _h0_nearest_sampler(h0):
@@ -216,13 +217,73 @@ def _h0_nearest_sampler(h0):
     return sample
 
 
-def build_beaching_raster(data_root, dx_m, hp):
-    """Distance-to-coast field + seaward normal + shore type + hex id on a
-    3035 raster.
+def flat_fraction_plane(path, xmin, ymax, dx_m, nrow, ncol):
+    """Nearest-sub-segment `flat_fraction` on the beaching raster, and its
+    length-weighted attribution summary.
 
-    Water = finite H0 (fine grid over coarse), land = NaN, tidal flat =
-    finite H0 ≤ 0. Returns a dict with the raster arrays and the affine
-    parameters + a lon/lat→(row, col) mapper for sampling.
+    The sidecar classification types the *same* coastline this raster derives
+    from — same BSH H0 statics, same fine-over-coarse merge — and ships
+    midpoints in EPSG:3035, the CRS of this raster. Mapping it on is therefore
+    a snap to the grid, not a nearest-feature match with a tolerance.
+
+    Sub-segments are ~440 m against 500 m cells, so most cells take one; where
+    a cell takes several they are averaged by length. An EDT over the cells the
+    coastline landed in then carries the value to every other cell, so a
+    near-shore water cell reads the shore it faces. NaN survives that
+    propagation: a cell whose nearest sub-segment was never attributed stays
+    NaN rather than borrowing an attributed neighbour's value.
+    """
+    seg = pd.read_parquet(
+        path, columns=["x_3035", "y_3035", "flat_fraction", "seg_len_m", "in_baltic"]
+    )
+    col = np.round((seg["x_3035"].values - xmin) / dx_m)
+    row = np.round((ymax - seg["y_3035"].values) / dx_m)
+    on = (col >= 0) & (col < ncol) & (row >= 0) & (row < nrow)
+    cell = row[on].astype(np.int64) * ncol + col[on].astype(np.int64)
+    w = seg["seg_len_m"].values[on]
+    ff = seg["flat_fraction"].values[on]
+    has = np.isfinite(ff)
+
+    # Two accumulations per cell: the length-weighted mean over the *attributed*
+    # sub-segments, and the total sub-segment length regardless of attribution.
+    # The second is what marks a cell as coastline, so an unattributed stretch
+    # blocks the propagation below instead of being papered over by neighbours.
+    n = nrow * ncol
+    seg_len = np.bincount(cell, weights=w, minlength=n)
+    attr_len = np.bincount(cell[has], weights=w[has], minlength=n)
+    attr_sum = np.bincount(cell[has], weights=(w * ff)[has], minlength=n)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        cell_ff = np.where(attr_len > 0, attr_sum / attr_len, np.nan)
+
+    touched = (seg_len > 0).reshape(nrow, ncol)
+    _, (jy, jx) = ndimage.distance_transform_edt(~touched, return_indices=True)
+    plane = cell_ff.reshape(nrow, ncol)[jy, jx].astype("float32")
+
+    # Attribution is reported per domain because the two differ sharply: the
+    # Baltic is nearly complete, the North Sea / Kattegat side is not. Pooling
+    # them into one number would understate the coverage where Fucus is.
+    baltic = seg["in_baltic"].values
+    km = seg["seg_len_m"].values / 1e3
+    got = np.isfinite(seg["flat_fraction"].values)
+    stats = dict(
+        seg_total=len(seg),
+        seg_off_raster=int((~on).sum()),
+        coast_cells=int(touched.sum()),
+        km={"Baltic": float(km[baltic].sum()),
+            "non-Baltic": float(km[~baltic].sum())},
+        km_attributed={"Baltic": float(km[baltic & got].sum()),
+                       "non-Baltic": float(km[~baltic & got].sum())},
+    )
+    return plane, stats
+
+
+def build_beaching_raster(data_root, dx_m, hp):
+    """Distance-to-coast field + seaward normal + shore flat_fraction + hex id
+    on a 3035 raster.
+
+    Water = finite H0 (fine grid over coarse), land = NaN. Returns a dict with
+    the raster arrays and the affine parameters + a lon/lat→(row, col) mapper
+    for sampling.
     """
     h0_fine = xr.open_dataset(
         data_root / "bsh_hbmnoku_static/static_file_fine/H0_file_fine.nc"
@@ -261,13 +322,12 @@ def build_beaching_raster(data_root, dx_m, hp):
     h0r = h0r.reshape(nrow, ncol)
 
     water = np.isfinite(h0r)
-    flat = water & (h0r <= 0)
 
-    dist_cells, (jy, jx) = ndimage.distance_transform_edt(water, return_indices=True)
-    dist_m = (dist_cells * dx_m).astype("float32")
-    # shore_type: nearest land cell adjacent to any tidal-flat cell → flat.
-    flat_fronted_land = (~water) & ndimage.binary_dilation(flat)
-    nearest_flat = flat_fronted_land[jy, jx]
+    dist_m = (ndimage.distance_transform_edt(water) * dx_m).astype("float32")
+    flat_fraction, ff_stats = flat_fraction_plane(
+        data_root / "shoreclass_bsh_coastline/bsh_coastline_k2_flatfraction.parquet",
+        xmin, ymax, dx_m, nrow, ncol,
+    )
 
     # Seaward normal = ∇distance (distance grows into open water), in the
     # projected (3035) plane: +col = +easting, row increases southward.
@@ -315,16 +375,23 @@ def build_beaching_raster(data_root, dx_m, hp):
         return row, col, ok
 
     return dict(
-        dist_m=dist_m, n_out_x=n_out_x, n_out_y=n_out_y, nearest_flat=nearest_flat,
+        dist_m=dist_m, n_out_x=n_out_x, n_out_y=n_out_y,
+        flat_fraction=flat_fraction, ff_stats=ff_stats,
         hex_id=hex_id, to_rowcol=to_rowcol, water_cells=int(water.sum()),
-        flat_cells=int(flat.sum()), shape=(nrow, ncol),
+        shape=(nrow, ncol),
     )
 
 
 t0 = time.time()
 rast = build_beaching_raster(data_root, raster_dx_m, hp)
 print(f"raster {rast['shape']} water={rast['water_cells']:,} "
-      f"flat={rast['flat_cells']:,} in {time.time() - t0:.1f}s")
+      f"in {time.time() - t0:.1f}s")
+_ff = rast["ff_stats"]
+print(f"shore classification: {_ff['seg_total']:,} sub-segments "
+      f"({_ff['seg_off_raster']:,} off-raster) over {_ff['coast_cells']:,} raster cells")
+for _dom, _km in _ff["km"].items():
+    print(f"  {_dom:<11s} {_km:8,.0f} km  "
+          f"{100 * _ff['km_attributed'][_dom] / max(_km, 1):5.1f}% attributed")
 
 # %% [markdown]
 # # Onshore Stokes sampler (land-extrapolated)
@@ -543,6 +610,9 @@ class OnshoreStokes:
 # %%
 # Realized rate diagnostics, one entry per zarr (see the s(w) block below).
 RATE_STATS = []
+# Shore-term diagnostics, one entry per zarr (attribution coverage + the
+# flat_fraction / w_onshore collinearity check).
+SHORE_STATS = []
 
 
 def deposit_one_zarr(path, release_doy, rast, stokes):
@@ -561,7 +631,7 @@ def deposit_one_zarr(path, release_doy, rast, stokes):
     dist_at = rast["dist_m"][row, col].reshape(ntraj, nobs)
     nx_at = rast["n_out_x"][row, col].reshape(ntraj, nobs)
     ny_at = rast["n_out_y"][row, col].reshape(ntraj, nobs)
-    flat_at = rast["nearest_flat"][row, col].reshape(ntraj, nobs)
+    ff_at = rast["flat_fraction"][row, col].reshape(ntraj, nobs)
     hex_at = rast["hex_id"][row, col].reshape(ntraj, nobs)
     # Land-seeded particles are excluded here, not just at deposition: they sit
     # motionless on BSH land at distance 0, so they read as in-band every hour,
@@ -583,7 +653,14 @@ def deposit_one_zarr(path, release_doy, rast, stokes):
 
     # Per-step beaching exponent a = Δt/τ (0 outside the band), then the
     # telescoping survival deposit dep[t,h] = e^{-A_before} - e^{-A_after}.
-    trap = np.where(flat_at, trap_flat, trap_wall).astype("float32")
+    # trap interpolates linearly between the pure-wall and pure-flat weights.
+    # Coastline the classification could not attribute takes ff_unattributed
+    # rather than either end, and is counted below.
+    unattributed = np.isnan(ff_at)
+    trap = (
+        trap_wall
+        + (trap_flat - trap_wall) * np.where(unattributed, ff_unattributed, ff_at)
+    ).astype("float32")
     # s(w) = w/(w + w_half), the saturating wave-forcing factor. Named `s`
     # (saturation), not `g`: `g` collides with gravitational acceleration and
     # understates that this is the model's one term with no precedent in the
@@ -610,6 +687,23 @@ def deposit_one_zarr(path, release_doy, rast, stokes):
     dep[~real] = 0.0
     residual = np.exp(-A[:, -1]) * real
 
+    # Shore-term diagnostics. Two things must not go unreported: how much of
+    # the near-shore exposure and of the stranded weight sits on coastline the
+    # classification could not attribute (where `trap` is an assumption), and
+    # how strongly `flat_fraction` co-varies with `w_onshore` — the two rate
+    # factors are plausibly collinear in the Baltic, where the wall shores are
+    # the exposed Fennoscandian ones and the flat shores the sheltered bays.
+    _cw = in_band & ~unattributed & (w_on > 0)
+    _x, _y = ff_at[_cw].astype("float64"), w_on[_cw].astype("float64")
+    SHORE_STATS.append({
+        "in_band_steps": int(in_band.sum()),
+        "in_band_unattributed": int((in_band & unattributed).sum()),
+        "beached_weight": float(dep.sum()),
+        "beached_weight_unattributed": float(dep[unattributed].sum()),
+        "n": _x.size, "sx": _x.sum(), "sy": _y.sum(),
+        "sxx": (_x * _x).sum(), "syy": (_y * _y).sum(), "sxy": (_x * _y).sum(),
+    })
+
     release_hex = np.full(ntraj, -1, dtype=np.int64)
     good0 = real & np.isfinite(lon[:, 0]) & np.isfinite(lat[:, 0])
     release_hex[good0] = hp.label(lon[good0, 0], lat[good0, 0])
@@ -628,7 +722,13 @@ def deposit_one_zarr(path, release_doy, rast, stokes):
             pd.DataFrame({
                 "release_hex": rel,
                 "beach_hex": hex_at[:, sl][m],
-                "shore_type": np.where(flat_at[:, sl][m], "flat", "wall"),
+                # Binary call at the classification's own stated threshold,
+                # flat_fraction > 0.5 — a label for the store, while `trap`
+                # itself stays continuous.
+                "shore_type": np.where(
+                    unattributed[:, sl][m], "unattributed",
+                    np.where(ff_at[:, sl][m] > 0.5, "flat", "wall"),
+                ),
                 "weight": d[m],
             })
             .groupby(["release_hex", "beach_hex", "shore_type"], as_index=False)["weight"].sum()
@@ -712,6 +812,23 @@ if RATE_STATS:
         _q = _c[len("w_on_p"):]
         _w = _rs[_c].mean(); _t = _rs[f"tau_h_p{_q}"].mean()
         print(f"  {'p' + _q:>10s} {_w:15.4f} {_t:12,.0f} {_t / 24:10,.1f}")
+if SHORE_STATS:
+    _ss = pd.DataFrame(SHORE_STATS).sum()
+    print(f"shore term [trap_wall={trap_wall:g} → trap_flat={trap_flat:g}, "
+          f"ff_unattributed={ff_unattributed:g}]: "
+          f"{100 * _ss['in_band_unattributed'] / max(_ss['in_band_steps'], 1):.1f}% of "
+          f"in-band steps and "
+          f"{100 * _ss['beached_weight_unattributed'] / max(_ss['beached_weight'], 1e-9):.1f}%"
+          f" of beached weight on unattributed coast")
+    _n = _ss["n"]
+    if _n > 1:
+        _cov = _ss["sxy"] / _n - (_ss["sx"] / _n) * (_ss["sy"] / _n)
+        _sdx = np.sqrt(max(_ss["sxx"] / _n - (_ss["sx"] / _n) ** 2, 0.0))
+        _sdy = np.sqrt(max(_ss["syy"] / _n - (_ss["sy"] / _n) ** 2, 0.0))
+        _r = _cov / (_sdx * _sdy) if _sdx > 0 and _sdy > 0 else np.nan
+        print(f"  mean flat_fraction {_ss['sx'] / _n:.3f} over {int(_n):,} forced "
+              f"in-band steps; corr(flat_fraction, w_onshore) r = {_r:+.3f} "
+              f"— the trap/s(w) collinearity check")
 print(f"WAM extrapolation ({stokes.mask_files} files in the static-water mask): "
       f"{stokes.n_filled:,} / {stokes.n_sampled:,} in-band samples filled "
       f"({100 * stokes.n_filled / max(stokes.n_sampled, 1):.1f}%), "
@@ -746,7 +863,7 @@ print(f"regime={regime}, release_year={release_year}"
       + f", hex_radius={hex_radius} m")
 print(f"  params: max_float_days={max_float_days}, band_m={band_m:g}, "
       f"tau0_hours={tau0_hours:g}, trap_flat/wall={trap_flat:g}/{trap_wall:g}"
-      + (" (degenerate — shore type inert)" if trap_flat == trap_wall else "")
+      + (" (equal — trap inert)" if trap_flat == trap_wall else "")
       + f", w_half={w_half:g}")
 print(f"  drifters (Σweight): {total:,.0f}")
 print(f"  beached:           {beached:,.0f} ({100 * beached / max(total, 1):.1f}%)")
@@ -757,3 +874,9 @@ beach_bins = beaching.loc[beaching["beach_age_bin"] >= 0]
 if len(beach_bins):
     print(f"  beach age bins:    {beach_bins['beach_age_bin'].min()}.."
           f"{beach_bins['beach_age_bin'].max()} (× {age_bin_days} d)")
+print("  beached weight by shore type:")
+for _t, _w in (
+    beaching.loc[beaching["beach_hex"] >= 0]
+    .groupby("shore_type")["weight"].sum().sort_values(ascending=False).items()
+):
+    print(f"    {_t:<13s} {_w:12,.0f} ({100 * _w / max(beached, 1):5.1f}%)")

@@ -175,12 +175,13 @@ reusing 025's hex-registration overrides (aspect-driven `figsize`,
   stranding hex, pooled over shore types. Inherits 025's `cmap="viridis"` +
   `LogNorm` (floored four decades below the peak, since weighted deposition's
   sparse tail carries fractional weight): like occupancy, stranding weight
-  spans decades. The store's `shore_type` is deliberately **not shown at all**
-  — neither faceted into panels nor broken out in the summary. 024d runs with
-  a degenerate `trap` (`trap_flat == trap_wall`), so the label expresses
-  nothing about the model, and a wall/flat split would imply resolved coastal
-  morphology where there is only BSH's tidal-flat flag. Surface it when a real
-  substrate classification drives `trap` — see [beaching.md](beaching.md).
+  spans decades. The store's `shore_type` is **broken out in the summary but
+  not faceted into panels**: it now carries a real substrate classification
+  ([beaching.md](beaching.md)), so the split is worth reporting, but at the
+  shipped inert `trap` it does not change *where* weight strands — faceted
+  panels would draw the same field twice — and it is a threshold on a
+  `flat_fraction` smoothed over one BSH cell face, which on the 5.5 km coarse
+  grid is coarser than a per-hex panel would imply.
 - **Beached fraction per source hex** — a ratio in [0, 1], so it uses the
   **default (linear) norm** with no `cmap` override to defend (the log-map
   colour choice is dropped, as 027 does for its linear distance quantiles).
