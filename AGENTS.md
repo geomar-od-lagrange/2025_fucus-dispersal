@@ -136,8 +136,11 @@ plain clone. Top-level layout (`<source>_<dataset>`):
 geojson baked by 000), `bsh_hbmnoku_static/` (BSH static grids
 including H0 in `static_file_{fine,coarse}/` plus the wet-cell
 coastline geojsons), `bsh_hbmnoku_demo/` (one-day BSH HBMnoku c/h/t/z
-demo subset), and `cmems_stokes_sample/` (one-day Stokes drift) — all
-under the attributions listed in `ATTRIBUTION.md`.
+demo subset), `cmems_stokes_sample/` (one-day Stokes drift), and
+`shoreclass_bsh_coastline/` (the `flat_fraction` shore-type table that
+drives `trap` in 024d, derived by the sidecar repo
+<https://github.com/geomar-od-lagrange/2025_fucus-dispersal_shoreclass>)
+— all under the attributions listed in `ATTRIBUTION.md`.
 
 `scripts/obtain/*.sh` is the canonical recipe for each input from
 upstream public sources (HELCOM, MADS/SYKE, Copernicus, BSH). These are

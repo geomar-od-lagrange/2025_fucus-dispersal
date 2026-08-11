@@ -19,3 +19,10 @@ notebooks_executed/*
 
 tmp_papermill_test/
 min_data/
+notebooks/parcels-*/
+
+# CLMS service key — contains an RSA private key, never commit
+.clms.json
+clms_service_key.json
+*service_key*.json
+*.pem

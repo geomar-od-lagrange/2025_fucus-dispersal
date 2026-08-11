@@ -1,5 +1,5 @@
 #!/bin/bash
-# Full pipeline smoke test (stages 000–027) against the BSH demo subset.
+# Full pipeline smoke test (stages 000–028) against the BSH demo subset.
 #
 # Runs every numbered notebook end-to-end on a single host (login node
 # is fine — no SLURM). Designed to flush out integration issues from a
@@ -8,10 +8,10 @@
 # regimes (surface, bottom, surface_stokes).
 #
 # Usage from the repo root:
-#     ./scripts/0-27-smoke-test.sh
+#     ./scripts/0-28-smoke-test.sh
 #
 # Override outputs location:
-#     OUTPUT_ROOT=/work/<user>/fucus_smoke ./scripts/0-27-smoke-test.sh
+#     OUTPUT_ROOT=/work/<user>/fucus_smoke ./scripts/0-28-smoke-test.sh
 #
 # Prerequisites (one-time, on the host):
 #     git clone --recurse-submodules https://github.com/geomar-od-lagrange/2025_fucus-dispersal.git
@@ -30,7 +30,7 @@ mkdir -p "${OUTPUT_ROOT}"
 
 REGIMES=(surface bottom surface_stokes)
 
-echo "=== Smoke test: stages 000–027 ==="
+echo "=== Smoke test: stages 000–028 ==="
 echo "Repo:        ${REPO_ROOT}"
 echo "Output root: ${OUTPUT_ROOT}"
 echo "Regimes:     ${REGIMES[*]}"
@@ -135,6 +135,15 @@ pixi run papermill notebooks/024b_BuildHexDistance.ipynb \
     --cwd notebooks/
 
 echo
+echo "==== 024c BuildHexConnectivity (surface_stokes) ===="
+pixi run papermill notebooks/024c_BuildHexConnectivity.ipynb \
+    "${OUTPUT_ROOT}/024c_smoke.ipynb" \
+    -p output_root "${OUTPUT_ROOT}" \
+    -p regime surface_stokes \
+    -p release_year 2020 \
+    --cwd notebooks/
+
+echo
 echo "==== 025 HexHeatmaps (surface_stokes) ===="
 pixi run papermill notebooks/025_HexHeatmaps.ipynb \
     "${OUTPUT_ROOT}/025_smoke.ipynb" \
@@ -166,6 +175,17 @@ pixi run papermill notebooks/027_HexDistanceQuantiles.ipynb \
     -p regime "surface_stokes" \
     -p release_months_csv "" \
     -p min_traj_per_hex 1 \
+    --cwd notebooks/
+
+# 028 pools every release_year for the regime; the smoke run has only a
+# January release, so its aug_sep scope is empty and the notebook skips it
+# (the all_year scope carries the single release). One regime, like 023–027.
+echo
+echo "==== 028 SubbasinConnectivityMatrix (surface_stokes) ===="
+pixi run papermill notebooks/028_SubbasinConnectivityMatrix.ipynb \
+    "${OUTPUT_ROOT}/028_smoke.ipynb" \
+    -p output_root "${OUTPUT_ROOT}" \
+    -p regime "surface_stokes" \
     --cwd notebooks/
 
 echo

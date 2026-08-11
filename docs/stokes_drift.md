@@ -102,3 +102,6 @@ as the production setting for now.
 - [2d_field_extraction.md](2d_field_extraction.md) — preprocessor;
   Stokes is one of three variants.
 - [seeding.md](seeding.md) — how the sweep targets `surface_stokes`.
+- [wam_extrapolation.md](wam_extrapolation.md) — how the beaching
+  diagnostic re-reads this field at the coast, where the blocked-face
+  mask above suppresses it.

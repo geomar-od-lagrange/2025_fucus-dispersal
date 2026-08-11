@@ -19,6 +19,12 @@
 - Contact: opmod@bsh.de
 - Attribution: Quelle: Bundesamt für Seeschifffahrt und Hydrographie, dl-de/by-2-0 (www.govdata.de/dl-de/by-2-0)
 
+## BSH coastline shore-type classification (flat_fraction)
+- Lives in: `data/shoreclass_bsh_coastline/`
+- Source: derived product, https://github.com/geomar-od-lagrange/2025_fucus-dispersal_shoreclass
+- Derived from: HELCOM BRISK shore-type layers (MADS) and Copernicus Land Monitoring Service Coastal Zones 2018, https://land.copernicus.eu/en/products/coastal-zones/coastal-zones-2018
+- Attribution: Data from HELCOM. Produced using Copernicus Land Monitoring Service information; © European Union, Copernicus Land Monitoring Service, European Environment Agency (EEA).
+
 ## CMEMS Baltic Sea Wave Hindcast (Stokes drift)
 - Lives in: `data/cmems_stokes_sample/`
 - Product: BALTICSEA_MULTIYEAR_WAV_003_015
