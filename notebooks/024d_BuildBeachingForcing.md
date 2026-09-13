@@ -14,29 +14,29 @@ jupyter:
     name: python3
 ---
 
-# Build beaching store partition (weighted)
+# Build the beaching forcing sidecar
 
-Post-simulation beaching pass over one `(regime, release_year)` worth of
-trajectory zarrs (see [beaching.md](../plans/done/beaching.md)). Each real
-drifter carries unit surviving (free-drifting) weight; at every near-shore
-step a fraction of that weight *strands* at the current coastal hex and
-leaves the drifting pool, with the remainder continuing to drift. This is
-the **fractional / weighted** scheme — the deterministic expectation of a
-per-step first-stranding process, with no Monte-Carlo noise. Writes a flat
-`(release_hex, release_doy, beach_hex, beach_age_bin, shore_type) → weight`
-table — additive across `release_doy`/year like the other `024x` stores.
+Cache, per real drifter and per hour, the five quantities any beaching or
+survival rate model needs — and nothing else (see
+[beaching_sidecar.md](../plans/beaching_sidecar.md)). One sidecar zarr per
+trajectory zarr, at
+`output_root/BeachingForcing/<regime>/<year>/<trajectory zarr stem>.zarr`:
 
-**Why weighted, not stochastic.** Releases carry only ~100 particles per
-seeding cell, so a per-particle random-strand rule gives noisy coverage at
-the high-age tail exactly where the free-drifting/beached split matters.
-The weighted deposit `dep[t,h] = S(t,h)·(1−e^{−Δt/τ})` equals the
-probability that a first-stranding process strands at step `h`
-(`S` = survival), so summed over the ensemble it reproduces the stranding
-field as a smooth expectation. It also composes multiplicatively with a
-Fucus **lifetime** `L(t)` — survival is `exp(−∫dt/τ)·L(t)`, today's
-`max_float_days` being a step-function `L`.
+| variable | dtype | meaning |
+|---|---|---|
+| `w_on` | float16 | onshore Stokes (m/s), 0 outside the sampled band |
+| `dist` | uint8 | distance to BSH land in 25 m steps, 255 = beyond `band_max_m` / no position |
+| `hex` | int32 | `024a` hex id of the position, everywhere; -1 = no position |
+| `flat` | bool | nearest land is fronted by a tidal flat |
+| `disp` | uint8 | crow-flies displacement from release (km), 255 = saturated |
 
-**Rate model.** `τ = τ0 / (trap(shore_type)·s(w_onshore))`:
+Every one of these is **parameter-free with respect to the rate model**:
+`τ`, the functional form of `s(w)`, the band width, the viability window,
+the trap weights and the age binning are all reductions over these arrays,
+which is what makes a rate-model sweep a seconds-per-zarr numpy pass
+instead of a re-read of the trajectories and the raw wave field.
+
+**What is sampled.**
 
 - **distance to shore** — a rasterised distance-to-coast field built from
   the **BSH H0 land-sea mask** (finite `H0` = water, NaN = land, `H0 ≤ 0`
@@ -44,31 +44,31 @@ Fucus **lifetime** `L(t)` — survival is `exp(−∫dt/τ)·L(t)`, today's
   particles were advected on; the coastline geojson polygons miss a large
   fraction of genuine water positions and are not used here.
 - **shore type** — the nearest land cell fronted by a tidal-flat
-  (`H0 ≤ 0`) cell reads as `flat` (dissipative, retentive), else `wall`.
-  **Currently degenerate**: `trap_flat == trap_wall == 1.0`, so this term
-  contributes nothing and the rate is uniform along the coast for a given
-  wave forcing. The classification is still computed and carried into the
-  store as `shore_type` — the seam for a real substrate classification, not
-  an active model term. It is deliberately **not reported** by this notebook
-  or by any consumer while `trap` is degenerate: a label that expresses
-  nothing about the model invites over-reading. See the parameters cell for
-  why the H0 flag is not a usable Baltic retentiveness proxy.
+  (`H0 ≤ 0`) cell reads as `flat`, else `wall`. Carried as the seam for a
+  real substrate classification; the BSH tidal-flat flag is not itself a
+  retentiveness proxy for Baltic shores (the basin is tide-free and the
+  flag fires only in the German Bight).
 - **onshore wave forcing** — the onshore component of the raw
   `baltic_highres` Stokes drift (`VSDX/VSDY`), i.e. the cross-shore
   transport the `surface_stokes` runs masked at blocked faces, sampled
-  here *before* that mask. With `trap` degenerate this is the *only* term
-  that modulates the rate.
+  here *before* that mask, and only where the position is within
+  `band_max_m` of land (elsewhere it is exactly 0 and no rate model can
+  use it).
 
 **Land-seeded particles are dropped** (zero first-step displacement),
-exactly as `024`/`024b` do. The key file from `024a_BuildHexKey.md` is a
-hard prerequisite — its sidecar carries the `HexProj` used to label hexes.
+exactly as `024`/`024b` do, and the sidecar's `trajectory` coordinate
+records which source trajectories survived. The key file from
+`024a_BuildHexKey.md` is a hard prerequisite — its sidecar carries the
+`HexProj` used to label hexes.
 
 ```python
 import json
 import re
+import subprocess
 import time
 from pathlib import Path
 
+import numcodecs
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -83,25 +83,25 @@ from hextraj import HexProj
 # `surface_stokes` must precede `surface` so the alternation matches the
 # longer form first.
 _ZARR_STEM_RE = re.compile(
-    r"^Fucus_BSH_(\d{8}T\d{6})_(surface_stokes|surface|bottom)_dt\d+min_seed\d+$"
+    r"^Fucus_BSH_(\d{8}T\d{6})_(surface_stokes|surface|bottom)_dt(\d+)min_seed\d+$"
 )
 
 
 def parse_zarr_stem(path):
-    """Parse a trajectory zarr filename into ``(release_time, regime)``."""
+    """Parse a trajectory zarr filename into ``(release_time, regime, dt_min)``."""
     m = _ZARR_STEM_RE.match(Path(path).stem)
     if m is None:
         raise ValueError(
             f"zarr filename does not match expected pattern: {Path(path).name!r}"
         )
-    return pd.Timestamp(m.group(1)), m.group(2)
+    return pd.Timestamp(m.group(1)), m.group(2), int(m.group(3))
 ```
 
 # Parameters
 
 ```python tags=["parameters"]
 # Read root of the data twin (BSH static H0) and of the trajectory zarrs +
-# raw Stokes; write root for the beaching partition.
+# raw Stokes; write root for the sidecar store.
 data_root = "../data"
 output_root = "../output"
 
@@ -111,58 +111,38 @@ output_root = "../output"
 regime = "surface_stokes"
 release_year = 2019
 
-# Restrict to releases in this calendar month (1..12); 0 = whole year. When
-# set, the output filename gets a `_mMM` suffix (a partial-year store).
+# Restrict to releases in this calendar month (1..12); 0 = whole year.
 release_month = 8
 
 # Hex radius (must match an existing key file built by 024a).
 hex_radius = 6000
 
-# Viability / float window: cap each trajectory's contributing age (days)
-# before scoring beaching (Rothäusler et al. 2019: weeks to a few months).
-# A step-function lifetime; a smooth L(t) would multiply the survival.
-max_float_days = 60
-# Age-bin granularity for the deposition age (days); matches the counts store.
-age_bin_days = 10
-# Zarr output cadence (hours).
+# Sampling band: onshore Stokes is sampled, and `dist` resolved, only within
+# this distance of BSH land (m). 5 km is the widest band the coarse grid can
+# resolve and covers 81% of particle-hours; beyond it w_on is exactly 0 and
+# dist reads 255.
+band_max_m = 5000.0
+
+# Hours cached per trajectory, as 0..window_days*24 inclusive. 120 d covers
+# the longest downstream horizon; shorter viability windows are a slice of
+# the `obs` axis in the reducers.
+window_days = 120
+
+# Zarr output cadence (hours). The trajectory zarrs are dt60min.
 output_dt_hours = 1
 
-# Rate-model parameters. tau = tau0 / s(w_onshore), with the ramp NORMALISED
-# at the reference forcing:
-#
-#     s(w) = 2w / (w + w_tau)      so  s(w_tau) = 1  and  tau(w_tau) = tau0
-#
-# tau0 is therefore "the beaching e-folding time when onshore Stokes equals
-# w_tau" -- a statement that can be argued on its merits -- rather than an
-# asymptotic floor the forcing never approaches. The floor is tau0/2 as
-# w -> inf. w_tau = 0.05 m/s sits between the p50 (0.026) and p75 (0.057) of
-# measured w_onshore, so the ramp spans its useful range instead of running in
-# its linear tail. See plans/beaching_recalibration.md.
-band_m = 2000.0        # near-shore band width (m)
-tau0_hours = 480.0     # 20 d: beaching timescale at w_onshore = w_tau
-w_tau = 0.05           # reference onshore-Stokes forcing (m/s)
-                       # sits between p50 and p75 of measured w_onshore, so
-                       # the ramp spans its useful range
-
-# Shore-type retention weights, DELIBERATELY DEGENERATE (both 1.0) — the trap
-# term is wired but currently expresses nothing, so every shore beaches alike
-# for a given wave forcing. The only shore typing available here is the BSH
-# `H0 <= 0` tidal-flat flag, which is not a retentiveness proxy for *Baltic*
-# shores: the basin is effectively tide-free, so the flag fires only in the
-# German Bight (outside the wave grid, hence zero forcing anyway). A two-class
-# split would read as resolved coastal morphology while resolving none. The
-# plumbing stays so a real substrate/exposure classification can drive it
-# later without rebuilding the per-step lookup — set these apart to enable it.
-trap_flat = 1.0
-trap_wall = 1.0
+# Distance-to-coast raster resolution (m, EPSG:3035).
+raster_dx_m = 500.0
 
 # Max rounds of geodesic (through-water) propagation when extrapolating the
 # WAM field onto BSH water, in WAM cells (~1.6 km each). Caps how far a
 # sheltered cell may import wave conditions from; beyond it, w_onshore = 0.
 stokes_fill_max_cells = 32
 
-# Distance-to-coast raster resolution (m, EPSG:3035).
-raster_dx_m = 500.0
+# Rebuild sidecars that already exist with matching sampling parameters.
+overwrite = False
+# Stop after this many zarrs of the partition (0 = all); a test knob.
+max_zarrs = 0
 ```
 
 # Derived layout / key + projection
@@ -170,10 +150,8 @@ raster_dx_m = 500.0
 ```python
 data_root = Path(data_root)
 output_root = Path(output_root)
-store_root = output_root / "HexAggregates"
-store_root.mkdir(parents=True, exist_ok=True)
 
-key_path = store_root / f"HexAgg_key_r{hex_radius}m.parquet"
+key_path = output_root / "HexAggregates" / f"HexAgg_key_r{hex_radius}m.parquet"
 meta_path = key_path.with_suffix(".json")
 if not key_path.exists() or not meta_path.exists():
     raise FileNotFoundError(
@@ -181,23 +159,25 @@ if not key_path.exists() or not meta_path.exists():
         f"  expected: {key_path}\n  expected: {meta_path}"
     )
 
-month_suffix = f"_m{release_month:02d}" if release_month else ""
-# Both rate parameters are part of the partition identity, so runs at
-# different settings never collide: (480, 0.05) -> "_t480_wh0p05".
-# tau0 is the meaningful axis now that w_tau sits inside the measured
-# forcing range (see plans/beaching_recalibration.md).
-wh_suffix = f"_t{tau0_hours:g}_wt{w_tau:g}".replace(".", "p")
-beaching_path = (
-    store_root
-    / f"HexAgg_beaching_r{hex_radius}m_{regime}_{release_year}{month_suffix}{wh_suffix}.parquet"
-)
-
 meta = json.loads(meta_path.read_text())
 hp = HexProj(**meta["hex_proj"])
 print(f"HexProj: {meta['hex_proj']}")
-print(f"beaching → {beaching_path}")
+
+forcing_root = output_root / "BeachingForcing" / regime / str(release_year)
+forcing_root.mkdir(parents=True, exist_ok=True)
+print(f"sidecars → {forcing_root}")
 
 stokes_dir = output_root / "stokes" / "baltic_highres" / str(release_year)
+
+nobs = window_days * 24 + 1
+try:
+    git_sha = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+except Exception:
+    git_sha = "unknown"
+print(f"nobs={nobs} (hourly), git_sha={git_sha}")
 ```
 
 # Beaching geometry raster
@@ -205,7 +185,7 @@ stokes_dir = output_root / "stokes" / "baltic_highres" / str(release_year)
 Build the near-shore geometry field once: a regular EPSG:3035 raster
 carrying, per cell, the distance to the nearest BSH land cell, the seaward
 unit normal `n_out` (∇distance, rotated into geographic east/north), the
-`shore_type`, and the `024a` hex id of the cell centre (so per-position hex
+shore type, and the `024a` hex id of the cell centre (so per-position hex
 labels are a lookup, not a per-point projection). Particle positions are
 sampled against it by nearest cell.
 
@@ -278,7 +258,7 @@ def build_beaching_raster(data_root, dx_m, hp):
 
     dist_cells, (jy, jx) = ndimage.distance_transform_edt(water, return_indices=True)
     dist_m = (dist_cells * dx_m).astype("float32")
-    # shore_type: nearest land cell adjacent to any tidal-flat cell → flat.
+    # shore type: nearest land cell adjacent to any tidal-flat cell → flat.
     flat_fronted_land = (~water) & ndimage.binary_dilation(flat)
     nearest_flat = flat_fronted_land[jy, jx]
 
@@ -316,7 +296,7 @@ def build_beaching_raster(data_root, dx_m, hp):
     hex_id = np.full(lon_g.shape, -1, dtype=np.int64)
     good = np.isfinite(lon_g) & np.isfinite(lat_g)
     hex_id[good] = hp.label(lon_g[good], lat_g[good])
-    hex_id = hex_id.reshape(nrow, ncol)
+    hex_id = hex_id.reshape(nrow, ncol).astype(np.int32)
 
     def to_rowcol(lon_q, lat_q):
         x, y = to_3035.transform(lon_q, lat_q)
@@ -347,7 +327,7 @@ caching one day-file at a time.
 
 **The WAM grid does not cover the BSH water mask**, and a bare nearest-cell
 lookup returns NaN→0 there — which for beaching means *rate zero*, i.e. a
-coastline that cannot strand at any `τ0`/`w_tau`. That is a structural
+coastline that cannot strand under any rate model. That is a structural
 bias, not a parameter choice: ~20 % (coarse) / ~34 % (fine) of near-shore
 BSH water cells inside the WAM bbox sit on WAM **static land**, and WAM's
 bbox (lon ≥ 9.01°E) excludes the German Bight strip entirely. So the field
@@ -542,129 +522,170 @@ class OnshoreStokes:
         return np.maximum(0.0, onsh).astype("float32")
 ```
 
-# Trajectory zarrs → beaching deposition
+# Trajectory zarr → sidecar zarr
 
-Per real drifter, deposit the fractional weight that strands at each
-near-shore step (`dep = S_before − S_after`, a telescoping survival
-difference), binned by the coastal hex, elapsed-age bin, and shore type of
-that step. The surviving weight remaining at the window's end is the
-never-beached residual, recorded once per source hex
-(`beach_hex = -1`, `beach_age_bin = -1`, `shore_type = "none"`), so
-downstream can form the beached fraction against the full release pool.
+Raster lookups run in trajectory blocks so the transient `(n, nobs)` index
+arrays stay bounded; the Stokes loop then walks the hours, sampling only
+the in-band positions of that hour. `dist` is quantised to 25 m steps
+(`≪` the 500 m raster) with 255 reserved for "beyond the band or no
+position", and `w_on` is stored as float16 — exact for the zeros that
+dominate it, and well inside the error the 1.6 km WAM grid already carries.
 
 ```python
-# Realized rate diagnostics, one entry per zarr (see the s(w) block below).
-RATE_STATS = []
+_DIST_STEP_M = 25.0
+_TRAJ_BLOCK = 10000
 
 
-def deposit_one_zarr(path, release_doy, rast, stokes):
-    ds = xr.open_zarr(path).isel(obs=slice(0, max_float_days * 24 + 1))
-    lon = ds.lon.values.astype("float32")
-    lat = ds.lat.values.astype("float32")
-    ntraj, nobs = lon.shape
+def build_one_zarr(path, release_time, rast, stokes):
+    """Write the forcing sidecar for one trajectory zarr; return its stats."""
+    ds = xr.open_zarr(path)
+    n_traj_source = ds.sizes["trajectory"]
+    n_obs_source = min(ds.sizes["obs"], nobs)
+    lon = ds.lon.isel(obs=slice(0, n_obs_source)).values.astype("float32")
+    lat = ds.lat.isel(obs=slice(0, n_obs_source)).values.astype("float32")
 
-    # Land-seeded = zero first-step displacement (as 024/024b).
+    # Land-seeded = zero first-step displacement (as 024/024b). They sit
+    # motionless on BSH land at distance 0, read as in-band every hour, and
+    # dominate both the Stokes cost and the extrapolation diagnostics.
     real = (
         np.isfinite(lon[:, 0])
         & ~((lon[:, 1] - lon[:, 0] == 0) & (lat[:, 1] - lat[:, 0] == 0))
     )
+    traj_index = np.flatnonzero(real).astype("int32")
+    n_real = traj_index.size
+    lon = lon[real]
+    lat = lat[real]
 
-    row, col, ok = rast["to_rowcol"](lon.ravel(), lat.ravel())
-    dist_at = rast["dist_m"][row, col].reshape(ntraj, nobs)
-    nx_at = rast["n_out_x"][row, col].reshape(ntraj, nobs)
-    ny_at = rast["n_out_y"][row, col].reshape(ntraj, nobs)
-    flat_at = rast["nearest_flat"][row, col].reshape(ntraj, nobs)
-    hex_at = rast["hex_id"][row, col].reshape(ntraj, nobs)
-    # Land-seeded particles are excluded here, not just at deposition: they sit
-    # motionless on BSH land at distance 0, so they read as in-band every hour,
-    # dominate the extrapolation diagnostics, and cost a third of the Stokes
-    # loop — while contributing nothing (dep[~real] = 0 below).
-    in_band = (dist_at < band_m) & ok.reshape(ntraj, nobs) & real[:, None]
+    dist = np.full((n_real, nobs), 255, dtype="uint8")
+    hex_at = np.full((n_real, nobs), -1, dtype="int32")
+    flat_at = np.zeros((n_real, nobs), dtype=bool)
+    disp = np.full((n_real, nobs), 255, dtype="uint8")
+    w_on = np.zeros((n_real, nobs), dtype="float16")
+    in_band = np.zeros((n_real, nobs), dtype=bool)
+    n_out_x = np.zeros((n_real, n_obs_source), dtype="float32")
+    n_out_y = np.zeros((n_real, n_obs_source), dtype="float32")
+
+    cos_lat0 = np.cos(np.radians(lat[:, 0].astype("float64")))
+    for b0 in range(0, n_real, _TRAJ_BLOCK):
+        sl = slice(b0, min(b0 + _TRAJ_BLOCK, n_real))
+        lo, la = lon[sl], lat[sl]
+        shape = lo.shape
+        row, col, ok = rast["to_rowcol"](lo.ravel(), la.ravel())
+        ok = ok.reshape(shape)
+        d_m = rast["dist_m"][row, col].reshape(shape)
+        band = (d_m < band_max_m) & ok
+        in_band[sl, :n_obs_source] = band
+        d_idx = np.minimum(d_m / _DIST_STEP_M, 254.0).astype("uint8")
+        dist[sl, :n_obs_source] = np.where(band, d_idx, 255)
+        hex_at[sl, :n_obs_source] = np.where(
+            ok, rast["hex_id"][row, col].reshape(shape), -1
+        )
+        flat_at[sl, :n_obs_source] = rast["nearest_flat"][row, col].reshape(shape) & ok
+        n_out_x[sl] = np.where(band, rast["n_out_x"][row, col].reshape(shape), 0.0)
+        n_out_y[sl] = np.where(band, rast["n_out_y"][row, col].reshape(shape), 0.0)
+        # Equirectangular crow-flies displacement from the release position.
+        dlat = la - la[:, :1]
+        dlon = (lo - lo[:, :1]) * cos_lat0[sl, None]
+        km = 111.0 * np.hypot(dlat, dlon)
+        disp[sl, :n_obs_source] = np.where(
+            np.isfinite(km), np.minimum(km, 255.0), 255.0
+        ).astype("uint8")
 
     # Onshore Stokes at in-band positions, hour by hour (day-file cached).
-    release_time = np.datetime64(ds.time.isel(trajectory=0, obs=0).values)
-    abs_time = release_time + np.arange(nobs).astype("timedelta64[h]")
-    w_on = np.zeros((ntraj, nobs), dtype="float32")
-    for h in range(nobs):
+    release_hours = np.datetime64(release_time) + np.arange(
+        n_obs_source
+    ) * np.timedelta64(output_dt_hours, "h")
+    for h in range(n_obs_source):
         m = in_band[:, h]
         if not m.any():
             continue
         w_on[m, h] = stokes.onshore(
-            lon[m, h], lat[m, h], abs_time[h], nx_at[m, h], ny_at[m, h]
+            lon[m, h], lat[m, h], release_hours[h], n_out_x[m, h], n_out_y[m, h]
         )
 
-    # Per-step beaching exponent a = Δt/τ (0 outside the band), then the
-    # telescoping survival deposit dep[t,h] = e^{-A_before} - e^{-A_after}.
-    trap = np.where(flat_at, trap_flat, trap_wall).astype("float32")
-    # s(w) = 2w/(w + w_tau), the wave-forcing factor, normalised so s(w_tau)
-    # == 1 and hence tau(w_tau) == tau0. Named `s` (saturation), not `g`:
-    # `g` collides with gravitational acceleration and understates that this
-    # is the model's one term with no precedent in the cited beaching
-    # literature (see docs/beaching.md).
-    # Normalised so s(w_tau) == 1, hence tau(w_tau) == tau0.
-    s_w = 2.0 * w_on / (w_on + w_tau)
-    a = np.where(in_band, output_dt_hours / (tau0_hours / (trap * np.maximum(s_w, 1e-6))), 0.0)
-    # Realized rate diagnostics over in-band steps: the sweep reports totals,
-    # but whether a member is physically sensible is read off the timescale
-    # and forcing distributions, so record them rather than inferring.
-    _ib = in_band & (w_on > 0)
-    if _ib.any():
-        _tau = tau0_hours / np.maximum(s_w[_ib], 1e-6)
-        _QS = [10, 25, 50, 75, 90, 95, 99, 99.9, 100]
-        _wq = np.percentile(w_on[_ib], _QS)
-        _row = {'in_band_steps': int(in_band.sum()), 'forced_steps': int(_ib.sum())}
-        for _q, _w in zip(_QS, _wq):
-            _row[f'w_on_p{_q:g}'] = _w
-            # tau AT this w quantile, not the quantile of tau: tau is monotonically
-            # decreasing in w, so independent quantiles would pair opposite tails.
-            _row[f'tau_h_p{_q:g}'] = tau0_hours / max(2.0 * _w / (_w + w_tau), 1e-6)
-        RATE_STATS.append(_row)
-    A = np.cumsum(a, axis=1)
-    dep = np.exp(-(A - a)) - np.exp(-A)
-    dep[~real] = 0.0
-    residual = np.exp(-A[:, -1]) * real
+    release_hex = np.full(n_real, -1, dtype="int32")
+    good0 = np.isfinite(lon[:, 0]) & np.isfinite(lat[:, 0])
+    release_hex[good0] = hp.label(lon[good0, 0], lat[good0, 0]).astype("int32")
 
-    release_hex = np.full(ntraj, -1, dtype=np.int64)
-    good0 = real & np.isfinite(lon[:, 0]) & np.isfinite(lat[:, 0])
-    release_hex[good0] = hp.label(lon[good0, 0], lat[good0, 0])
+    out = xr.Dataset(
+        {
+            "w_on": (("trajectory", "obs"), w_on,
+                     {"long_name": "onshore Stokes drift", "units": "m s-1"}),
+            "dist": (("trajectory", "obs"), dist,
+                     {"long_name": "distance to BSH land",
+                      "units": f"{_DIST_STEP_M:g} m",
+                      "comment": "255 = beyond band_max_m or no position"}),
+            "hex": (("trajectory", "obs"), hex_at,
+                    {"long_name": "024a hex id of the position",
+                     "comment": "-1 = no position or outside the raster"}),
+            "flat": (("trajectory", "obs"), flat_at,
+                     {"long_name": "nearest land is tidal-flat-fronted"}),
+            "disp": (("trajectory", "obs"), disp,
+                     {"long_name": "crow-flies displacement from release",
+                      "units": "km", "comment": "255 = saturated or no position"}),
+        },
+        coords={
+            "trajectory": ("trajectory", traj_index,
+                           {"long_name": "index into the source zarr trajectory dim"}),
+            "release_hex": ("trajectory", release_hex,
+                            {"long_name": "024a hex id of the release position"}),
+        },
+        attrs={
+            "release_time": pd.Timestamp(release_time).isoformat(),
+            "release_doy": int(pd.Timestamp(release_time).dayofyear),
+            "regime": regime,
+            "release_year": release_year,
+            "band_max_m": float(band_max_m),
+            "window_days": int(window_days),
+            "raster_dx_m": float(raster_dx_m),
+            "stokes_fill_max_cells": int(stokes_fill_max_cells),
+            "hex_radius": int(hex_radius),
+            "n_traj_source": int(n_traj_source),
+            "n_obs_source": int(n_obs_source),
+            "builder": "024d_BuildBeachingForcing",
+            "git_sha": git_sha,
+        },
+    )
+    # Every array gets Zstd explicitly — xarray would otherwise fall back to
+    # zarr's default Blosc, which measured 2-3x larger on all of these.
+    zstd = numcodecs.Zstd(level=5)
+    encoding = {
+        v: {"compressor": zstd, "dtype": out[v].dtype,
+            "chunks": (_TRAJ_BLOCK, nobs)}
+        for v in out.data_vars
+    }
+    encoding.update({
+        c: {"compressor": zstd, "dtype": out[c].dtype, "chunks": (_TRAJ_BLOCK,)}
+        for c in out.coords
+    })
+    target = forcing_root / f"{Path(path).stem}.zarr"
+    out.to_zarr(target, mode="w", encoding=encoding)
 
-    # Deposition rows, aggregated in age-bin chunks (bounded memory).
-    bin_hours = age_bin_days * 24
-    frames = []
-    for b in range((nobs + bin_hours - 1) // bin_hours):
-        sl = slice(b * bin_hours, (b + 1) * bin_hours)
-        d = dep[:, sl]
-        m = d > 1e-12
-        if not m.any():
-            continue
-        rel = np.broadcast_to(release_hex[:, None], d.shape)[m]
-        g = (
-            pd.DataFrame({
-                "release_hex": rel,
-                "beach_hex": hex_at[:, sl][m],
-                "shore_type": np.where(flat_at[:, sl][m], "flat", "wall"),
-                "weight": d[m],
-            })
-            .groupby(["release_hex", "beach_hex", "shore_type"], as_index=False)["weight"].sum()
+    ncell = n_real * nobs
+    return dict(
+        target=target,
+        n_real=n_real,
+        n_traj_source=n_traj_source,
+        frac_2km=float((dist < 2000.0 / _DIST_STEP_M).sum()) / ncell,
+        frac_band=float((dist < 255).sum()) / ncell,
+        frac_forced=float((w_on > 0).sum()) / max(float((dist < 255).sum()), 1.0),
+        mb=sum(f.stat().st_size for f in target.rglob("*") if f.is_file()) / 1e6,
+    )
+
+
+def sidecar_is_current(target):
+    """True if `target` exists and was built at today's sampling parameters."""
+    if not target.exists():
+        return False
+    attrs = xr.open_zarr(target).attrs
+    return all(
+        attrs.get(k) == v
+        for k, v in (
+            ("band_max_m", float(band_max_m)),
+            ("window_days", int(window_days)),
+            ("raster_dx_m", float(raster_dx_m)),
+            ("stokes_fill_max_cells", int(stokes_fill_max_cells)),
         )
-        g["beach_age_bin"] = b
-        frames.append(g)
-    deposits = (
-        pd.concat(frames, ignore_index=True) if frames
-        else pd.DataFrame(columns=["release_hex", "beach_hex", "shore_type", "weight", "beach_age_bin"])
-    )
-
-    residual_rows = (
-        pd.DataFrame({"release_hex": release_hex, "weight": residual})
-        .loc[lambda df: df["weight"] > 0]
-        .groupby("release_hex", as_index=False)["weight"].sum()
-        .assign(beach_hex=-1, beach_age_bin=-1, shore_type="none")
-    )
-    cols = ["release_hex", "release_doy", "beach_hex", "beach_age_bin", "shore_type", "weight"]
-    out = pd.concat([deposits, residual_rows], ignore_index=True)
-    out["release_doy"] = release_doy
-    return out[cols].astype(
-        {"release_hex": "int64", "beach_hex": "int64", "beach_age_bin": "int64"}
     )
 ```
 
@@ -673,9 +694,10 @@ zarrs = sorted(
     (output_root / f"Trajectories/{regime}/{release_year}").glob("*.zarr")
 )
 parsed = [(p, *parse_zarr_stem(p)) for p in zarrs]
-for p, ts, fn_regime in parsed:
+for p, ts, fn_regime, dt_min in parsed:
     assert ts.year == release_year, (ts, release_year, p)
     assert fn_regime == regime, (fn_regime, regime, p)
+    assert dt_min == output_dt_hours * 60, (dt_min, output_dt_hours, p)
 if release_month:
     parsed = [x for x in parsed if x[1].month == release_month]
 if not parsed:
@@ -683,7 +705,9 @@ if not parsed:
         f"no zarrs at {output_root}/Trajectories/{regime}/{release_year}/"
         + (f" for month {release_month}" if release_month else "")
     )
-release_doys = sorted({int(ts.dayofyear) for _, ts, _ in parsed})
+if max_zarrs:
+    parsed = parsed[:max_zarrs]
+release_doys = sorted({int(ts.dayofyear) for _, ts, _, _ in parsed})
 print(f"{len(parsed)} zarrs, release_doys "
       f"{release_doys[0]}..{release_doys[-1]} ({len(release_doys)} unique)")
 ```
@@ -697,81 +721,48 @@ stokes = OnshoreStokes(
 print(f"WAM donor map: {stokes.fill_rounds_used} of {stokes.fill_max_cells} "
       f"propagation rounds used; {stokes.n_unreachable:,} BSH-water cells "
       f"unreachable through water (they keep w_onshore = 0)")
+```
 
+```python
 t0 = time.time()
-frames = []
-for p, ts, _ in parsed:
+stats = []
+n_skipped = 0
+for p, ts, _, _ in parsed:
+    if not overwrite and sidecar_is_current(forcing_root / f"{p.stem}.zarr"):
+        n_skipped += 1
+        print(f"  {p.stem}: sidecar up to date, skipped")
+        continue
     tz = time.time()
-    frame = deposit_one_zarr(p, int(ts.dayofyear), rast, stokes)
-    frames.append(frame)
-    beached = float(frame.loc[frame["beach_hex"] >= 0, "weight"].sum())
-    total = float(frame["weight"].sum())
-    print(f"  {p.name}: {total:,.0f} drifters, "
-          f"{beached:,.0f} beached ({100 * beached / max(total, 1):.1f}%) "
-          f"[{time.time() - tz:.1f}s]")
-
-beaching = (
-    pd.concat(frames, ignore_index=True)
-    .groupby(["release_hex", "release_doy", "beach_hex", "beach_age_bin", "shore_type"],
-             as_index=False)["weight"].sum()
-)
-print(f"computed {len(beaching):,} rows in {time.time() - t0:.1f}s; "
-      f"missing Stokes days: {stokes.missing_days}")
-if RATE_STATS:
-    _rs = pd.DataFrame(RATE_STATS)
-    _forced = _rs["forced_steps"].sum() / max(_rs["in_band_steps"].sum(), 1)
-    print(f"realized rate over in-band steps ({100 * _forced:.1f}% with w_onshore > 0)"
-          f"   [tau0={tau0_hours:g} h, w_tau={w_tau:g} m/s]")
-    print(f"  {'quantile':>10s} {'w_onshore m/s':>15s} {'tau (h)':>12s} {'tau (d)':>10s}")
-    for _c in [c for c in _rs.columns if c.startswith("w_on_p")]:
-        _q = _c[len("w_on_p"):]
-        _w = _rs[_c].mean(); _t = _rs[f"tau_h_p{_q}"].mean()
-        print(f"  {'p' + _q:>10s} {_w:15.4f} {_t:12,.0f} {_t / 24:10,.1f}")
-print(f"WAM extrapolation ({stokes.mask_files} files in the static-water mask): "
-      f"{stokes.n_filled:,} / {stokes.n_sampled:,} in-band samples filled "
-      f"({100 * stokes.n_filled / max(stokes.n_sampled, 1):.1f}%), "
-      f"{stokes.n_unreachable_samples:,} unreachable through water, "
-      f"{stokes.n_outside_bbox:,} outside the WAM bbox "
-      f"({100 * stokes.n_outside_bbox / max(stokes.n_sampled, 1):.1f}%); "
-      f"mean fill {stokes.fill_km_sum / max(stokes.n_sampled, 1):.2f} km, "
-      f"max {stokes.fill_km_max:.1f} km")
+    s = build_one_zarr(p, ts, rast, stokes)
+    stats.append(s)
+    print(f"  {p.stem}: {s['n_real']:,} real of {s['n_traj_source']:,}, "
+          f"in-band frac {s['frac_2km']:.2f} (2 km) {s['frac_band']:.2f} (5 km), "
+          f"w_on>0 frac {s['frac_forced']:.2f}, "
+          f"{s['mb']:.1f} MB, [{time.time() - tz:.1f}s]")
 ```
 
 ```python
-beaching.to_parquet(beaching_path)
-print(f"wrote {beaching_path} ({beaching_path.stat().st_size / 1e6:.2f} MB)")
-```
-
-# Validation
-
-```python
-key_ids = set(pd.read_parquet(key_path, columns=["hex_id"])["hex_id"].astype(int))
-seen = set(beaching["release_hex"]) | set(beaching["beach_hex"])
-unseen = seen - key_ids - {-1}
-if unseen:
-    print(f"WARNING: {len(unseen)} hex_ids not in {key_path.name}: "
-          f"{sorted(unseen)[:10]} ...")
-else:
-    print(f"every release_hex/beach_hex is in {key_path.name} (or -1).")
-```
-
-```python
-total = float(beaching["weight"].sum())
-beached = float(beaching.loc[beaching["beach_hex"] >= 0, "weight"].sum())
 print(f"regime={regime}, release_year={release_year}"
       + (f", month={release_month}" if release_month else "")
       + f", hex_radius={hex_radius} m")
-print(f"  params: max_float_days={max_float_days}, band_m={band_m:g}, "
-      f"tau0_hours={tau0_hours:g}, trap_flat/wall={trap_flat:g}/{trap_wall:g}"
-      + (" (degenerate — shore type inert)" if trap_flat == trap_wall else "")
-      + f", w_tau={w_tau:g}")
-print(f"  drifters (Σweight): {total:,.0f}")
-print(f"  beached:           {beached:,.0f} ({100 * beached / max(total, 1):.1f}%)")
-print(f"  release_doys:      {beaching['release_doy'].nunique()} "
-      f"({beaching['release_doy'].min()}..{beaching['release_doy'].max()})")
-print(f"  beach hexes:       {beaching.loc[beaching['beach_hex'] >= 0, 'beach_hex'].nunique():,}")
-beach_bins = beaching.loc[beaching["beach_age_bin"] >= 0]
-if len(beach_bins):
-    print(f"  beach age bins:    {beach_bins['beach_age_bin'].min()}.."
-          f"{beach_bins['beach_age_bin'].max()} (× {age_bin_days} d)")
+print(f"  band_max_m={band_max_m:g}, window_days={window_days} (nobs={nobs}), "
+      f"raster_dx_m={raster_dx_m:g}, stokes_fill_max_cells={stokes_fill_max_cells}")
+print(f"  {len(stats)} sidecars written, {n_skipped} up to date, "
+      f"in {time.time() - t0:.1f}s; missing Stokes days: {stokes.missing_days}")
+if stats:
+    print(f"  drifters:     {sum(s['n_real'] for s in stats):,} real of "
+          f"{sum(s['n_traj_source'] for s in stats):,}")
+    print(f"  on disk:      {sum(s['mb'] for s in stats):,.1f} MB "
+          f"({sum(s['mb'] for s in stats) / len(stats):.1f} MB per zarr)")
+    print(f"  in-band frac: {np.mean([s['frac_2km'] for s in stats]):.3f} (2 km), "
+          f"{np.mean([s['frac_band'] for s in stats]):.3f} (5 km)")
+if stokes.n_sampled:
+    print(f"WAM extrapolation ({stokes.mask_files} files in the static-water mask): "
+          f"{stokes.n_filled:,} / {stokes.n_sampled:,} in-band samples filled "
+          f"({100 * stokes.n_filled / stokes.n_sampled:.1f}%), "
+          f"{stokes.n_unreachable_samples:,} unreachable through water, "
+          f"{stokes.n_outside_bbox:,} outside the WAM bbox "
+          f"({100 * stokes.n_outside_bbox / stokes.n_sampled:.1f}%); "
+          f"mean fill {stokes.fill_km_sum / stokes.n_sampled:.2f} km, "
+          f"max {stokes.fill_km_max:.1f} km")
 ```

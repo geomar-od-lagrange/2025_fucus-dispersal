@@ -17,8 +17,12 @@ jupyter:
 # Survival-weighted heatmaps: beaching folded into occupancy
 
 Parquet-only consumer of the survival-occupancy store built by
-`024e_BuildSurvivalOccupancy` (+ the `024a` key). For each elapsed-time
-horizon it draws three panels:
+`024f_BuildSurvivalOccupancy` (+ the `024a` key). The survival curve behind
+it uses the same two-state hazard as the beaching store — background rate in
+the near-shore band plus a storm rate above an onshore-Stokes threshold, its
+settings baked into the opaque `member` tag that selects the partitions read
+here (`docs/beaching.md`). For each elapsed-time horizon it draws three
+panels:
 
 1. **Occupancy** — plain particle-residence density (`occ`), the baseline
    (no beaching), on a log scale.
@@ -61,11 +65,9 @@ age_bin_days = 10
 # 0 = pool all monthly partitions across years; 1..12 = that month only.
 release_month = 0
 
-# Reference onshore-Stokes forcing (m/s) of the partitions to read — part of
-# the store filename. tau(w_tau) == tau0 by construction.
-w_tau = 0.05
-# Base timescale (h) of the partitions to read — also part of the filename.
-tau0_hours = 480.0
+# Rate-model member: the opaque tag the reducer put in the store filename
+# (e.g. "step_wc0p1_ts3_tcinf"). Selects the partitions and tags the figures.
+member = "step_wc0p1_ts3_tcinf"
 
 # Elapsed-time horizons to map (days); each a multiple of age_bin_days and
 # within the store's occupancy_max_days.
@@ -115,9 +117,9 @@ key = gpd.read_parquet(store_root / f"HexAgg_key_r{hex_radius}m.parquet")
 
 month_suffix = f"_m{release_month:02d}" if release_month else ""
 month_re = rf"_m{release_month:02d}" if release_month else r"_m\d{2}"
-wh_suffix = f"_t{tau0_hours:g}_wt{w_tau:g}".replace(".", "p")
 _PART_RE = re.compile(
-    rf"HexAgg_survocc_r{hex_radius}m_{regime}_(\d{{4}}){month_re}{re.escape(wh_suffix)}\.parquet$"
+    rf"HexAgg_survocc_r{hex_radius}m_{regime}_(\d{{4}}){month_re}"
+    rf"_{re.escape(member)}\.parquet$"
 )
 survocc_files = [
     f for f in sorted(store_root.glob(f"HexAgg_survocc_r{hex_radius}m_{regime}_*.parquet"))
@@ -127,7 +129,7 @@ if not survocc_files:
     raise FileNotFoundError(
         f"no survocc partitions for regime {regime!r}"
         + (f", month {release_month}" if release_month else "")
-        + f" at {store_root} — run 024e."
+        + f", member {member!r} at {store_root} — run 024f."
     )
 survocc = pd.concat(
     [pd.read_parquet(f).reset_index(drop=True) for f in survocc_files],
@@ -231,7 +233,7 @@ fig, axes = plt.subplots(
 for i, h in enumerate(time_horizons_days):
     hex_map(occ_gdfs[h], axes[i, 0], norm=dens_norm, title=f"occupancy — {h} d")
     hex_map(surv_gdfs[h], axes[i, 1], norm=dens_norm, title=f"survival-weighted — {h} d")
-fig_path = figure_dir / f"SurvivalHeatmaps_{regime}_r{hex_radius}m{month_suffix}{wh_suffix}.png"
+fig_path = figure_dir / f"SurvivalHeatmaps_{regime}_r{hex_radius}m{month_suffix}_{member}.png"
 fig.savefig(fig_path)
 print(f"wrote {fig_path}")
 plt.show()
@@ -242,8 +244,8 @@ plt.show()
 `surv / occ` per hex: the mean un-beached fraction of the particles
 *occupying* that hex at that age — a history integral, not a local beaching
 rate (see the header). Fixed linear 0–1 across panels so the age progression
-is readable; the summary below prints the realised range, which at a
-rare-event `w_tau` sits well above 0 and makes the fixed scale look flat.
+is readable; the summary below prints the realised range, which for a
+rare-event member sits well above 0 and makes the fixed scale look flat.
 
 ```python
 ncols = len(time_horizons_days)
@@ -255,7 +257,7 @@ fig, axes = plt.subplots(
 for j, h in enumerate(time_horizons_days):
     hex_map(frac_gdfs[h], axes[0, j], vmin=0.0, vmax=1.0,
             title=f"surviving fraction — {h} d")
-fig_path = figure_dir / f"SurvivalFraction_{regime}_r{hex_radius}m{month_suffix}{wh_suffix}.png"
+fig_path = figure_dir / f"SurvivalFraction_{regime}_r{hex_radius}m{month_suffix}_{member}.png"
 fig.savefig(fig_path)
 print(f"wrote {fig_path}")
 for h in time_horizons_days:

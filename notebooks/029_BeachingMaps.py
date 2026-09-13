@@ -18,20 +18,26 @@
 # # Beaching maps
 #
 # Lightweight parquet-only consumer of the beaching store built by
-# `024d_BuildBeaching` (+ the `024a` key) — no trajectory zarrs, no Dask.
-# One regime per run; release years pooled by globbing the store partitions,
-# the release year parsed per filename so `release_doy → month` is
-# leap-correct (as `026`). Draws:
+# `024e_BuildBeaching` (+ the `024a` key) — no trajectory zarrs, no Dask.
+# One regime per run; release years pooled by globbing the store partitions.
+#
+# The rate model is a two-state hazard — a background rate in the near-shore
+# band plus a storm rate switched on where the onshore Stokes forcing exceeds
+# a threshold (`docs/beaching.md`). Its settings are baked into the reducer's
+# opaque `member` tag, which selects the partitions read here and labels every
+# figure; this notebook never parses the tag. Draws:
 #
 # 1. **Where-stranded density** — beached weight (expected particles) per
-#    `beach_hex` (log scale). Shore type is not shown anywhere in this
-#    notebook: `trap` is degenerate in 024d, so the `wall`/`flat` label
-#    expresses nothing and reporting it would invite over-reading.
+#    `beach_hex` (log scale).
 # 2. **Beached fraction per source hex** — of the drifters released in each
 #    hex, what fraction strands within the viability window (linear 0–1).
 # 3. **Beaching age horizons** — cumulative where-stranded density for
 #    strandings at age ≤ T (the beaching analogue of `026`'s horizons).
 # 4. **Cumulative beached fraction vs. age** — the stranding time course.
+# 5. **Travel distance at stranding** — stranded weight over `disp_bin`, the
+#    crow-flies displacement from release at the deposit step. Short-travel
+#    strandings are a real outcome under a threshold rate model, never a
+#    mask.
 
 # %%
 import re
@@ -54,21 +60,22 @@ from cartopy.io.shapereader import natural_earth
 output_root = "../output"
 # Which regime's beaching partitions to read; one regime per run.
 regime = "surface_stokes"
-# Hex radius of the store (built by 024a/024d). Must match the files on disk.
+# Hex radius of the store (built by 024a/024e). Must match the files on disk.
 hex_radius = 6000
-# Age-bin granularity of the beaching store (must match 024d). Horizons must
+# Age-bin granularity of the beaching store (must match 024e). Horizons must
 # be whole multiples of this.
 age_bin_days = 10
 # Release month to analyse: 0 = pool all months (every `_mMM` partition,
 # across years); 1..12 = keep just that month. Selects which monthly
-# partitions 024d wrote are read.
+# partitions 024e wrote are read.
 release_month = 0
 
-# Reference onshore-Stokes forcing (m/s) of the partitions to read — part of
-# the store filename. tau(w_tau) == tau0 by construction.
-w_tau = 0.05
-# Base timescale (h) of the partitions to read — also part of the filename.
-tau0_hours = 480.0
+# Rate-model member: the opaque tag the reducer put in the store filename
+# (e.g. "step_wc0p1_ts3_tcinf"). Selects the partitions and tags the figures.
+member = "step_wc0p1_ts3_tcinf"
+# Travel-distance bin width (km) of the store's `disp_bin` axis (must match
+# the reducer).
+disp_bin_km = 10.0
 
 # Beaching age horizons to map, in days. Each must be a multiple of
 # age_bin_days.
@@ -119,10 +126,11 @@ figure_dir.mkdir(parents=True, exist_ok=True)
 #
 # Layout: flat files under ``output_root/HexAggregates/`` —
 # ``HexAgg_key_r<radius>m.parquet`` and the per-(year, month) partitions
-# ``HexAgg_beaching_r<radius>m_<regime>_<year>_mMM.parquet`` written by 024d.
-# `release_month = 0` pools every month across every year; a nonzero month
-# keeps just that month (across years). Matching only `_mMM` files means any
-# ad-hoc whole-year build (no suffix) is ignored, so months never double-count.
+# ``HexAgg_beaching_r<radius>m_<regime>_<year>_mMM_<member>.parquet`` written
+# by 024e. `release_month = 0` pools every month across every year; a nonzero
+# month keeps just that month (across years). Matching only `_mMM` files means
+# any ad-hoc whole-year build (no suffix) is ignored, so months never
+# double-count.
 
 # %%
 store_root = output_root / "HexAggregates"
@@ -131,9 +139,9 @@ key = gpd.read_parquet(store_root / f"HexAgg_key_r{hex_radius}m.parquet")
 # Figure-filename tag: a specific month, or "" when pooling all months.
 month_suffix = f"_m{release_month:02d}" if release_month else ""
 month_re = rf"_m{release_month:02d}" if release_month else r"_m\d{2}"
-wh_suffix = f"_t{tau0_hours:g}_wt{w_tau:g}".replace(".", "p")
 _PART_RE = re.compile(
-    rf"HexAgg_beaching_r{hex_radius}m_{regime}_(\d{{4}}){month_re}{re.escape(wh_suffix)}\.parquet$"
+    rf"HexAgg_beaching_r{hex_radius}m_{regime}_(\d{{4}}){month_re}"
+    rf"_{re.escape(member)}\.parquet$"
 )
 beaching_files = [
     f for f in sorted(store_root.glob(f"HexAgg_beaching_r{hex_radius}m_{regime}_*.parquet"))
@@ -143,7 +151,7 @@ if not beaching_files:
     raise FileNotFoundError(
         f"no beaching partitions for regime {regime!r}"
         + (f", month {release_month}" if release_month else "")
-        + f" at {store_root} — run 024d."
+        + f", member {member!r} at {store_root} — run 024e."
     )
 
 beaching = pd.concat(
@@ -219,13 +227,12 @@ beached = beaching[beaching["beach_hex"] >= 0]
 # %% [markdown]
 # # Where-stranded density
 #
-# Log-scale beached weight (expected particles) per stranding hex, pooled over
-# shore types. `shore_type` is not shown anywhere in this notebook -- not as a
-# faceted map, not in the summary. `024d` runs with a degenerate `trap`
-# (`trap_flat == trap_wall`), so the label expresses nothing about the model,
-# and reporting it would invite reading resolved coastal morphology into what
-# is only the BSH tidal-flat flag. Surface it again when a real substrate
-# classification drives `trap`.
+# Log-scale beached weight (expected particles) per stranding hex, summed over
+# the store's remaining axes (`disp_bin`, and `shore_type` where the reducer
+# emits it). Neither is shown on the maps: `trap` is degenerate, so a
+# `wall`/`flat` split would imply resolved coastal morphology where there is
+# only the BSH tidal-flat flag, and travel distance gets its own figure
+# below.
 
 # %%
 gdf_stranded = hex_gdf(beached, "beach_hex")
@@ -236,7 +243,7 @@ fig, ax = plt.subplots(
     layout="constrained",
 )
 hex_map(gdf_stranded, ax, norm=strand_norm, title="stranded weight")
-fig_path = figure_dir / f"WhereStranded_{regime}_r{hex_radius}m{month_suffix}{wh_suffix}.png"
+fig_path = figure_dir / f"WhereStranded_{regime}_r{hex_radius}m{month_suffix}_{member}.png"
 fig.savefig(fig_path)
 print(f"wrote {fig_path}")
 plt.show()
@@ -265,7 +272,7 @@ fig, ax = plt.subplots(
 )
 # Linear default scale (fraction in [0, 1]); no norm override needed.
 hex_map(frac, ax, norm=None, title="beached fraction per source hex")
-fig_path = figure_dir / f"BeachedFraction_{regime}_r{hex_radius}m{month_suffix}{wh_suffix}.png"
+fig_path = figure_dir / f"BeachedFraction_{regime}_r{hex_radius}m{month_suffix}_{member}.png"
 fig.savefig(fig_path)
 print(f"wrote {fig_path}")
 plt.show()
@@ -294,7 +301,7 @@ fig, axes = plt.subplots(
 )
 for ax, h in zip(axes.flat, time_horizons_days):
     hex_map(gdfs[h], ax, norm=horizon_norm, title=f"stranded by {h} d")
-fig_path = figure_dir / f"BeachingHorizons_{regime}_r{hex_radius}m{month_suffix}{wh_suffix}.png"
+fig_path = figure_dir / f"BeachingHorizons_{regime}_r{hex_radius}m{month_suffix}_{member}.png"
 fig.savefig(fig_path)
 print(f"wrote {fig_path}")
 plt.show()
@@ -303,8 +310,7 @@ plt.show()
 # # Cumulative beached fraction vs. age
 #
 # Share of all released drifters stranded by each elapsed-time horizon — the
-# stranding time course. Pooled over shore types, for the reason given at the
-# where-stranded map.
+# stranding time course, summed over the store's other axes.
 
 # %%
 total_released = float(beaching["weight"].sum())
@@ -321,6 +327,36 @@ ax.set_ylabel("cumulative beached fraction")
 plt.show()
 
 # %% [markdown]
+# # Travel distance at stranding
+#
+# Stranded weight over `disp_bin` — the crow-flies displacement from the
+# release point at the deposit step, in `disp_bin_km` bins — pooled over every
+# source hex. The residual (never-beached) rows carry `disp_bin = -1` and drop
+# out with the `beach_hex = -1` filter. Short-travel strandings are kept: a
+# storm stranding freshly released material near home is a real outcome of the
+# threshold rate model, not an artefact to mask.
+
+# %%
+disp_weight = beached.groupby("disp_bin")["weight"].sum()
+disp_weight.index = (disp_weight.index.to_numpy() + 0.5) * disp_bin_km
+disp_weight.index.name = "travel distance (km)"
+median_disp = float(
+    np.interp(0.5, disp_weight.cumsum() / disp_weight.sum(), disp_weight.index.to_numpy())
+)
+
+fig, ax = plt.subplots(layout="constrained")
+# drawstyle="steps-mid": the x axis is a binned quantity, so a step reads as
+# the histogram it is; a categorical bar plot would label every bin and the
+# axis runs to hundreds of bins (docs/visualisations.md).
+disp_weight.plot(ax=ax, drawstyle="steps-mid")
+ax.set_ylabel("stranded weight")
+fig_path = figure_dir / f"StrandingTravelDistance_{regime}_r{hex_radius}m{month_suffix}_{member}.png"
+fig.savefig(fig_path)
+print(f"wrote {fig_path}")
+print(f"weight-weighted median travel distance at stranding: {median_disp:.1f} km")
+plt.show()
+
+# %% [markdown]
 # # Validation / summary
 
 # %%
@@ -333,3 +369,5 @@ print(f"  beached:           {n_beached:,.0f} "
       f"({100 * n_beached / max(total_released, 1):.1f}%)")
 print(f"  stranding hexes:   {beached['beach_hex'].nunique():,}")
 print(f"  source hexes:      {frac['release_hex'].nunique():,}")
+print(f"  median travel distance at stranding: {median_disp:,.1f} km")
+print(f"  member:            {member}")

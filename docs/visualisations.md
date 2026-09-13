@@ -20,9 +20,9 @@ listed here should be dropped.
 | 026a     | Hex time-horizon density maps per origin subbasin | Per-run (regime + radius) | One 026 four-panel figure per origin (HELCOM) subbasin |
 | 026b     | Hex time-horizon density maps per origin subbasin and year | Per-run (regime + radius) | One 026 four-panel figure per (origin subbasin, release year) |
 | 027      | Hex distance-quantile maps | Per-run (regime + radius) | One map per quantile (0.1/0.5/0.9), Aug/Sep releases pooled across years     |
-| 029      | Beaching maps       | Per-run (regime + radius) | Where-stranded · beached fraction per source hex · age horizons (10/20/50 d) |
-| 030      | Survival heatmaps   | Per-run (regime + radius) | Per horizon (20/50/100 d): occupancy · survival-weighted; surviving fraction as a separate 1xN figure |
-| 031      | Beaching sweep      | Per-run (regime + radius) | Beached fraction + Gini vs `w_tau` · where-stranded maps across sweep members |
+| 029      | Beaching maps       | Per-run (regime + radius + member) | Where-stranded · beached fraction per source hex · age horizons (10/20/50 d) · travel distance at stranding |
+| 030      | Survival heatmaps   | Per-run (regime + radius + member) | Per horizon (20/50/100 d): occupancy · survival-weighted; surviving fraction as a separate 1xN figure |
+| 031      | Beaching sweep      | Per-run (regime + radius) | Five statistics across members on a categorical axis · where-stranded maps across members |
 
 ## Cross-cutting choices
 
@@ -165,19 +165,24 @@ the reader without units. The label supplies that missing context.
 
 ## Notebook 029 — Beaching maps (special case)
 
-A **beaching-store consumer**: reads the store built by 024d
-(`(release_hex, release_doy, beach_hex, beach_age_bin, shore_type)→weight`)
-plus the 024a key for geometry. Three views on one plain EPSG:4326 axis, all
-reusing 025's hex-registration overrides (aspect-driven `figsize`,
+A **beaching-store consumer**: reads the store built by 024e
+(`(release_hex, release_doy, beach_hex, beach_age_bin, disp_bin, …) → weight`)
+plus the 024a key for geometry. The `member` parameter is the opaque
+rate-model tag in the store filename
+(`HexAgg_beaching_r<radius>m_<regime>_<year>_mMM_<member>.parquet`); it
+selects the partitions, tags every figure filename, and is never parsed.
+Views on one plain EPSG:4326 axis, all reusing 025's hex-registration
+overrides (aspect-driven `figsize`,
 `edgecolor="face"`/`linewidth=0.4`, black coastline `linewidth=0.5`):
 
 - **Where-stranded density** — beached weight (expected particles) per
-  stranding hex, pooled over shore types. Inherits 025's `cmap="viridis"` +
+  stranding hex, summed over the store's `disp_bin` (and `shore_type` where
+  the reducer emits it) axes. Inherits 025's `cmap="viridis"` +
   `LogNorm` (floored four decades below the peak, since weighted deposition's
   sparse tail carries fractional weight): like occupancy, stranding weight
-  spans decades. The store's `shore_type` is deliberately **not shown at all**
-  — neither faceted into panels nor broken out in the summary. 024d runs with
-  a degenerate `trap` (`trap_flat == trap_wall`), so the label expresses
+  spans decades. `shore_type` is deliberately **not shown at all**
+  — neither faceted into panels nor broken out in the summary. The reducer
+  runs with a degenerate `trap` (`trap_flat == trap_wall`), so the label expresses
   nothing about the model, and a wall/flat split would imply resolved coastal
   morphology where there is only BSH's tidal-flat flag. Surface it when a real
   substrate classification drives `trap` — see [beaching.md](beaching.md).
@@ -188,13 +193,23 @@ reusing 025's hex-registration overrides (aspect-driven `figsize`,
   cumulative age cut-offs (`beach_age_bin < T // age_bin_days`), a shared
   `LogNorm` across horizons so the fill-in over time is legible; this mirrors
   026's horizon logic on the beaching axis.
+- **Travel distance at stranding** — stranded weight over the store's
+  `disp_bin` axis (crow-flies displacement from release at the deposit step),
+  pooled over sources, with the weight-weighted median printed. Drawn with
+  `drawstyle="steps-mid"`: the axis is a binned quantity, so a step reads as
+  the histogram it is, where a categorical bar plot would label every one of
+  potentially hundreds of bins. Short-travel strandings stay in — under a
+  threshold rate model a storm stranding freshly released material near home
+  is signal, so `disp_bin` is a diagnostic axis and never a mask.
 
 The DPI-scale and per-panel-height parameters match 026's rationale above.
 
 ## Notebook 030 — Survival heatmaps (special case)
 
-A **survival-occupancy consumer**: reads the store built by 024e
-(`(release_doy, age_bin, target_hex) → occ, surv`) plus the 024a key. Per
+A **survival-occupancy consumer**: reads the store built by 024f
+(`(release_doy, age_bin, target_hex) → occ, surv`) plus the 024a key, selected
+by the same opaque `member` tag as 029 and tagged with it in the figure
+filenames. Per
 horizon, a 3-column row — plain occupancy, survival-weighted occupancy
 (beaching removed), and the surviving fraction `surv/occ` — reusing 025's hex
 registration. The two density columns **share one `LogNorm`** (029's
@@ -218,20 +233,27 @@ match 026's rationale.
 
 ## Notebook 031 — Beaching parameter sweep (special case)
 
-Pools the `w_tau` members of the 024d store (each a full `(year, month)`
-set) and reports a **range** rather than a number, because in the Baltic the
-beaching scheme can dominate the result. Two panels plus a map row:
+Compares the **members** of the 024e store — one rate-model setting each,
+named by the reducer's opaque tag (`members_csv`), drawn in the given order
+with a display label per tag (`labels_csv`, default = the tags) and an
+optional `baseline_member`. Each member is a full `(year, month)` set. It
+reports a **range** rather than a number, because in the Baltic the beaching
+scheme can dominate the result. A statistics grid plus a map row:
 
-- **Beached fraction vs `w_tau`** and **Gini concentration vs `w_tau`**,
-  both on a log x-axis (the members are log-spaced). Two separate axes rather
-  than a twin-y: the quantities share no units and a twin-y invites reading a
-  crossing point that means nothing. Default linear norm, default colours —
-  two single-series line plots need no overrides.
-- **Where-stranded maps across members**, one column per `w_tau`, on a
-  **shared `LogNorm`** so the difference read off the row is pattern, not
-  scale — the same reasoning as 026's horizon row.
+- **Five statistics across members** — beached fraction, Gini concentration
+  of the stranded weight, number of stranding hexes, weight-weighted median
+  stranding age, weight-weighted median travel distance — one panel each on a
+  **categorical x axis** in the given order. Members differ in several
+  parameters at once, so a numeric axis would invite reading a slope where
+  there is only a list. Separate panels rather than twin-y axes: the
+  quantities share no units and a crossing point would mean nothing. Metric
+  names go in panel **titles**, not y labels, because five long y labels
+  collide across columns at the default figure size.
+- **Where-stranded maps across members**, one column per member titled by its
+  label, on a **shared `LogNorm`** so the difference read off the row is
+  pattern, not scale — the same reasoning as 026's horizon row.
 
-The Gini panel is the load-bearing one: totals are degenerate along the
-`τ0`·`w_tau` ridge (see [beaching.md](beaching.md)), so concentration is
-what distinguishes a wave-selective parameterisation from a
-residence-driven one.
+The Gini and travel-distance panels are the load-bearing ones: beached totals
+can coincide between members whose stranding patterns differ, so
+concentration and how far the stranded material got are what distinguish a
+storm-selective member from a residence-driven one.

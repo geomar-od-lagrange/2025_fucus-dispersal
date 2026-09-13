@@ -17,29 +17,20 @@
 # %% [markdown]
 # # Beaching parameter sweep: reporting a range, not a number
 #
-# Parquet-only consumer that pools the `w_tau` members of the beaching store
-# written by `024d_BuildBeaching`. In the Baltic the beaching scheme can
-# dominate the answer, so the headline stranding number is only meaningful as
-# a **range over the rate parameters** — this notebook produces that range and
-# the pattern metric that actually discriminates between members.
+# Parquet-only consumer that compares the **members** of the beaching store
+# written by `024e_BuildBeaching`. A member is one rate-model setting the
+# reducer was run with — thresholds and timescales of the two-state hazard
+# (`docs/beaching.md`) — identified by the opaque tag the reducer wrote into
+# the store filename. This notebook takes an explicit list of tags plus a
+# display label per tag and never parses either.
 #
-# `w_tau` is the onshore-Stokes half-saturation in `s(w) = w/(w + w_tau)`,
-# and with `trap` degenerate the rate is `τ = τ0/s(w_onshore)` — so `w_tau`
-# and `τ0` are the whole rate model. They are **not independent**: rewriting
-# `τ = τ0 + τ0·w_tau/w` shows `τ0` as an additive floor and the *product*
-# `τ0·w_tau` as the weak-wave coefficient. Where `w ≪ w_tau` only the
-# product matters, so the two trade off along a ridge and the total beached
-# fraction alone cannot separate them.
-#
-# What *does* separate them is **spatial selectivity**: large `w_tau` keeps
-# `g` far from saturation, so stranding concentrates where onshore waves are
-# strong; small `w_tau` saturates `g → 1` everywhere and the map collapses
-# to a pure near-shore-residence field. So this notebook reports, per member:
-#
-# 1. **total beached fraction** — the range (degenerate along the ridge);
-# 2. **concentration (Gini) of stranded weight across coastal hexes** — the
-#    discriminating statistic;
-# 3. **where-stranded maps** side by side across members.
+# One member = every `(year, month)` partition carrying that tag; partitions
+# are additive over release_doy/month/year exactly as within a single member.
+# In the Baltic the beaching scheme can dominate the answer, so the headline
+# stranding number is only meaningful as a **range over the members**, next to
+# the pattern statistics that discriminate between them: concentration of the
+# stranded weight, how many hexes receive any, how long stranding takes, and
+# how far the stranded material had travelled.
 
 # %%
 import re
@@ -62,20 +53,20 @@ output_root = "../output"
 regime = "surface_stokes"
 hex_radius = 6000
 age_bin_days = 10
+# Travel-distance bin width (km) of the store's `disp_bin` axis (must match
+# the reducer).
+disp_bin_km = 10.0
 # 0 = pool all monthly partitions across years; 1..12 = that month only.
 release_month = 0
 
-# w_tau members to compare (m/s), comma-separated. Each must have been built
-# by 024d; missing members are reported and skipped rather than raising.
-w_tau_csv = "0.0125,0.025,0.05,0.1,0.2,0.4,0.8,1.6"
-# The member treated as the baseline in the narrative summary.
-w_tau_baseline = 0.05
-# Base timescale (h) of the members being compared — the other half of the
-# partition identity. The existing forcing-scale sweep was built under the
-# unnormalised ramp at tau0 = 24 h, which is exactly equivalent to tau0 = 48 h
-# under the current normalised ramp (see docs/beaching.md), and the partitions
-# were relabelled accordingly.
-tau0_hours = 48.0
+# Member tags to compare, comma-separated, in the order they should be drawn.
+# Each must have been built by 024e; missing members are reported and skipped
+# rather than raising.
+members_csv = "step_wc0p05_ts3_tcinf,step_wc0p1_ts3_tcinf,step_wc0p15_ts3_tcinf"
+# Display labels, comma-separated, one per tag. Empty = use the tags.
+labels_csv = ""
+# The member treated as the baseline in the narrative summary; "" = none.
+baseline_member = ""
 
 # Map extent (degrees). The 024a key tiles the whole BSH domain including the
 # North Sea, which is empty for Fucus and costs ~35% of panel height; cropping
@@ -95,7 +86,11 @@ fig_dpi_scale = 3
 
 # %%
 output_root = Path(output_root)
-w_tau_values = [float(x) for x in w_tau_csv.split(",") if x]
+member_tags = [x.strip() for x in members_csv.split(",") if x.strip()]
+member_labels = [x.strip() for x in labels_csv.split(",") if x.strip()] or member_tags
+assert len(member_labels) == len(member_tags), (
+    f"{len(member_labels)} labels for {len(member_tags)} members"
+)
 mpl.rcParams["figure.dpi"] = fig_dpi_scale * mpl.rcParamsDefault["figure.dpi"]
 # Hex seam stroke. edgecolor="face" means this is not a visible outline -- it
 # closes the ~1 px anti-aliasing seam between adjacent polygons so the grid
@@ -118,15 +113,13 @@ month_re = rf"_m{release_month:02d}" if release_month else r"_m\d{2}"
 # %% [markdown]
 # # Pool each sweep member
 #
-# One member = every `(year, month)` partition at a given `w_tau`. Members
-# are additive over release_doy/month/year exactly as a single member is.
+# One member = every `(year, month)` partition carrying its tag.
 
 # %%
-def load_member(w_tau):
-    wh_suffix = f"_t{tau0_hours:g}_wt{w_tau:g}".replace(".", "p")
+def load_member(tag):
     part_re = re.compile(
         rf"HexAgg_beaching_r{hex_radius}m_{regime}_(\d{{4}}){month_re}"
-        rf"{re.escape(wh_suffix)}\.parquet$"
+        rf"_{re.escape(tag)}\.parquet$"
     )
     files = [
         f for f in sorted(store_root.glob(f"HexAgg_beaching_r{hex_radius}m_{regime}_*.parquet"))
@@ -140,16 +133,16 @@ def load_member(w_tau):
 
 
 members = {}
-for wh in w_tau_values:
-    df, n = load_member(wh)
+for tag, label in zip(member_tags, member_labels):
+    df, n = load_member(tag)
     if df is None:
-        print(f"w_tau={wh:g}: no partitions found — skipped")
+        print(f"{tag}: no partitions found — skipped")
         continue
-    members[wh] = df
-    print(f"w_tau={wh:g}: {n} partitions, {len(df):,} rows")
+    members[label] = df
+    print(f"{tag} ({label}): {n} partitions, {len(df):,} rows")
 if not members:
     raise FileNotFoundError(
-        f"no sweep members found for regime {regime!r} at {store_root} — run 024d."
+        f"no sweep members found for regime {regime!r} at {store_root} — run 024e."
     )
 
 # %% [markdown]
@@ -159,6 +152,9 @@ if not members:
 # rows carry the never-beached remainder, so the denominator is the full
 # release pool). `gini` measures how unevenly the stranded weight is spread
 # over the coastal hexes that receive any: 0 = uniform, → 1 = concentrated.
+# `median_age_days` and `median_travel_km` are weight-weighted medians of the
+# store's `beach_age_bin` and `disp_bin` axes — how long the stranded material
+# drifted, and how far it got.
 
 
 # %%
@@ -172,41 +168,62 @@ def gini(values):
     return float((2.0 * np.arange(1, n + 1) - n - 1).dot(v) / (n * v.sum()))
 
 
+def weighted_median_bin(weights_per_bin, bin_width):
+    """Weight-weighted median of a binned axis, at bin centres."""
+    if weights_per_bin.empty:
+        return np.nan
+    centres = (weights_per_bin.index.to_numpy() + 0.5) * bin_width
+    return float(np.interp(0.5, weights_per_bin.cumsum() / weights_per_bin.sum(), centres))
+
+
 rows = []
-for wh, df in members.items():
+for label, df in members.items():
     beached = df[df["beach_hex"] >= 0]
     per_hex = beached.groupby("beach_hex")["weight"].sum()
     total = float(df["weight"].sum())
     rows.append({
-        "w_tau": wh,
+        "member": label,
         "beached_fraction": float(beached["weight"].sum()) / max(total, 1.0),
         "gini": gini(per_hex.to_numpy()),
         "beach_hexes": int(per_hex.size),
-        "median_age_days": float(
-            (beached.groupby("beach_age_bin")["weight"].sum().pipe(
-                lambda s: np.interp(0.5, s.cumsum() / s.sum(), s.index.to_numpy())
-            ) + 0.5) * age_bin_days
-        ) if len(beached) else np.nan,
+        "median_age_days": weighted_median_bin(
+            beached.groupby("beach_age_bin")["weight"].sum(), age_bin_days
+        ),
+        "median_travel_km": weighted_median_bin(
+            beached.groupby("disp_bin")["weight"].sum(), disp_bin_km
+        ),
     })
-stats = pd.DataFrame(rows).set_index("w_tau").sort_index()
+stats = pd.DataFrame(rows).set_index("member")
 print(stats.to_string(float_format=lambda v: f"{v:,.4f}"))
 
 # %% [markdown]
-# # The range, and what breaks the degeneracy
+# # The range across members
 #
-# Left: total beached fraction against `w_tau` — the headline number's
-# sensitivity. Right: concentration of stranded weight — the statistic that
-# distinguishes a wave-selective member from a residence-driven one even where
-# totals coincide.
+# One panel per statistic, members on a categorical x axis in the order given.
+# Nothing about the member tags is ordinal — they differ in threshold,
+# timescale, and edge width at once — so a categorical axis is the honest one:
+# a numeric axis would invite reading a slope where there is only a list.
 
 # %%
-fig, axes = plt.subplots(1, 2, layout="constrained")
-stats["beached_fraction"].plot(ax=axes[0], marker="o", logx=True)
-axes[0].set_ylabel("beached fraction of released weight")
-axes[0].set_xlabel("w_tau (m/s)")
-stats["gini"].plot(ax=axes[1], marker="o", logx=True)
-axes[1].set_ylabel("Gini concentration of stranded weight")
-axes[1].set_xlabel("w_tau (m/s)")
+metrics = ["beached_fraction", "gini", "beach_hexes", "median_age_days", "median_travel_km"]
+titles = {
+    "beached_fraction": "beached fraction",
+    "gini": "Gini of stranded weight",
+    "beach_hexes": "stranding hexes",
+    "median_age_days": "median age (d)",
+    "median_travel_km": "median travel (km)",
+}
+fig, axes = plt.subplots(2, 3, layout="constrained")
+for ax, m in zip(axes.flat, metrics):
+    stats[m].plot(ax=ax, marker="o")
+    # Panel titles rather than y labels: five stacked panels with long y labels
+    # collide across columns at the default figure size (docs/visualisations.md).
+    ax.set_title(titles[m])
+    ax.set_xlabel("")
+    ax.set_xticks(range(len(stats)))
+    ax.set_xticklabels(stats.index, rotation=45, ha="right")
+for ax in axes.flat[len(metrics):]:
+    ax.set_axis_off()
 fig_path = figure_dir / f"BeachingSweepStats_{regime}_r{hex_radius}m{month_suffix}.png"
 fig.savefig(fig_path)
 print(f"wrote {fig_path}")
@@ -243,7 +260,7 @@ def hex_gdf(df):
     )
 
 
-gdfs = {wh: hex_gdf(df) for wh, df in members.items()}
+gdfs = {label: hex_gdf(df) for label, df in members.items()}
 shared = pd.concat([g["value"] for g in gdfs.values() if not g.empty])
 vmax = float(shared.max())
 norm = LogNorm(vmin=max(float(shared[shared > 0].min()), vmax / 1e4), vmax=vmax)
@@ -253,7 +270,7 @@ fig, axes = plt.subplots(
     1, ncols, figsize=(panel_height_in * domain_aspect * ncols, panel_height_in),
     layout="constrained", squeeze=False,
 )
-for ax, (wh, g) in zip(axes[0], sorted(gdfs.items())):
+for ax, (label, g) in zip(axes[0], gdfs.items()):
     if not g.empty:
         g.plot(ax=ax, column="value", cmap=cmap, norm=norm, legend=True,
                edgecolor="face", linewidth=hex_seam_lw, zorder=1)
@@ -263,7 +280,7 @@ for ax, (wh, g) in zip(axes[0], sorted(gdfs.items())):
     ax.set_aspect(1 / np.cos(np.radians(0.5 * (extent[2] + extent[3]))))
     ax.set_xticks([])
     ax.set_yticks([])
-    ax.set_title(f"w_tau = {wh:g} m/s")
+    ax.set_title(label)
 fig_path = figure_dir / f"BeachingSweepMaps_{regime}_r{hex_radius}m{month_suffix}.png"
 fig.savefig(fig_path)
 print(f"wrote {fig_path}")
@@ -276,12 +293,15 @@ plt.show()
 lo, hi = stats["beached_fraction"].min(), stats["beached_fraction"].max()
 print(f"regime={regime}, hex_radius={hex_radius} m, "
       + (f"month={release_month}, " if release_month else "all months, ")
-      + f"{len(stats)} sweep members")
+      + f"{len(stats)} sweep member(s)")
 print(f"  beached fraction range: {100 * lo:.1f}% .. {100 * hi:.1f}% "
-      f"(spread {100 * (hi - lo):.1f} points over w_tau "
-      f"{stats.index.min():g}..{stats.index.max():g} m/s)")
-if w_tau_baseline in stats.index:
-    print(f"  baseline w_tau={w_tau_baseline:g}: "
-          f"{100 * stats.loc[w_tau_baseline, 'beached_fraction']:.1f}%")
+      f"(spread {100 * (hi - lo):.1f} points)")
+baseline_label = dict(zip(member_tags, member_labels)).get(baseline_member)
+if baseline_label in stats.index:
+    print(f"  baseline {baseline_member}: "
+          f"{100 * stats.loc[baseline_label, 'beached_fraction']:.1f}%")
 print(f"  Gini range: {stats['gini'].min():.3f} .. {stats['gini'].max():.3f} "
       "(higher = stranding concentrated on fewer, wave-exposed hexes)")
+print(f"  median stranding age: {stats['median_age_days'].min():.0f} .. "
+      f"{stats['median_age_days'].max():.0f} d; median travel distance: "
+      f"{stats['median_travel_km'].min():.0f} .. {stats['median_travel_km'].max():.0f} km")
