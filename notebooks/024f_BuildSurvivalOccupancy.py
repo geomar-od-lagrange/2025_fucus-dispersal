@@ -180,7 +180,10 @@ print(f"survocc → {survocc_path}")
 hex_ids = pd.read_parquet(key_path, columns=["hex_id"])["hex_id"].astype(int).to_numpy()
 hexid_to_idx = pd.Series(np.arange(len(hex_ids)), index=hex_ids)
 n_hex = len(hex_ids)
-n_agebin = occupancy_max_days // age_bin_days
+# Ceil, not floor: a partial trailing age bin still holds samples, and a
+# floored count would fold them into the next hex's bin 0 in the
+# row-major bincount key.
+n_agebin = -(-occupancy_max_days // age_bin_days)
 print(f"{n_hex:,} hexes, {n_agebin} age bins × {age_bin_days} d")
 
 sidecar_dir = output_root / f"BeachingForcing/{regime}/{release_year}"
@@ -231,11 +234,16 @@ def beaching_exponent(w_on, dist, flat):
 
 # %%
 def occupancy_one_sidecar(path, release_doy):
-    sc = xr.open_zarr(path).isel(obs=slice(0, occupancy_max_days * 24))
+    sc = xr.open_zarr(path)
     assert sc.attrs["band_max_m"] >= band_m, (sc.attrs["band_max_m"], band_m)
     assert sc.attrs["window_days"] >= occupancy_max_days, (
         sc.attrs["window_days"], occupancy_max_days
     )
+    assert sc.attrs["hex_radius"] == hex_radius, (sc.attrs["hex_radius"], hex_radius)
+    assert sc.sizes["obs"] >= occupancy_max_days * 24, (
+        sc.sizes["obs"], occupancy_max_days * 24
+    )
+    sc = sc.isel(obs=slice(0, occupancy_max_days * 24))
     w_on = sc.w_on.values
     dist = sc.dist.values
     flat = sc.flat.values
@@ -255,6 +263,7 @@ def occupancy_one_sidecar(path, release_doy):
 
     key = hex_idx[valid] * n_agebin + age_bin2d[valid]
     length = n_hex * n_agebin
+    assert key.max(initial=-1) < length, (key.max(), length)
     occ = np.bincount(key, minlength=length).astype(np.float64)
     surv_agg = np.bincount(key, weights=surv[valid].astype(np.float64), minlength=length)
     occ = occ.reshape(n_hex, n_agebin)
@@ -306,19 +315,26 @@ survocc = (
 )
 print(f"computed {len(survocc):,} rows in {time.time() - t0:.1f}s")
 
+# %% [markdown]
+# # Validation
+#
+# Every `target_hex` must be in the key — out-of-key positions carry `hex = -1`
+# in the sidecar and were dropped above, so a stray id means the store was
+# built against a different key. Checked before the write, so a mismatched
+# store never lands on disk.
+
+# %%
+unseen = set(survocc["target_hex"]) - set(hex_ids.tolist()) - {-1}
+if unseen:
+    raise ValueError(
+        f"{len(unseen)} target_hex not in {key_path.name}: "
+        f"{sorted(unseen)[:10]} ..."
+    )
+print("every target_hex is in the key.")
+
 # %%
 survocc.to_parquet(survocc_path)
 print(f"wrote {survocc_path} ({survocc_path.stat().st_size / 1e6:.2f} MB)")
-
-# %% [markdown]
-# # Validation
-
-# %%
-unseen = set(survocc["target_hex"]) - set(hex_ids.tolist())
-if unseen:
-    print(f"WARNING: {len(unseen)} target_hex not in key: {sorted(unseen)[:10]} ...")
-else:
-    print("every target_hex is in the key.")
 
 # %%
 print(f"regime={regime}, release_year={release_year}"

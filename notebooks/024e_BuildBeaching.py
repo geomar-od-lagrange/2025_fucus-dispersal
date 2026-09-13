@@ -151,7 +151,9 @@ trap_wall = 1.0
 # Viability / float window: cap each trajectory's contributing age (days)
 # before scoring beaching (Rothäusler et al. 2019: weeks to a few months).
 # A step-function lifetime; a smooth L(t) would multiply the survival. Must
-# be ≤ the sidecar's `window_days`.
+# be ≤ the sidecar's `window_days`. The scored window is the half-open
+# `[0, max_float_days)` in hours — the same convention as 024f's
+# `occupancy_max_days`, so the last age bin is never a one-hour sliver.
 max_float_days = 60
 # Age-bin granularity for the deposition age (days); matches the counts store.
 age_bin_days = 10
@@ -259,17 +261,24 @@ def beaching_exponent(w_on, dist, flat):
 # Exposure statistics, one entry per sidecar; the deposited weight per hour is
 # accumulated across sidecars so the stranding-age median is hour-resolved.
 EXPOSURE = []
-DEP_BY_HOUR = np.zeros(max_float_days * 24 + 1, dtype=np.float64)
+DEP_BY_HOUR = np.zeros(max_float_days * 24, dtype=np.float64)
 QS = [10, 25, 50, 75, 90, 95, 99, 99.9, 100]
 TOP_DISP_BIN = 255 // disp_bin_km
 
 
 def deposit_one_sidecar(path, release_doy):
-    sc = xr.open_zarr(path).isel(obs=slice(0, max_float_days * 24 + 1))
+    sc = xr.open_zarr(path)
     assert sc.attrs["band_max_m"] >= band_m, (sc.attrs["band_max_m"], band_m)
     assert sc.attrs["window_days"] >= max_float_days, (
         sc.attrs["window_days"], max_float_days
     )
+    assert sc.attrs["hex_radius"] == hex_radius, (sc.attrs["hex_radius"], hex_radius)
+    assert sc.sizes["obs"] >= max_float_days * 24, (
+        sc.sizes["obs"], max_float_days * 24
+    )
+    # Half-open window [0, max_float_days) in hours, as in 024f: an inclusive
+    # end hour would open a one-hour age bin `max_float_days // age_bin_days`.
+    sc = sc.isel(obs=slice(0, max_float_days * 24))
     w_on = sc.w_on.values
     dist = sc.dist.values
     flat = sc.flat.values
@@ -414,22 +423,28 @@ for q in QS:
     if col in ex:
         print(f"    {'p' + f'{q:g}':>8s} {ex[col].mean():10.4f}")
 
-# %%
-beaching.to_parquet(beaching_path)
-print(f"wrote {beaching_path} ({beaching_path.stat().st_size / 1e6:.2f} MB)")
-
 # %% [markdown]
 # # Validation
+#
+# Every hex id must be in the key — land-seeded / out-of-key positions carry
+# `hex = -1` in the sidecar (and the residual rows use `-1` by construction),
+# so a stray id means the store was built against a different key. Checked
+# before the write, so a mismatched store never lands on disk.
 
 # %%
 key_ids = set(pd.read_parquet(key_path, columns=["hex_id"])["hex_id"].astype(int))
 seen = set(beaching["release_hex"]) | set(beaching["beach_hex"])
 unseen = seen - key_ids - {-1}
 if unseen:
-    print(f"WARNING: {len(unseen)} hex_ids not in {key_path.name}: "
-          f"{sorted(unseen)[:10]} ...")
-else:
-    print(f"every release_hex/beach_hex is in {key_path.name} (or -1).")
+    raise ValueError(
+        f"{len(unseen)} hex_ids not in {key_path.name}: "
+        f"{sorted(unseen)[:10]} ..."
+    )
+print(f"every release_hex/beach_hex is in {key_path.name} (or -1).")
+
+# %%
+beaching.to_parquet(beaching_path)
+print(f"wrote {beaching_path} ({beaching_path.stat().st_size / 1e6:.2f} MB)")
 
 # %%
 total = float(beaching["weight"].sum())

@@ -259,7 +259,19 @@ def hex_gdf(df):
 
 
 gdfs = {label: hex_gdf(df) for label, df in members.items()}
-shared = pd.concat([g["value"] for g in gdfs.values() if not g.empty])
+# A member can carry no stranded weight at all (a threshold above every
+# forcing hour in the partition). Report and drop it rather than feeding an
+# empty list to pd.concat.
+empty = [label for label, g in gdfs.items() if g.empty]
+for label in empty:
+    print(f"  {label}: no stranded weight — skipped in the maps")
+    del gdfs[label]
+if not gdfs:
+    raise ValueError(
+        "no member has any stranded weight; nothing to map "
+        f"({len(empty)} member(s) empty)"
+    )
+shared = pd.concat([g["value"] for g in gdfs.values()])
 vmax = float(shared.max())
 norm = LogNorm(vmin=max(float(shared[shared > 0].min()), vmax / 1e4), vmax=vmax)
 
@@ -269,9 +281,8 @@ fig, axes = plt.subplots(
     layout="constrained", squeeze=False,
 )
 for ax, (label, g) in zip(axes[0], gdfs.items()):
-    if not g.empty:
-        g.plot(ax=ax, column="value", cmap=cmap, norm=norm, legend=True,
-               edgecolor="face", linewidth=hex_seam_lw, zorder=1)
+    g.plot(ax=ax, column="value", cmap=cmap, norm=norm, legend=True,
+           edgecolor="face", linewidth=hex_seam_lw, zorder=1)
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
     ax.set_xlim(extent[0], extent[1])
     ax.set_ylim(extent[2], extent[3])

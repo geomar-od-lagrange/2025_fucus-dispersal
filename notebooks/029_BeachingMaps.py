@@ -109,6 +109,15 @@ for h in time_horizons_days:
     assert h % age_bin_days == 0, (
         f"horizon {h} d is not a multiple of age_bin_days {age_bin_days} d"
     )
+    # The horizon filter is cumulative-to-T (`beach_age_bin < h //
+    # age_bin_days`) — strandings in bins fully within T. A horizon below one
+    # age bin therefore selects nothing at all, which is a parameter mistake,
+    # not an empty map.
+    assert h >= age_bin_days, (
+        f"horizon {h} d is shorter than one age bin ({age_bin_days} d), so no "
+        f"stranding bin falls within it — raise the horizon or lower "
+        f"age_bin_days in 024e and here"
+    )
 mpl.rcParams["figure.dpi"] = fig_dpi_scale * mpl.rcParamsDefault["figure.dpi"]
 # Hex seam stroke. edgecolor="face" means this is not a visible outline -- it
 # closes the ~1 px anti-aliasing seam between adjacent polygons so the grid

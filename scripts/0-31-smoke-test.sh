@@ -164,7 +164,7 @@ pixi run papermill notebooks/026_TimeHorizonMaps.ipynb \
     -p output_root "${OUTPUT_ROOT}" \
     -p regime "surface_stokes" \
     -p release_months_csv "" \
-    -p time_horizons_days_csv "0" \
+    -r time_horizons_days_csv "0" \
     --cwd notebooks/
 
 echo
@@ -190,10 +190,18 @@ pixi run papermill notebooks/028_SubbasinConnectivityMatrix.ipynb \
 
 # The beaching chain (024d sidecar -> 024e/024f reducers -> 029/030/031).
 # 024d is capped to one zarr and a 1 d window; the 4 h smoke run has 5 hourly
-# obs, so the sidecar is padded, not truncated. The reducer windows
-# (max_float_days / occupancy_max_days) must stay <= window_days, and band_m
-# <= the sidecar's band_max_m. Rate-model member: the notebook defaults, whose
-# tag is step_wc0p1_ts3_tcinf.
+# obs, so the sidecar is padded, not truncated. Two constraints tie the stages
+# together:
+#   * the reducer windows (max_float_days / occupancy_max_days, both 1 d here)
+#     must stay <= 024d's window_days, and band_m <= its band_max_m;
+#   * every downstream age bin and horizon must be consistent with
+#     age_bin_days. With a 1 d window, age_bin_days must be 1 d (the default
+#     10 d would put the whole window in a partial bin), so 029/030/031 are
+#     run at age_bin_days 1 too: 029's horizons are cumulative-to-T
+#     (beach_age_bin < h // age_bin_days) and so must be >= 1 d, while 030's
+#     are snapshots (age_bin == h // age_bin_days) and 0 d is the only bin a
+#     1 d window populates.
+# Rate-model member: the notebook defaults, whose tag is step_wc0p1_ts3_tcinf.
 SMOKE_MEMBER="step_wc0p1_ts3_tcinf"
 
 echo
@@ -218,6 +226,8 @@ pixi run papermill notebooks/024e_BuildBeaching.ipynb \
     -p release_year 2020 \
     -p release_month 1 \
     -p max_float_days 1 \
+    -p age_bin_days 1 \
+    -p disp_bin_km 10 \
     --cwd notebooks/
 
 echo
@@ -229,10 +239,13 @@ pixi run papermill notebooks/024f_BuildSurvivalOccupancy.ipynb \
     -p release_year 2020 \
     -p release_month 1 \
     -p occupancy_max_days 1 \
+    -p age_bin_days 1 \
     --cwd notebooks/
 
-# 029/030 pool the monthly partitions of one member; only age bin 0 exists in
-# a 4 h run, so map the single "0 d" horizon. 031 sweeps a one-member list.
+# 029/030 pool the monthly partitions of one member, at the reducers'
+# age_bin_days of 1 d. Only age bin 0 exists in a 4 h run, so 029 maps the
+# cumulative "1 d" horizon and 030 the snapshot "0 d" one. 031 sweeps a
+# one-member list.
 echo
 echo "==== 029 BeachingMaps (surface_stokes) ===="
 pixi run papermill notebooks/029_BeachingMaps.ipynb \
@@ -240,7 +253,8 @@ pixi run papermill notebooks/029_BeachingMaps.ipynb \
     -p output_root "${OUTPUT_ROOT}" \
     -p regime surface_stokes \
     -p member "${SMOKE_MEMBER}" \
-    -p time_horizons_days_csv "0" \
+    -p age_bin_days 1 \
+    -r time_horizons_days_csv "1" \
     --cwd notebooks/
 
 echo
@@ -250,7 +264,8 @@ pixi run papermill notebooks/030_SurvivalHeatmaps.ipynb \
     -p output_root "${OUTPUT_ROOT}" \
     -p regime surface_stokes \
     -p member "${SMOKE_MEMBER}" \
-    -p time_horizons_days_csv "0" \
+    -p age_bin_days 1 \
+    -r time_horizons_days_csv "0" \
     --cwd notebooks/
 
 echo
@@ -260,6 +275,7 @@ pixi run papermill notebooks/031_BeachingSweep.ipynb \
     -p output_root "${OUTPUT_ROOT}" \
     -p regime surface_stokes \
     -p members_csv "${SMOKE_MEMBER}" \
+    -p age_bin_days 1 \
     -p labels_csv "" \
     -p baseline_member "" \
     --cwd notebooks/
