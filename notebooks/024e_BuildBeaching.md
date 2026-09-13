@@ -18,7 +18,7 @@ jupyter:
 
 Reduce the **beaching-forcing sidecar** built by `024d` into the stranding
 store for one rate-model member (see
-[beaching_sidecar.md](../plans/beaching_sidecar.md)). Each real drifter
+[beaching_sidecar.md](../plans/done/beaching_sidecar.md)). Each real drifter
 carries unit surviving (free-drifting) weight; at every near-shore step a
 fraction of that weight *strands* at the current coastal hex and leaves the
 drifting pool. This is the **fractional / weighted** scheme — the

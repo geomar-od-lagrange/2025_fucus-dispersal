@@ -19,7 +19,7 @@
 #
 # Cache, per real drifter and per hour, the five quantities any beaching or
 # survival rate model needs — and nothing else (see
-# [beaching_sidecar.md](../plans/beaching_sidecar.md)). One sidecar zarr per
+# [beaching_sidecar.md](../plans/done/beaching_sidecar.md)). One sidecar zarr per
 # trajectory zarr **at one hex radius** — the `024a` hex ids are baked in, so
 # a different `hex_radius` needs the sidecar rebuilt — at
 # `output_root/BeachingForcing/<regime>/<year>/<trajectory zarr stem>.zarr`:
