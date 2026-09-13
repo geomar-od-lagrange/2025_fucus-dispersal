@@ -1,5 +1,16 @@
 # Beaching forcing sidecar: make the rate model a free re-reduction
 
+**Implemented.** Current state in [../../docs/beaching.md](../../docs/beaching.md)
+(sidecar schema, two-state hazard, production setting, sensitivity). Deviations
+from the text below: sidecar `hex` is stored everywhere (survival occupancy
+needs open-water hexes), `hex_radius` is part of the sidecar currency check,
+the reducer window is half-open `[0, max_float_days)`, and the saturating
+form stays in 024e as `rate_form="saturating"` for reproducing older stores.
+Stokes day files are resolved by the sample's calendar year (a window crossing
+New Year previously saw zero forcing). `δ` was tested and dropped (Spearman
+0.9997 against the hard step); production defaults `w_c = 0.10`,
+`τ_storm = 3 h`, `τ_calm = ∞`.
+
 Cache the per-(particle, hour) ingredients of the beaching rate once, so
 that every choice of rate model — `τ0`, `w_tau`, the functional form of
 `s(w)`, band width, viability window, trap weights — is a seconds-per-zarr

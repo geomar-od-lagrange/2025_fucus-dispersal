@@ -160,11 +160,77 @@ in the parquet — pass `029`/`031` the value `024e` built with, exactly as
 
 ## Production setting
 
-<!-- filled in from the 024e/031 sweep -->
+The reducer defaults: `w_c = 0.10` m/s, `τ_storm = 3 h`, `τ_calm = ∞`,
+`δ = 0`, `trap ≡ 1`, `band_m = 2000`, `max_float_days = 60` — member tag
+`step_wc0p1_ts3_tcinf`. `w_c = 0.10` is the p93 of onshore Stokes over
+in-band hours, so 3.9 % of in-band hours count as storm hours. Pooled over
+surface_stokes 2016–2019 (16.58 M real drifters):
+
+| quantity | value |
+|---|---|
+| beached within 60 d | 75.9 % |
+| drifters ever in band during a storm hour | 83.7 % |
+| stranding hexes (weight > 1) | 1 736 |
+| Gini of stranded weight over hexes | 0.62 |
+| median stranding age / travel distance | 10–20 d / 40–50 km |
+
+The two exposure numbers being close is the exposure limit at work: at
+`τ_storm = 3 h` almost everything in band during a storm strands, so `w_c`
+alone decides the total. The setting is a working choice, not a
+calibration — there is no observational constraint on `w_c` in this study,
+so results are reported as the range below, and `w_c` is the number to argue
+about.
+
+**Seasonality is the dominant signal**, interannual variability is not
+(beached %, releases pooled over years / months):
+
+| release month | Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | Dec |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `w_c = 0.10` | 65 | 64 | 66 | 64 | 72 | 72 | 74 | 84 | 89 | 89 | 89 | 85 |
+| `w_c = 0.15` | 39 | 31 | 26 | 22 | 25 | 23 | 23 | 40 | 51 | 52 | 54 | 54 |
+
+| release year | 2016 | 2017 | 2018 | 2019 |
+|---|---|---|---|---|
+| `w_c = 0.10` | 74 | 79 | 74 | 77 |
+
+Autumn releases meet the storm season inside their viability window; the
+per-month partitions are the primary products, the pooled year a summary.
 
 ## Sensitivity
 
-<!-- filled in from the 024e/031 sweep -->
+Sweep over the 48 partitions per member (`031`, `Figures/031/`); `τ_storm`
+in hours, `τ_calm` in days, `ever` = share of drifters ever exposed to a
+storm hour in band, Spearman = per-hex stranded weight against the
+production member:
+
+| member | beached % | ever % | Gini | Spearman |
+|---|---|---|---|---|
+| `w_c = 0.05` | 94.0 | 95.6 | 0.57 | 0.93 |
+| `w_c = 0.075` | 88.6 | 92.5 | 0.58 | 0.98 |
+| **`w_c = 0.10`** | **75.9** | **83.7** | **0.62** | 1 |
+| `w_c = 0.15` | 36.7 | 47.3 | 0.70 | 0.89 |
+| `w_c = 0.10`, `τ_calm = 365` | 78.1 | 83.7 | 0.69 | — |
+| `w_c = 0.10`, `τ_storm = 1` | 81.6 | 83.7 | 0.59 | 0.99 |
+| `w_c = 0.10`, `τ_storm = 12` | 60.2 | 83.7 | 0.66 | 0.98 |
+| `w_c = 0.10`, `δ = 0.02` | 77.2 | 88.0 | 0.61 | 0.9997 |
+| saturating `τ0 = 480 h, w_tau = 0.05` | 42.8 | — | 0.76 | — |
+
+- **`w_c` is the axis.** It moves the total from 37 % to 94 % across
+  p72–p99 of the forcing and is the only knob that reorders the map:
+  adjacent values share 84 of the top-100 stranding hexes, `0.10` vs `0.15`
+  share 59. Per-source beached fractions are more stable (Spearman ≥ 0.92
+  between any two members).
+- **`τ_storm` scales the total, not the pattern** (Spearman ≥ 0.98 from
+  1 h to 12 h); below ~6 h it is irrelevant.
+- **`τ_calm = 1 yr`** adds 2–7 points and ~180 low-weight hexes by draining
+  calm-water residents; it changes where nothing else strands.
+- **`δ`** is noise-level: keep the hard step.
+- **The saturating form** (kept in 024e for reproduction) gives a lower total
+  at a much older, farther stranding profile — its rate is highest at weak
+  forcing, so it strands slowly everywhere instead of fast where waves hit.
+
+**The beached fraction is not a reportable number**; the pattern and the
+seasonal contrast are.
 
 ## Limitations
 
