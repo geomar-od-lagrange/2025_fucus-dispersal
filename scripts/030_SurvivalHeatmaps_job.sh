@@ -6,6 +6,8 @@
 #SBATCH --time=01:00:00
 #SBATCH --partition=base
 
+set -euo pipefail
+
 # Lightweight: reads the 024f survival-occupancy parquet + the 024a key, no
 # Dask cluster. One (regime, hex_radius, rate-model member) per submit; the
 # notebook pools every release year and month of that member. E.g.:
@@ -27,7 +29,7 @@ pixi run papermill --cwd notebooks/ \
     -p output_root ${output_root} \
     -p regime ${regime} \
     -p hex_radius ${hex_radius} \
-    -p member ${member} \
+    -r member ${member} \
     -k python
 
 jobinfo

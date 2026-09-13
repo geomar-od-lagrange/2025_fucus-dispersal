@@ -269,13 +269,15 @@ def occupancy_one_sidecar(path, release_doy):
     surv_agg = surv_agg.reshape(n_hex, n_agebin)
 
     hi, bi = np.nonzero(occ > 0)
-    return pd.DataFrame({
+    frame = pd.DataFrame({
         "release_doy": release_doy,
         "age_bin": bi.astype(np.int64),
         "target_hex": hex_ids[hi],
         "occ": occ[hi, bi],
         "surv": surv_agg[hi, bi],
     })
+    # Valid-sample count, for the cheap conservation check below.
+    return frame, int(valid.sum())
 ```
 
 ```python
@@ -300,10 +302,12 @@ print(f"{len(parsed)} sidecars, release_doys "
 ```python
 t0 = time.time()
 frames = []
+total_valid = 0
 for p, ts, _ in parsed:
     tz = time.time()
-    frame = occupancy_one_sidecar(p, int(ts.dayofyear))
+    frame, n_valid = occupancy_one_sidecar(p, int(ts.dayofyear))
     frames.append(frame)
+    total_valid += n_valid
     o = frame["occ"].sum()
     s = frame["surv"].sum()
     print(f"  {p.name}: occ {o:,.0f}, surv {s:,.0f} "
@@ -331,6 +335,19 @@ if unseen:
         f"{sorted(unseen)[:10]} ..."
     )
 print("every target_hex is in the key.")
+```
+
+```python
+# Survival can never exceed occupancy, and the grouped occ total must match
+# the valid-sample count tallied while looping the sidecars.
+assert (survocc["surv"] <= survocc["occ"] + 1e-6).all(), "surv exceeds occ somewhere"
+occ_total = float(survocc["occ"].sum())
+if abs(occ_total - total_valid) > 1e-6 * max(total_valid, 1):
+    raise ValueError(
+        f"occ total {occ_total:,.0f} != valid-sample count {total_valid:,.0f}"
+    )
+print(f"surv <= occ everywhere; occ total {occ_total:,.0f} matches "
+      f"the valid-sample count.")
 ```
 
 ```python

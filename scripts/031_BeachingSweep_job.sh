@@ -6,6 +6,8 @@
 #SBATCH --time=02:00:00
 #SBATCH --partition=base
 
+set -euo pipefail
+
 # Lightweight: reads one 024e beaching store per sweep member + the 024a key,
 # no Dask cluster. One (regime, hex_radius, member list) per submit. E.g.:
 #   sbatch scripts/031_BeachingSweep_job.sh surface_stokes 6000 \
@@ -31,9 +33,9 @@ pixi run papermill --cwd notebooks/ \
     -p output_root ${output_root} \
     -p regime ${regime} \
     -p hex_radius ${hex_radius} \
-    -p members_csv "${members_csv}" \
-    -p labels_csv "${labels_csv}" \
-    -p baseline_member "${baseline_member}" \
+    -r members_csv "${members_csv}" \
+    -r labels_csv "${labels_csv}" \
+    -r baseline_member "${baseline_member}" \
     -k python
 
 jobinfo

@@ -348,10 +348,15 @@ def deposit_one_sidecar(path, release_doy):
             "shore_type", "disp_bin", "weight"]
     out = pd.concat([deposits, residual_rows], ignore_index=True)
     out["release_doy"] = release_doy
-    return out[cols].astype(
+    out = out[cols].astype(
         {"release_hex": "int64", "beach_hex": "int64", "beach_age_bin": "int64",
          "disp_bin": "int64"}
     )
+    # Real-drifter count per release_hex, for the conservation check below —
+    # collected while the sidecar is open rather than re-derived from `out`,
+    # so it counts drifters (weight 1 each), not accumulated fractional weight.
+    counts = pd.Series(release_hex).value_counts()
+    return out, counts
 ```
 
 ```python
@@ -376,10 +381,12 @@ print(f"{len(parsed)} sidecars, release_doys "
 ```python
 t0 = time.time()
 frames = []
+release_counts = pd.Series(dtype=np.int64)
 for p, ts, _ in parsed:
     tz = time.time()
-    frame = deposit_one_sidecar(p, int(ts.dayofyear))
+    frame, counts = deposit_one_sidecar(p, int(ts.dayofyear))
     frames.append(frame)
+    release_counts = release_counts.add(counts, fill_value=0)
     beached = float(frame.loc[frame["beach_hex"] >= 0, "weight"].sum())
     total = float(frame["weight"].sum())
     print(f"  {p.name}: {total:,.0f} drifters, "
@@ -441,6 +448,41 @@ if unseen:
         f"{sorted(unseen)[:10]} ..."
     )
 print(f"every release_hex/beach_hex is in {key_path.name} (or -1).")
+```
+
+```python
+# A deposit at an unlabelled hex would masquerade as residual (beach_hex=-1
+# is reserved for the never-beached remainder, recorded once per release_hex
+# with beach_age_bin=-1 by construction).
+bad_residual = beaching[
+    (beaching["beach_hex"] == -1) & (beaching["beach_age_bin"] >= 0)
+]
+if len(bad_residual):
+    raise ValueError(
+        f"{len(bad_residual)} rows have beach_hex=-1 with beach_age_bin>=0 "
+        "— a real deposit masquerading as residual"
+    )
+print("no beach_hex=-1 row carries a real beach_age_bin.")
+```
+
+```python
+# Conservation: Σweight per release_hex (deposits + residual) must equal the
+# real-drifter count released from that hex, across the whole partition.
+release_totals = beaching.groupby("release_hex")["weight"].sum()
+idx = release_totals.index.union(release_counts.index)
+release_totals = release_totals.reindex(idx, fill_value=0.0)
+counts = release_counts.reindex(idx, fill_value=0.0)
+rel_err = ((release_totals - counts).abs() / counts.replace(0, np.nan)).fillna(0.0)
+bad = rel_err[rel_err > 1e-6]
+if len(bad):
+    raise ValueError(
+        f"conservation violated for {len(bad)} release_hex "
+        "(Σweight vs. real-drifter count differs by > 1e-6 relative): "
+        f"{bad.head(10).to_dict()}"
+    )
+print(f"Σweight per release_hex conserves the released drifter count "
+      f"for all {len(idx)} release_hex (max rel. err "
+      f"{rel_err.max() if len(rel_err) else 0:.2e}).")
 ```
 
 ```python
