@@ -389,7 +389,11 @@ class OnshoreStokes:
 
     def __init__(self, stokes_dir, bsh_water_fn, fill_max_cells=32,
                  mask_sample_day=15):
+        # Static mask + grid come from the release year's directory; day
+        # files are resolved by the sample's own calendar year, so a window
+        # running past New Year keeps its forcing (layout: <root>/<YYYY>/).
         self.stokes_dir = Path(stokes_dir)
+        self.stokes_root = self.stokes_dir.parent
         self._day = None
         self._cube = None  # (VSDX, VSDY, times)
         files = sorted(self.stokes_dir.glob("stokes_*.nc"))
@@ -470,7 +474,7 @@ class OnshoreStokes:
     def _load(self, day):
         if day == self._day:
             return self._cube
-        path = self.stokes_dir / f"stokes_{day.strftime('%Y%m%d')}.nc"
+        path = self.stokes_root / str(day.year) / f"stokes_{day.strftime('%Y%m%d')}.nc"
         if not path.exists():
             self.missing_days += 1
             self._day, self._cube = day, None
@@ -748,6 +752,9 @@ print(f"  band_max_m={band_max_m:g}, window_days={window_days} (nobs={nobs}), "
       f"raster_dx_m={raster_dx_m:g}, stokes_fill_max_cells={stokes_fill_max_cells}")
 print(f"  {len(stats)} sidecars written, {n_skipped} up to date, "
       f"in {time.time() - t0:.1f}s; missing Stokes days: {stokes.missing_days}")
+# A missing day file would silently read as zero forcing for every particle
+# in band that day, so treat it as a data-coverage error, not a warning.
+assert stokes.missing_days == 0, f"{stokes.missing_days} Stokes day files missing"
 if stats:
     print(f"  drifters:     {sum(s['n_real'] for s in stats):,} real of "
           f"{sum(s['n_traj_source'] for s in stats):,}")
