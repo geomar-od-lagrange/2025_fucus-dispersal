@@ -1,5 +1,5 @@
 #!/bin/bash
-# Full pipeline smoke test (stages 000–028) against the BSH demo subset.
+# Full pipeline smoke test (stages 000–031) against the BSH demo subset.
 #
 # Runs every numbered notebook end-to-end on a single host (login node
 # is fine — no SLURM). Designed to flush out integration issues from a
@@ -8,10 +8,10 @@
 # regimes (surface, bottom, surface_stokes).
 #
 # Usage from the repo root:
-#     ./scripts/0-28-smoke-test.sh
+#     ./scripts/0-31-smoke-test.sh
 #
 # Override outputs location:
-#     OUTPUT_ROOT=/work/<user>/fucus_smoke ./scripts/0-28-smoke-test.sh
+#     OUTPUT_ROOT=/work/<user>/fucus_smoke ./scripts/0-31-smoke-test.sh
 #
 # Prerequisites (one-time, on the host):
 #     git clone --recurse-submodules https://github.com/geomar-od-lagrange/2025_fucus-dispersal.git
@@ -30,7 +30,7 @@ mkdir -p "${OUTPUT_ROOT}"
 
 REGIMES=(surface bottom surface_stokes)
 
-echo "=== Smoke test: stages 000–028 ==="
+echo "=== Smoke test: stages 000–031 ==="
 echo "Repo:        ${REPO_ROOT}"
 echo "Output root: ${OUTPUT_ROOT}"
 echo "Regimes:     ${REGIMES[*]}"
@@ -186,6 +186,82 @@ pixi run papermill notebooks/028_SubbasinConnectivityMatrix.ipynb \
     "${OUTPUT_ROOT}/028_smoke.ipynb" \
     -p output_root "${OUTPUT_ROOT}" \
     -p regime "surface_stokes" \
+    --cwd notebooks/
+
+# The beaching chain (024d sidecar -> 024e/024f reducers -> 029/030/031).
+# 024d is capped to one zarr and a 1 d window; the 4 h smoke run has 5 hourly
+# obs, so the sidecar is padded, not truncated. The reducer windows
+# (max_float_days / occupancy_max_days) must stay <= window_days, and band_m
+# <= the sidecar's band_max_m. Rate-model member: the notebook defaults, whose
+# tag is step_wc0p1_ts3_tcinf.
+SMOKE_MEMBER="step_wc0p1_ts3_tcinf"
+
+echo
+echo "==== 024d BuildBeachingForcing (surface_stokes, 1 zarr, 1 d window) ===="
+pixi run papermill notebooks/024d_BuildBeachingForcing.ipynb \
+    "${OUTPUT_ROOT}/024d_smoke.ipynb" \
+    -p output_root "${OUTPUT_ROOT}" \
+    -p regime surface_stokes \
+    -p release_year 2020 \
+    -p release_month 1 \
+    -p window_days 1 \
+    -p max_zarrs 1 \
+    -p overwrite True \
+    --cwd notebooks/
+
+echo
+echo "==== 024e BuildBeaching (surface_stokes) ===="
+pixi run papermill notebooks/024e_BuildBeaching.ipynb \
+    "${OUTPUT_ROOT}/024e_smoke.ipynb" \
+    -p output_root "${OUTPUT_ROOT}" \
+    -p regime surface_stokes \
+    -p release_year 2020 \
+    -p release_month 1 \
+    -p max_float_days 1 \
+    --cwd notebooks/
+
+echo
+echo "==== 024f BuildSurvivalOccupancy (surface_stokes) ===="
+pixi run papermill notebooks/024f_BuildSurvivalOccupancy.ipynb \
+    "${OUTPUT_ROOT}/024f_smoke.ipynb" \
+    -p output_root "${OUTPUT_ROOT}" \
+    -p regime surface_stokes \
+    -p release_year 2020 \
+    -p release_month 1 \
+    -p occupancy_max_days 1 \
+    --cwd notebooks/
+
+# 029/030 pool the monthly partitions of one member; only age bin 0 exists in
+# a 4 h run, so map the single "0 d" horizon. 031 sweeps a one-member list.
+echo
+echo "==== 029 BeachingMaps (surface_stokes) ===="
+pixi run papermill notebooks/029_BeachingMaps.ipynb \
+    "${OUTPUT_ROOT}/029_smoke.ipynb" \
+    -p output_root "${OUTPUT_ROOT}" \
+    -p regime surface_stokes \
+    -p member "${SMOKE_MEMBER}" \
+    -p time_horizons_days_csv "0" \
+    --cwd notebooks/
+
+echo
+echo "==== 030 SurvivalHeatmaps (surface_stokes) ===="
+pixi run papermill notebooks/030_SurvivalHeatmaps.ipynb \
+    "${OUTPUT_ROOT}/030_smoke.ipynb" \
+    -p output_root "${OUTPUT_ROOT}" \
+    -p regime surface_stokes \
+    -p member "${SMOKE_MEMBER}" \
+    -p time_horizons_days_csv "0" \
+    --cwd notebooks/
+
+echo
+echo "==== 031 BeachingSweep (surface_stokes, one member) ===="
+pixi run papermill notebooks/031_BeachingSweep.ipynb \
+    "${OUTPUT_ROOT}/031_smoke.ipynb" \
+    -p output_root "${OUTPUT_ROOT}" \
+    -p regime surface_stokes \
+    -p members_csv "${SMOKE_MEMBER}" \
+    -p labels_csv "" \
+    -p baseline_member "" \
     --cwd notebooks/
 
 echo

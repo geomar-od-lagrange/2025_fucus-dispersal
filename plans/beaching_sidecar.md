@@ -7,8 +7,9 @@ numpy pass with no trajectory or Stokes I/O.
 
 ## Problem
 
-[`024d_BuildBeaching`](../notebooks/024d_BuildBeaching.py) and
-[`024e_BuildSurvivalOccupancy`](../notebooks/024e_BuildSurvivalOccupancy.py)
+The pre-sidecar beaching and survival-occupancy builders (now
+[`024e_BuildBeaching`](../notebooks/024e_BuildBeaching.py) and
+[`024f_BuildSurvivalOccupancy`](../notebooks/024f_BuildSurvivalOccupancy.py))
 each re-read the trajectory zarrs and re-sample the raw WAM Stokes field for
 every parameter setting. Measured on the production run (surface_stokes,
 2016–2019, 292 zarrs, 16.6 M real drifters):

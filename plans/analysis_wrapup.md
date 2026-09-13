@@ -11,9 +11,12 @@ compute node via `pixi run`.
 
 ## Status and sequencing
 
-- **Done:** beaching (§5) — implemented as `024d`/`029`, see
-  [../docs/beaching.md](../docs/beaching.md) (design note archived at
-  [done/beaching.md](done/beaching.md)).
+- **Done:** beaching (§5) — the `024d` forcing sidecar, the `024e`/`024f`
+  reducers and the `029`/`030`/`031` consumers are all in, see
+  [../docs/beaching.md](../docs/beaching.md) and
+  [../docs/survival_occupancy.md](../docs/survival_occupancy.md) (design
+  notes archived at [done/beaching.md](done/beaching.md)). Production rate
+  parameters are the one open item, pending the `031` sweep.
 - **Next (parquet-only, unblocked):** finish connectivity (§3), then the
   relative-density + 3 m maps (§1) and their per-subbasin split (§2). The
   connectivity CSV falls out of §3 into §6.
@@ -80,26 +83,28 @@ the §1/§2 relative maps and a production estimate:
 
 ## 5. Beaching and remobilisation — ✅ implemented, see [../docs/beaching.md](../docs/beaching.md)
 
-**Implemented (weighted scheme).** `024d_BuildBeaching` (heavy pass over the
-zarrs + raw `baltic_highres` Stokes → `HexAgg_beaching_*.parquet`) and
-`029_BeachingMaps` (parquet-only consumer: where-stranded wall/flat maps,
-beached-fraction-per-source-hex, age-horizon maps) both landed; the design
-note is archived at [done/beaching.md](done/beaching.md). Beaching uses the
-**weighted / fractional** deposition scheme (each particle deposits
-fractional stranding weight along its coastal path; deterministic, noise-free
-at the high-age tail, composes with a Fucus lifetime `L(t)`) — the retired
-stochastic first-stranding draw agreed to <0.2 % on totals. `trap(shore_type)`
-is wired but degenerate (`trap_flat = trap_wall = 1.0`), so onshore wave
-forcing is the only term modulating the rate — see
+**Implemented (weighted scheme).** The heavy pass is now
+`024d_BuildBeachingForcing`, which caches the rate-model-free ingredients
+(onshore Stokes, distance to land, hex id, shore flag, displacement) per real
+drifter and hour; `024e_BuildBeaching` reduces it to the stranding store and
+`024f_BuildSurvivalOccupancy` to the survival-weighted occupancy store, each
+in seconds per zarr per rate-model member. `029_BeachingMaps`,
+`030_SurvivalHeatmaps` and `031_BeachingSweep` are the parquet-only consumers.
+Beaching uses the **weighted / fractional** deposition scheme (each particle
+deposits fractional stranding weight along its coastal path; deterministic,
+noise-free at the high-age tail, composes with a Fucus lifetime `L(t)`) — the
+retired stochastic first-stranding draw agreed to <0.2 % on totals. The rate is
+a two-state hazard, `1/τ = 1/τ_calm + trap·r(w_on)/τ_storm` in band, with
+`trap` wired but degenerate (`trap_flat = trap_wall = 1.0`), so onshore wave
+forcing is the only term modulating it — see
 [beaching.md](../docs/beaching.md).
 
-Open follow-ups (not blocking): a **parameter sweep** of `τ0` / `w_half` /
-band width reported as a range (totals are highly parameter-sensitive in the
-Baltic) — `trap(flat, wall)` is *not* a sweep axis, being deliberately
-degenerate until a real coastal-substrate classification can drive it; a
-**Fucus lifetime `L(t)`** replacing the step-function
-viability cutoff; and recomputing the free-drifting occupancy/connectivity
-weighted by the surviving (un-beached) fraction.
+Remaining follow-ups (not blocking): a **Fucus lifetime `L(t)`** replacing the
+step-function viability cutoff; **survival-weighted connectivity** — the
+occupancy side is done in `024f`, folding the same `exp(−A)` weighting into
+`024c`/`028` is not; and the **production values** of `w_c` / `τ_storm` /
+`τ_calm`, which come out of the `031` sweep on the realised exposure
+statistics. `trap(flat, wall)` is *not* a sweep axis while degenerate.
 
 ## 6. Data deliverables to send out
 

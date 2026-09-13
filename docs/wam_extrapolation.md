@@ -1,18 +1,18 @@
 # Extrapolating the WAM wave field onto the BSH domain
 
-The beaching rate is driven by onshore Stokes drift sampled from the CMEMS
-Baltic wave hindcast (FMI-WAM, `BALTICSEA_MULTIYEAR_WAV_003_015`, 1 nmi
-≈ 1.6 × 1.9 km, hourly). **WAM's water mask is not BSH's**, so a bare
-nearest-cell lookup leaves much of the BSH coastline with no wave data — and
-in [beaching.md](beaching.md) no wave data means *rate zero*, a coastline
-that cannot strand at any parameter. This doc covers how the field is
+[`024d_BuildBeachingForcing`](../notebooks/024d_BuildBeachingForcing.py) samples
+onshore Stokes drift from the CMEMS Baltic wave hindcast (FMI-WAM,
+`BALTICSEA_MULTIYEAR_WAV_003_015`, 1 nmi ≈ 1.6 × 1.9 km, hourly) into the
+beaching forcing sidecar. **WAM's water mask is not BSH's**, so a bare
+nearest-cell lookup leaves much of the BSH coastline with no wave data — and no
+wave data means zero onshore forcing, a coastline that cannot strand at any
+rate parameter ([beaching.md](beaching.md)). This doc covers how the field is
 extended to full BSH coverage.
 
 ## Scale of the gap
 
 WAM masks its own coastal cells, and its bbox starts at 9.01 °E, excluding
-the German Bight — while the beaching band is the 2 km strip hugging the
-shore. So the overlap is worst exactly where it matters: **78.7 % of in-band
+the German Bight — while the sampled band hugs the shore. So the overlap is worst exactly where it matters: **78.7 % of in-band
 samples need filling**. Left alone that is a structural bias, not a parameter
 choice, and it falls hardest on sheltered fjords and archipelago, i.e. prime
 *Fucus* habitat.
@@ -31,7 +31,7 @@ weight:
   excluded *because* it is not open water. Geodesic donors instead share
   the particle's water body. **Measured effect: none.** Rebuilding the full
   sweep on the geodesic fill reproduced the Euclidean numbers to within
-  0.15 points on every member (e.g. 60.1 % → 60.2 % at `w_tau = 0.4`), and
+  0.15 points on every sweep member (e.g. 60.1 % → 60.2 %), and
   fill distance barely moved (2.74 → 2.67 km). So Euclidean nearest-wet
   rarely crossed land in a way that mattered. Geodesic is kept because it
   cannot do so *by construction* and because it distinguishes unreachable
@@ -71,6 +71,7 @@ to a strip far narrower than the 500 m raster or the 1.6 km WAM cell.
 
 ## Cross-references
 
-- [beaching.md](beaching.md) — the rate model this feeds.
+- [beaching.md](beaching.md) — the sidecar this fills and the rate model that
+  consumes it.
 - [stokes_drift.md](stokes_drift.md) — the wave field itself and the
   blocked-face mask this reverses at the coast.
