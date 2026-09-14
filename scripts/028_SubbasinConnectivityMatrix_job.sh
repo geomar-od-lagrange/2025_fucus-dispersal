@@ -6,6 +6,8 @@
 #SBATCH --time=00:30:00
 #SBATCH --partition=base
 
+set -euo pipefail
+
 # Lightweight: reads parquet only (the 024c connectivity store, or the 024g
 # survconn store when a member is given), no Dask cluster. Pools every
 # available release_year for the regime, restricts to one release season, and
@@ -42,7 +44,7 @@ pixi run papermill --cwd notebooks/ \
     -p output_root ${output_root} \
     -p regime ${regime} \
     -p hex_radius ${hex_radius} \
-    -p season ${season} \
+    -r season ${season} \
     -r member "${member}" \
     -k python
 

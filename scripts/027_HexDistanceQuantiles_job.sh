@@ -6,6 +6,8 @@
 #SBATCH --time=01:00:00
 #SBATCH --partition=base
 
+set -euo pipefail
+
 # Lightweight: reads from HexAggregates distance parquet, no Dask cluster.
 # Pools every release_year for the regime (distance histograms are small).
 # Submit once per (regime, hex_radius, season), e.g.:

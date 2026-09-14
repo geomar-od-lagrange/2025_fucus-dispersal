@@ -127,17 +127,20 @@ the parquet it wrote match by eye. The kernel-race retry and the per-cell
 
 ## Parquet-only consumers
 
-Single task, no Dask, one submission per run; each passes `--cwd notebooks/`
-and `-p output_root`. `season` is one of `DJF`/`MAM`/`JJA`/`SON`/`ALL` and
-defaults to `ALL`; `member` is the opaque rate-model tag a 024e/024f/024g
-reducer put in the store filename.
+Single task, no Dask, one submission per run; each runs under
+`set -euo pipefail` and passes `--cwd notebooks/` and `-p output_root`.
+`season` is one of `DJF`/`MAM`/`JJA`/`SON`/`ALL` and defaults to `ALL`;
+`member` is the opaque rate-model tag a 024e/024f/024g reducer put in the
+store filename. Both are passed with `-r` (raw string): they are tags, not
+Python literals, and `""` is a meaningful `member` that `-p` would parse
+away.
 
 | script | positional args |
 |---|---|
 | `024c_BuildHexConnectivity_job.sh` | `[regime] [year] [hex_radius]` (reads the 024 counts store, writes connectivity) |
 | `025_HexHeatmaps_job.sh`, `026*_job.sh` | `[regime] [season] [hex_radius]` (also pass `-p data_root ${repo_root}/data` for the BSH H0 isobath) |
 | `027_HexDistanceQuantiles_job.sh` | `[regime] [hex_radius] [season]` |
-| `028_SubbasinConnectivityMatrix_job.sh` | `[regime] [hex_radius] [season] [member]` — empty `member` reads the unweighted 024c store, a tag reads 024g. Passed with `-r` because `""` is a meaningful value `-p` would parse away |
+| `028_SubbasinConnectivityMatrix_job.sh` | `[regime] [hex_radius] [season] [member]` — empty `member` reads the unweighted 024c store, a tag reads 024g |
 | `029_BeachingMaps_job.sh`, `030_SurvivalHeatmaps_job.sh` | `[regime] [hex_radius] [member] [season]` |
 | `031_BeachingSweep_job.sh` | `[regime] [hex_radius] [members_csv] [labels_csv] [baseline_member] [season]` |
 

@@ -6,6 +6,8 @@
 #SBATCH --time=01:00:00
 #SBATCH --partition=base
 
+set -euo pipefail
+
 # Lightweight: reads from HexAggregates parquet, no Dask cluster needed.
 # Pools every release_year partition of the regime and keeps one release
 # season. Submit once per (regime, season, hex_radius), e.g.:
@@ -27,7 +29,7 @@ pixi run papermill --cwd notebooks/ \
     -p data_root ${repo_root}/data \
     -p output_root ${output_root} \
     -p regime ${regime} \
-    -p season ${season} \
+    -r season ${season} \
     -p hex_radius ${hex_radius} \
     -k python
 

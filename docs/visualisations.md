@@ -100,7 +100,11 @@ text-width (180 mm) figure at 300 dpi: `fig.set_size_inches(180/25.4, h)`
 + `savefig(dpi=300)` ⇒ 2125 px wide. Deliberate break from the AGENTS.md
 "no figsize/dpi" rule: these panels are the manuscript figures.
 `bbox_inches="tight"` is deliberately not used — it would crop the width
-away from 180 mm.
+away from 180 mm. The page geometry is module constants
+(`FIGURE_WIDTH_IN` / `FIGURE_DPI`) in every consumer, not papermill
+parameters: the manuscript's text width is not a per-run knob, and the
+inline display size in an executed notebook is irrelevant to the PNG.
+Nothing mutates `mpl.rcParams`.
 
 **Panel layout and colorbar placement.** Grids are `layout="constrained"`,
 each map's aspect fixed by its extent, and the panel height derived from
@@ -122,7 +126,7 @@ reason read on different axes:
   and would eat the row height the tall maps want.
 
 Facet grids split across figures past ~12 panels rather than shrinking the
-maps; 027/029/030/031 set `hex_seam_lw = 1.1 * 72 / fig_dpi`, and 031's
+maps; 027/029/030/031 set `hex_seam_lw = 1.1 * 72 / FIGURE_DPI`, and 031's
 sweep panels put member tags on the y axis so the long tags read
 horizontally.
 
@@ -305,7 +309,11 @@ resulting hex dilation shrink as resolution rises.
 A **survival-occupancy consumer**: reads the store built by 024f
 (`(release_doy, age_bin, target_hex) → occ, surv`) plus the 024a key,
 selected by the same opaque `member` tag and the same `season` pooling as
-029. Per horizon, a 3-column row — plain occupancy, survival-weighted
+029. A horizon `T` names the snapshot bin that **ends** at `T` — ages in
+`[T − age_bin_days, T)`, index `T/age_bin_days − 1` — so `T` reads as "at
+`T` days old", and the panel titles carry the bin's age span. (026's
+horizons are cumulative `[0, T)` instead; this store is a per-age
+snapshot, so there is nothing to accumulate.) Per horizon, a 3-column row — plain occupancy, survival-weighted
 occupancy (beaching removed), and the surviving fraction `surv/occ` —
 reusing 025's hex registration. The two density columns **share one
 `LogNorm`** (029's four-decades-floored norm, since survival weights have

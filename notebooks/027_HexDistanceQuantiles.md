@@ -37,7 +37,6 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 from shapely.geometry import box
 from cartopy.io.shapereader import natural_earth
@@ -66,12 +65,10 @@ min_traj_per_hex = 30
 # Map extent (degrees E / degrees N). Cropped to the Baltic proper: the 024a
 # key tiles the whole BSH domain including the North Sea, which carries no
 # Fucus source hexes and only costs panel height (as 029/030).
-baltic_lon_min, baltic_lon_max = 9.0, 30.7
-baltic_lat_min, baltic_lat_max = 53.0, 66.0
-
-# Print-ready figure geometry: full page width in mm and the raster dpi.
-fig_width_mm = 180
-fig_dpi = 300
+baltic_lon_min = 9.0
+baltic_lon_max = 30.7
+baltic_lat_min = 53.0
+baltic_lat_max = 66.0
 ```
 
 # Parse parameters
@@ -90,14 +87,16 @@ SEASON_MONTHS = {
 }
 
 output_root = Path(output_root)
+if season not in SEASON_MONTHS:
+    raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
 season_months = SEASON_MONTHS[season]
 quantile_levels = [float(x) for x in quantile_levels_csv.split(",")]
 
-# Print-ready raster: figures go into the manuscript at a fixed column width,
-# so figure.dpi is pinned to the savefig dpi (deliberate override of the
-# AGENTS.md "no dpi/figsize" default — see docs/visualisations.md).
-mpl.rcParams["figure.dpi"] = fig_dpi
-fig_width_in = fig_width_mm / 25.4
+# Print-ready output: every saved figure is one full text-width (180 mm)
+# figure at 300 dpi, so panels land in the manuscript at their final size
+# (rationale in docs/visualisations.md).
+FIGURE_WIDTH_IN = 180 / 25.4
+FIGURE_DPI = 300
 
 figure_dir = output_root / "Figures" / "027"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -189,9 +188,9 @@ if quant.empty:
 
 `hex_value_plot` adapts 025's `log_density_plot` — same plain EPSG:4326
 axis and hex-registration overrides (`edgecolor="face"`, black coastline;
-see docs/visualisations.md) — but **without** `np.log10` / `cmap="viridis"`:
-distance is linear, so the default colormap with a matplotlib auto-ranged
-norm and a km colorbar is appropriate.
+see docs/visualisations.md) — but **without** the `np.log10`: distance is a
+linear physical quantity, so the default colormap with a matplotlib
+auto-ranged norm and a km colorbar is appropriate.
 
 The colorbar is an inset axes at axes-fraction height 1.0, so it is exactly
 the map height at any figure size — a fixed-aspect map never fills its
@@ -246,7 +245,7 @@ baltic_aspect = (
 # outline, it closes the ~1 px anti-aliasing seam between adjacent polygons.
 # The seam is a fixed PIXEL artefact, so pin the stroke to ~1 px at the
 # savefig dpi rather than to a fixed point width.
-hex_seam_lw = 1.1 * 72 / fig_dpi
+hex_seam_lw = 1.1 * 72 / FIGURE_DPI
 
 quant_gdf = quant.merge(
     key[["hex_id", "geometry"]], left_on="release_hex", right_on="hex_id"
@@ -263,7 +262,7 @@ quantiles are read as three separate fields rather than one thinning one.
 ncols = len(quantile_levels)
 fig, axes = plt.subplots(1, ncols, layout="constrained", squeeze=False)
 fig.set_size_inches(
-    fig_width_in, grid_height_in(1, ncols, baltic_aspect, fig_width_in)
+    FIGURE_WIDTH_IN, grid_height_in(1, ncols, baltic_aspect, FIGURE_WIDTH_IN)
 )
 for ax, q in zip(axes.flat, quantile_levels):
     hex_value_plot(
@@ -272,7 +271,7 @@ for ax, q in zip(axes.flat, quantile_levels):
     )
 fig_path = figure_dir / f"DistanceQuantiles_{regime}_r{hex_radius}m_{season}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
-fig.savefig(fig_path, dpi=fig_dpi)
+fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
 plt.show()
 ```

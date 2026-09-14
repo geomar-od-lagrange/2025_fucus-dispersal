@@ -107,6 +107,8 @@ SEASON_MONTHS = {
     "SON": [9, 10, 11],
     "ALL": list(range(1, 13)),
 }
+if season not in SEASON_MONTHS:
+    raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
 season_months = SEASON_MONTHS[season]
 
 data_root = Path(data_root)

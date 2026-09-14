@@ -45,7 +45,6 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from shapely.geometry import box
@@ -83,11 +82,6 @@ extent_lon_max = 30.7
 extent_lat_min = 53.0
 extent_lat_max = 66.0
 
-cmap = "viridis"
-# Print-ready figure geometry: full page width in mm and the raster dpi.
-fig_width_mm = 180
-fig_dpi = 300
-
 # %% [markdown]
 # # Parse parameters
 #
@@ -105,6 +99,8 @@ SEASON_MONTHS = {
 }
 
 output_root = Path(output_root)
+if season not in SEASON_MONTHS:
+    raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
 season_months = SEASON_MONTHS[season]
 member_tags = [x.strip() for x in members_csv.split(",") if x.strip()]
 member_labels = [x.strip() for x in labels_csv.split(",") if x.strip()] or member_tags
@@ -112,17 +108,17 @@ assert len(member_labels) == len(member_tags), (
     f"{len(member_labels)} labels for {len(member_tags)} members"
 )
 
-# Print-ready raster: figures go into the manuscript at a fixed column width,
-# so figure.dpi is pinned to the savefig dpi (deliberate override of the
-# AGENTS.md "no dpi/figsize" default — see docs/visualisations.md).
-mpl.rcParams["figure.dpi"] = fig_dpi
-fig_width_in = fig_width_mm / 25.4
+# Print-ready output: every saved figure is one full text-width (180 mm)
+# figure at 300 dpi, so panels land in the manuscript at their final size
+# (rationale in docs/visualisations.md).
+FIGURE_WIDTH_IN = 180 / 25.4
+FIGURE_DPI = 300
 # Hex seam stroke. edgecolor="face" means this is not a visible outline -- it
 # closes the ~1 px anti-aliasing seam between adjacent polygons so the grid
 # reads as a continuous field. The seam is a fixed PIXEL artifact, so pinning
 # the stroke to ~1 px at the output dpi keeps the seam closed while letting
 # the resulting hex dilation shrink as resolution rises.
-hex_seam_lw = 1.1 * 72 / fig_dpi
+hex_seam_lw = 1.1 * 72 / FIGURE_DPI
 
 figure_dir = output_root / "Figures" / "031"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -280,7 +276,7 @@ cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 ncols = 3
 nrows = -(-len(metrics) // ncols)
 fig, axes = plt.subplots(nrows, ncols, layout="constrained", squeeze=False)
-fig.set_size_inches(fig_width_in, 0.22 * nrows * fig_width_in)
+fig.set_size_inches(FIGURE_WIDTH_IN, 0.22 * nrows * FIGURE_WIDTH_IN)
 for k, m in enumerate(metrics):
     ax = axes.flat[k]
     lo = stats_year[m].groupby("member").min().reindex(stats.index)
@@ -305,7 +301,7 @@ axes.flat[len(metrics)].text(
 )
 fig_path = figure_dir / f"BeachingSweepStats_{regime}_r{hex_radius}m_{season}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
-fig.savefig(fig_path, dpi=fig_dpi)
+fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
 plt.show()
 
@@ -370,11 +366,11 @@ norm = LogNorm(vmin=max(float(shared[shared > 0].min()), vmax / 1e4), vmax=vmax)
 ncols = len(gdfs)
 fig, axes = plt.subplots(1, ncols, layout="constrained", squeeze=False)
 fig.set_size_inches(
-    fig_width_in, grid_height_in(1, ncols, domain_aspect, fig_width_in)
+    FIGURE_WIDTH_IN, grid_height_in(1, ncols, domain_aspect, FIGURE_WIDTH_IN)
 )
 for ax, (label, g) in zip(axes[0], gdfs.items()):
     cax = ax.inset_axes([1.02, 0.0, 0.035, 1.0])
-    g.plot(ax=ax, column="value", cmap=cmap, norm=norm, legend=True, cax=cax,
+    g.plot(ax=ax, column="value", norm=norm, legend=True, cax=cax,
            legend_kwds={"label": "stranded weight (particles)"},
            edgecolor="face", linewidth=hex_seam_lw, zorder=1)
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
@@ -386,7 +382,7 @@ for ax, (label, g) in zip(axes[0], gdfs.items()):
     ax.set_title(label)
 fig_path = figure_dir / f"BeachingSweepMaps_{regime}_r{hex_radius}m_{season}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
-fig.savefig(fig_path, dpi=fig_dpi)
+fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
 plt.show()
 
