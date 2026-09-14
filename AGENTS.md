@@ -85,17 +85,22 @@ between commands — pass relative paths to tools (e.g.
 `(cd notebooks && ...)` for one-off needs. Don't pass `-C <path>` to
 `git` for ordinary repo-root operations; it already operates on the cwd.
 
-**`./data/` is a submodule — pwd matters.** `./data/` points at the data
-twin repo (see §Data access), so git commands inside `data/` act on the
-*submodule*, not the main repo. A plain `git status` in `data/` reports
+**`./data/` and `./paper/` are submodules — pwd matters.** Both point at
+foreign repos (see §Data access and §Manuscript), so git commands inside
+them act on the *submodule*, not the main repo. A plain `git status` in `data/` reports
 only twin-side changes and ignores every modification in the main tree;
 `git rm --cached -r data/` from inside `data/` resolves `data/data/` and
 fails outright. Never leave cwd sitting inside `data/` between unrelated
-commands — if you need to operate on the submodule (fetch, pull, the
-rare twin push), use an explicit `(cd data && git <cmd>)` subshell so
-cwd returns to the repo root automatically, or prefix a single command
-with `git -C data <cmd>` (this is the one exception to the "no `-C`"
-rule above).
+commands — if you need to operate on a submodule (fetch, pull, the rare
+twin push), use an explicit `(cd data && git <cmd>)` subshell so cwd
+returns to the repo root automatically, or prefix a single command with
+`git -C data <cmd>` (this is the one exception to the "no `-C`" rule
+above).
+
+A submodule checkout does not follow the superproject across branches.
+After `git switch`, `git status` reports ` M data` whenever the recorded
+gitlink and the checkout disagree; run `git submodule update` to
+reconcile, and never `git add` a gitlink you did not deliberately move.
 
 ## Pipeline stages
 
@@ -183,6 +188,28 @@ the repo directory.
 - For CMEMS data, prefer `copernicusmarine.open_dataset` (or the
   existing `notebooks/002_download_stokes.py` for bulk pulls) with
   minimal arguments.
+
+## Manuscript
+
+The paper lives in `./paper/`, a submodule backed by the Overleaf
+project at <https://git.overleaf.com/6a7b133843b2b231750cbbd0>. Access
+needs the authors' Overleaf credentials, so `.gitmodules` marks it
+`update = none` and ordinary clones skip it; authors opt in with
+`git submodule update --init --checkout paper`.
+
+**Humans write the prose; agents supply the facts.** An agent's job in
+`paper/` is to keep the factual scaffolding true to the code — run
+parameters, dataset provenance, method settings, counts, figure
+inventory — expressed as terse keyword material a human then turns into
+sentences. Do not draft narrative paragraphs, argue results, or write an
+abstract, and never leave prose that asserts a number the pipeline has
+not produced. Every fact carries a pointer to where it came from
+(notebook, docs page, or job script) so the human writing around it can
+check it.
+
+**Pushing to `paper/` publishes to Overleaf**, where co-authors see the
+change immediately. Commit inside the submodule only when asked, and
+push only when explicitly told to.
 
 ## Conventions
 
