@@ -15,10 +15,12 @@ compute node via `pixi run`.
   reducers and the `029`/`030`/`031` consumers are all in, see
   [../docs/beaching.md](../docs/beaching.md) and
   [../docs/survival_occupancy.md](../docs/survival_occupancy.md) (design
-  notes archived at [done/beaching.md](done/beaching.md)). Production rate
-  parameters are the one open item, pending the `031` sweep.
-- **Next (parquet-only, unblocked):** finish connectivity (§3), then the
-  relative-density + 3 m maps (§1) and their per-subbasin split (§2). The
+  notes archived at [done/beaching.md](done/beaching.md)). Production
+  member `step_wc0p1_ts3_tcinf`; `w_c` is a working choice, results are
+  reported as a range.
+- **Next (parquet-only, unblocked):** finish connectivity (§3), fix the
+  seasonal view as the default product (§5a), then the relative-density +
+  3 m maps (§1) and their per-subbasin split (§2), built seasonal. The
   connectivity CSV falls out of §3 into §6.
 - **Blocked / deferred:** biomass maps (§4) wait on the Estonian
   production figures (JV); the bottom-velocity sweep (§7) needs a kernel
@@ -102,9 +104,44 @@ forcing is the only term modulating it — see
 Remaining follow-ups (not blocking): a **Fucus lifetime `L(t)`** replacing the
 step-function viability cutoff; **survival-weighted connectivity** — the
 occupancy side is done in `024f`, folding the same `exp(−A)` weighting into
-`024c`/`028` is not; and the **production values** of `w_c` / `τ_storm` /
-`τ_calm`, which come out of the `031` sweep on the realised exposure
-statistics. `trap(flat, wall)` is *not* a sweep axis while degenerate.
+`024c`/`028` is not. `w_c = 0.10` is a working choice with no observational
+constraint; revisit if the paper needs a defended threshold.
+`trap(flat, wall)` is *not* a sweep axis while degenerate.
+
+## 5a. Seasonal view as the default product
+
+**Make release season the primary axis of every headline map; pool the
+year only as a summary.** The beaching sweep
+([../docs/beaching.md](../docs/beaching.md), "Production setting") showed
+that release month moves the beached fraction by ~25 points (64 % for
+Feb–Apr releases vs 89 % for Sep–Nov at `w_c = 0.10`) while release year
+moves it by ~5. Autumn releases meet the storm season inside their
+viability window; spring releases do not. Pooling twelve monthly releases
+averages two different regimes into a number that describes neither.
+
+The same asymmetry is expected, untested, in the plain dispersal products:
+occupancy, distance quantiles, connectivity. Every `024x` store is
+partitioned by `release_doy`, so this is a consumer-side change only.
+
+- **Decide the seasons.** Candidates: calendar months; quarters; or a
+  biology-led split (spring gamete release vs. autumn storms). The
+  analysis plan already asks for Aug/Sep as the focus period
+  ([analysis.md](analysis.md)); check whether Aug–Nov as "storm season" and
+  Mar–Jul as "calm season" separates the beaching signal cleanly enough
+  to be the two headline panels.
+- **Consumers.** 025/026/026a/026b/027/028/029/030 gain a
+  `release_months_csv` (or season name) parameter and facet by it where
+  the panel count allows; the pooled year stays available as one member.
+  029/030 already partition per month, so they only need the facet.
+- **Interannual spread** becomes the error bar on each seasonal panel
+  (four years), not a separate product.
+- **Docs.** `visualisations.md` gets the season contract (which months
+  form which season, where the parameter lives); `beaching.md` already
+  carries the monthly table.
+
+Sequencing: after §3 (connectivity) and before §1/§2 (relative-density
+maps), so the relative and biomass maps are built seasonal from the start
+instead of being re-faceted later.
 
 ## 6. Data deliverables to send out
 
