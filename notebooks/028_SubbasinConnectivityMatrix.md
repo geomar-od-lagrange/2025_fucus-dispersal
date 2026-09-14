@@ -126,7 +126,8 @@ export_dir.mkdir(parents=True, exist_ok=True)
 # Read the store
 
 `024c` writes one partition per `(regime, year)`; `024g` one per
-`(regime, year, month, member)`. Both carry `n_obs`; only `024g` carries
+`(regime, year, month, member)`, or one per `(regime, year, member)` when it
+ran with `release_month = 0`. Both carry `n_obs`; only `024g` carries
 `w_obs`. The release year comes from the filename so the
 `release_doy → month` conversion is leap-correct (same pattern as 026a).
 
@@ -139,12 +140,14 @@ subbasin_id_to_name = {
 }
 
 if member:
-    pattern = (
-        f"HexAgg_survconn_r{hex_radius}m_{regime}_"
-        f"[0-9][0-9][0-9][0-9]_m[0-9][0-9]_{member}.parquet"
-    )
+    # The `_mMM` group is optional: 024g run with `release_month = 0` writes
+    # one whole-year partition per year instead of twelve monthly ones (as
+    # 029/030 handle for their stores). The glob is deliberately loose and the
+    # regex is what selects, so each file is matched exactly once.
+    pattern = f"HexAgg_survconn_r{hex_radius}m_{regime}_*_{member}.parquet"
     year_re = re.compile(
-        rf"HexAgg_survconn_r{hex_radius}m_{regime}_(\d{{4}})_m\d{{2}}_{re.escape(member)}\.parquet$"
+        rf"HexAgg_survconn_r{hex_radius}m_{regime}_(\d{{4}})(?:_m(\d{{2}}))?"
+        rf"_{re.escape(member)}\.parquet$"
     )
 else:
     pattern = f"HexAgg_connectivity_r{hex_radius}m_{regime}_[0-9][0-9][0-9][0-9].parquet"
@@ -159,9 +162,24 @@ if not files:
         + ("run 024g." if member else "run 024c.")
     )
 
-parts = []
+# A year must not carry both a whole-year and monthly survconn partitions —
+# they cover the same releases, and reading both double-counts every row.
+partition_years = []
+whole_year_years = set()
 for f in files:
-    year = int(year_re.search(f.name).group(1))
+    m = year_re.search(f.name)
+    partition_years.append(int(m.group(1)))
+    if member and m.group(2) is None:
+        whole_year_years.add(int(m.group(1)))
+mixed = sorted(y for y in whole_year_years if partition_years.count(y) > 1)
+if mixed:
+    raise ValueError(
+        f"years {mixed} carry both a whole-year and monthly survconn "
+        f"partitions at {store_root}; remove one form before reading"
+    )
+
+parts = []
+for f, year in zip(files, partition_years):
     df = pd.read_parquet(f).reset_index(drop=True)
     df["release_year"] = year
     df["release_month"] = pd.to_datetime(
@@ -169,13 +187,24 @@ for f in files:
     ).dt.month
     parts.append(df)
 conn = pd.concat(parts, ignore_index=True)
-years = sorted(conn["release_year"].unique())
-print(f"read {len(files)} partition(s), years {years}; {len(conn):,} rows")
+print(f"read {len(files)} partition(s), years {sorted(set(partition_years))}; "
+      f"{len(conn):,} rows")
 
 conn = conn[conn["release_month"].isin(season_months)]
 if conn.empty:
     raise ValueError(f"no rows left after the {season} season filter")
-print(f"season {season}: {len(conn):,} rows, "
+# Years are taken after the season filter — a year whose partitions hold no
+# release in this season must not appear on the interannual axis. Every year
+# on disk is expected to contribute, though: a gap means an incomplete build,
+# not a seasonal absence (the same check 026b prints for its year filter).
+years = sorted(int(y) for y in conn["release_year"].unique())
+missing_years = sorted(set(partition_years) - set(years))
+assert not missing_years, (
+    f"{len(years)} year(s) with {season} releases but "
+    f"{len(set(partition_years))} year partition(s) on disk for regime "
+    f"{regime!r}; no {season} rows from {missing_years}"
+)
+print(f"season {season}: {len(conn):,} rows, years {years}, "
       f"months {sorted(conn['release_month'].unique())}")
 ```
 
@@ -322,14 +351,26 @@ per_year = {
     for y in years
 }
 
+# An origin that releases in no year at all has an all-NaN row in every
+# year's matrix; reducing it with nanmin/nanmax is an all-NaN slice (a
+# RuntimeWarning for a NaN that carries no information). Mask those rows out
+# of the reduction and keep the mask — the CSV below drops them rather than
+# writing bare NaN. Normalisation is per row, so a row is either all finite
+# or all NaN; the mask is per origin.
 spread = {}
 for h in time_horizons_days:
     cube = np.stack([per_year[(h, y)].to_numpy() for y in years])
-    spread[h] = {
-        "mean": np.nanmean(cube, axis=0),
-        "min": np.nanmin(cube, axis=0),
-        "max": np.nanmax(cube, axis=0),
-    }
+    emitting = np.isfinite(cube).any(axis=(0, 2))
+    reduced = {}
+    for name, reduce_ in (("mean", np.nanmean), ("min", np.nanmin), ("max", np.nanmax)):
+        full = np.full(cube.shape[1:], np.nan)
+        full[emitting] = reduce_(cube[:, emitting, :], axis=0)
+        reduced[name] = full
+    reduced["emitting"] = emitting
+    spread[h] = reduced
+    if not emitting.all():
+        print(f"age < {h} d: {(~emitting).sum()} origin(s) with no release in "
+              f"any year, dropped from the interannual export")
 
 for h in time_horizons_days:
     mean = spread[h]["mean"]
@@ -385,6 +426,7 @@ for h in time_horizons_days:
     by_year["emission_fraction_min"] = spread[h]["min"].ravel()
     by_year["emission_fraction_max"] = spread[h]["max"].ravel()
     by_year["n_years"] = len(years)
+    by_year = by_year[np.repeat(spread[h]["emitting"], len(id_names))]
     by_year.to_csv(export_dir / f"{stem}_emission_fraction_by_year.csv", index=False)
 
     print(f"  wrote {stem}_{{n_obs,emission_fraction,emission_fraction_by_year}}.csv")
