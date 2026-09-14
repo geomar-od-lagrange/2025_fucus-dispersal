@@ -334,9 +334,11 @@ fig.set_size_inches(
     FIGURE_WIDTH_IN, grid_height_in(1, ncols, domain_aspect, FIGURE_WIDTH_IN)
 )
 for j, h in enumerate(time_horizons_days):
+    # Panel titles carry the age span alone: the quantity is on every
+    # colorbar, and "surviving fraction — age 10–20 d" is wider than a panel
+    # in a three-column row, so the titles collide.
     hex_map(frac_gdfs[h], axes[0, j], vmin=0.0, vmax=1.0,
-            title=f"surviving fraction — age {bin_labels[h]}",
-            label="surviving fraction")
+            title=f"age {bin_labels[h]}", label="surviving fraction")
 fig_path = figure_dir / f"SurvivalFraction_{regime}_r{hex_radius}m_{season}_{member}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
 fig.savefig(fig_path, dpi=FIGURE_DPI)
