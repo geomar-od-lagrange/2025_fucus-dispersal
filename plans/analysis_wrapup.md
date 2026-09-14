@@ -1,6 +1,6 @@
 # Analysis wrapup: dispersal deliverables for the study
 
-Post-first-results plan for the `wr/biomass-scaling-and-connectivity`
+Post-first-results plan for the `wr/analysis-wrapup`
 branch — the remaining scientific analyses and collaborator deliverables
 built on the completed trajectory runs. All heavy aggregation is already
 on NESH: `HexAggregates/` holds `counts` + `distance` + `connectivity`
@@ -18,13 +18,42 @@ compute node via `pixi run`.
   notes archived at [done/beaching.md](done/beaching.md)). Production
   member `step_wc0p1_ts3_tcinf`; `w_c` is a working choice, results are
   reported as a range.
-- **Next (parquet-only, unblocked):** finish connectivity (§3), fix the
-  seasonal view as the default product (§5a), then the relative-density +
-  3 m maps (§1) and their per-subbasin split (§2), built seasonal. The
-  connectivity CSV falls out of §3 into §6.
+- **Next:** §3 + survival-weighted connectivity (024g/028), season
+  parameter roll-out (§5a), relative-density maps (§1/§2), exports (§6),
+  then final verification.
 - **Blocked / deferred:** biomass maps (§4) wait on the Estonian
   production figures (JV); the bottom-velocity sweep (§7) needs a kernel
   change plus fresh runs.
+
+## 0. Decisions (2026-09-14)
+
+- **Seasons.** Four meteorological seasons by release month — DJF / MAM /
+  JJA / SON — plus `ALL` (pooled year). Single consumer parameter
+  `season` (str, one of those five) replaces `release_months_csv` /
+  `release_month` in every consumer (025, 026, 026a, 026b, 027, 028, 029,
+  030, 031). The month set per season lives in one code cell per notebook
+  (a dict literal); figure and export filenames carry the season tag.
+  Interannual spread (2016–2019) is shown as the error bar / range on
+  seasonal panels where the figure allows.
+- **Relative density.** `percentage` = 100 · n_obs(hex) / Σ_hex n_obs over
+  the selected release set (regime, season, years, age horizon) — share
+  of particle-time. `dilution` view = the same share divided by hex water
+  area (`water_area_m2` from the 024a key), log10 scale. Absolute counts
+  are dropped from the headline maps.
+- **Regimes.** Headline products cover `surface_stokes` and `bottom`
+  only; `surface` (no Stokes) is not produced further.
+- **Exports (§6).** GeoJSON per hex map (hex geometry + value columns)
+  and CSV for connectivity matrices, under
+  `output_root/Exports/<notebook>/`. No GeoTIFF.
+- **Survival-weighted connectivity.** New reducer
+  `024g_BuildSurvivalConnectivity` over the 024d sidecar (hex per hour →
+  HELCOM subbasin via key; weight `exp(−A)` at that hour), store
+  `HexAgg_survconn_r<radius>m_<regime>_<year>_m<MM>_<member>.parquet`
+  with columns `(origin_subbasin, target_subbasin, release_doy, age_bin,
+  w_obs)`. 028 takes a `member` parameter: empty string → unweighted
+  024c store, else the 024g store. Only `surface_stokes` has sidecars.
+- **3 m isobath overlay.** Drawn from the BSH static H0 grid
+  (`data/bsh_hbmnoku_static/`), not from the hex mean depth.
 
 ## 1. Depth cutoff and relative-density maps
 
@@ -57,17 +86,17 @@ production estimate multiplies that basin's dilution map.
 **Store and proof-of-concept viz exist; finish the analysis views.**
 Commit `b4802f9` added the `024c` residence-connectivity store
 (`(origin_subbasin, target_subbasin, release_doy, age_bin) → n_obs`) and
-the `028` matrix heatmap (linear + log). Still open in
-`plans/subbasin_connectivity.md`:
+the `028` matrix heatmap (linear + log). Remaining:
 
 - Row-normalised **emission-fraction** matrix (`n_obs / row.sum()` — what
   fraction of an origin's particle-time reaches each target; raw rows
   differ by orders of magnitude).
 - Age-horizon matrices (cumulative `n_obs` over `age_bin ≤ T`, the
   connectivity analogue of `026`'s horizons).
-- Docs: add a Connectivity section to
-  `docs/hexbinning_and_connectivity.md` + a `028` entry in
-  `docs/visualisations.md`; move the plan to `plans/done/`.
+- Survival-weighted connectivity (§0, `024g`/`028` `member` parameter).
+- Docs: extend the Connectivity section in
+  `docs/hexbinning_and_connectivity.md` + the `028` entry in
+  `docs/visualisations.md` (both already exist).
 - CSV export of the matrix (see §6).
 
 ## 4. Biomass maps
@@ -123,16 +152,12 @@ The same asymmetry is expected, untested, in the plain dispersal products:
 occupancy, distance quantiles, connectivity. Every `024x` store is
 partitioned by `release_doy`, so this is a consumer-side change only.
 
-- **Decide the seasons.** Candidates: calendar months; quarters; or a
-  biology-led split (spring gamete release vs. autumn storms). The
-  analysis plan already asks for Aug/Sep as the focus period
-  ([analysis.md](analysis.md)); check whether Aug–Nov as "strong-wave season" and
-  Mar–Jul as "calm season" separates the beaching signal cleanly enough
-  to be the two headline panels.
-- **Consumers.** 025/026/026a/026b/027/028/029/030 gain a
-  `release_months_csv` (or season name) parameter and facet by it where
-  the panel count allows; the pooled year stays available as one member.
-  029/030 already partition per month, so they only need the facet.
+- **Seasons: locked, see §0.** Four meteorological seasons (DJF/MAM/JJA/
+  SON) plus `ALL`.
+- **Consumers.** 025/026/026a/026b/027/028/029/030/031 gain the `season`
+  parameter (§0) and facet by it where the panel count allows; `ALL`
+  stays available as the pooled member. 029/030 already partition per
+  month, so they only need the facet.
 - **Interannual spread** becomes the error bar on each seasonal panel
   (four years), not a separate product.
 - **Docs.** `visualisations.md` gets the season contract (which months

@@ -1,6 +1,8 @@
 # Time-horizon dispersal maps + hex0 distance-quantile maps
 
-Source intent: [analysis.md](analysis.md) ("Dispersal maps" and
+Implemented — see [../docs/hexbinning_and_connectivity.md](../../docs/hexbinning_and_connectivity.md).
+
+Source intent: [analysis.md](../analysis.md) ("Dispersal maps" and
 "Distance statistics" sections). Two deliverables:
 
 1. **Time-horizon dispersal maps** — where the dispersal cloud sits at
@@ -16,8 +18,8 @@ Source intent: [analysis.md](analysis.md) ("Dispersal maps" and
 The heavy trajectory-zarr reads live in **024-style aggregation**
 notebooks; every map notebook is a lightweight parquet-only consumer of a
 hex store (no Dask cluster). This mirrors the existing
-[024a](../notebooks/024a_BuildHexKey.md) (static key) +
-[024](../notebooks/024_BuildHexAggregates.md) (counts) + [025](../notebooks/025_HexHeatmaps.md)
+[024a](../../notebooks/024a_BuildHexKey.md) (static key) +
+[024](../../notebooks/024_BuildHexAggregates.md) (counts) + [025](../../notebooks/025_HexHeatmaps.md)
 (plot) split.
 
 | Quantity | Aggregation (heavy, dask, per regime/year) | Map (lightweight, parquet-only) |
@@ -67,25 +69,25 @@ distance_bin_km = 1.0                # float: histogram bin width
 1. **md** — title + description (mirror 024's intro, "occupancy" →
    "final-displacement histogram").
 2. **code (imports)** — copy 024's import block
-   ([024:30-44](../notebooks/024_BuildHexAggregates.md)); add `numpy`.
+   ([024:30-44](../../notebooks/024_BuildHexAggregates.md)); add `numpy`.
 3. **code (`parse_zarr_stem`)** — copy verbatim from
-   [024:46-63](../notebooks/024_BuildHexAggregates.md).
+   [024:46-63](../../notebooks/024_BuildHexAggregates.md).
 4. **code (`release_hex_id`)** — NaN-safe `hp.label` wrapper (the idiom
    of 023's `release_subbasin`): returns -1 for NaN release positions,
    labels valid ones, lazy per chunk via `apply_ufunc`.
 5. **md + code (parameters cell)** — as above.
 6. **code (derived layout + key/HexProj)** — copy
-   [024:87-108](../notebooks/024_BuildHexAggregates.md), swapping the
+   [024:87-108](../../notebooks/024_BuildHexAggregates.md), swapping the
    counts path for `HexAgg_distance_r{radius}m_{regime}_{year}.parquet`.
    `hp = HexProj(**meta["hex_proj"])` from the sidecar.
 7. **code (Dask cluster)** — copy verbatim from
-   [024:112-123](../notebooks/024_BuildHexAggregates.md).
+   [024:112-123](../../notebooks/024_BuildHexAggregates.md).
 8. **code (zarr glob + parse)** — copy
-   [024:128-143](../notebooks/024_BuildHexAggregates.md).
+   [024:128-143](../../notebooks/024_BuildHexAggregates.md).
 9. **code (`zarr_to_distance_frame`)** — **new core logic.** Per zarr:
    `on_land` mask, release `lon0`/`lat0` (obs=0), per-trajectory final
    displacement `distance_km(ds).ffill("obs").isel(obs=-1)` (equirect.
-   111 km metric, [docs/distance_calculation.md](../docs/distance_calculation.md)),
+   111 km metric, [docs/distance_calculation.md](../../docs/distance_calculation.md)),
    `release_hex = release_hex_id(lon0.where(~on_land), …)`,
    `distance_bin = (final_dist // distance_bin_km)`. Build a
    `(trajectory,)` `Dataset`, `.to_dask_dataframe()`, drop NaN
@@ -93,9 +95,9 @@ distance_bin_km = 1.0                # float: histogram bin width
 10. **code (concat → groupby → size)** — `dd.concat([...]).groupby(
     ["release_hex","release_doy","distance_bin"]).size().rename("n_traj")
     .reset_index().compute()`, mirroring
-    [024:165-173](../notebooks/024_BuildHexAggregates.md).
+    [024:165-173](../../notebooks/024_BuildHexAggregates.md).
 11. **code (write parquet)** — `to_parquet`, mirror
-    [024:177-178](../notebooks/024_BuildHexAggregates.md).
+    [024:177-178](../../notebooks/024_BuildHexAggregates.md).
 12. **code (validation)** — rows, `sum(n_traj)`, release_doy span,
     distance_bin span, `#` release hexes. Computed dynamically.
 
@@ -103,7 +105,7 @@ distance_bin_km = 1.0                # float: histogram bin width
 
 - **`distance_bin` has no upper cap** — `floor(distance/bin)`, bins
   emerge from the data exactly like 024's `age_bin`
-  ([024:160](../notebooks/024_BuildHexAggregates.md)).
+  ([024:160](../../notebooks/024_BuildHexAggregates.md)).
 - **Final displacement = `ffill("obs").isel(obs=-1)`** — last valid
   position's crow-flies distance; exited/NaN-tail trajectories carry
   their last in-domain distance forward.
@@ -139,28 +141,28 @@ baltic_panel_height_in = 6           # int
 
 1. **md** — title + description (hex density at successive horizons).
 2. **code (imports)** — copy 025's import block
-   ([025:31-41](../notebooks/025_HexHeatmaps.md)) + `re` for the
+   ([025:31-41](../../notebooks/025_HexHeatmaps.md)) + `re` for the
    partition-year parse.
 3. **code (parse params + Paths)** — parse the two `*_csv` lists; cast
    Paths.
 4. **md + code (parameters cell)** — as above.
 5. **code (read key + pool counts)** — read the key
-   ([025:90-101](../notebooks/025_HexHeatmaps.md)); glob every
+   ([025:90-101](../../notebooks/025_HexHeatmaps.md)); glob every
    `HexAgg_counts_r{radius}m_{regime}_*.parquet`, parse `release_year`
    from each filename, derive `release_month` from
    `(year, release_doy)` via `pd.to_datetime(year*1000+doy, "%Y%j").dt.month`
-   ([025:289-293](../notebooks/025_HexHeatmaps.md) extended to month),
+   ([025:289-293](../../notebooks/025_HexHeatmaps.md) extended to month),
    filter to `release_months`, concat. Pools across years.
 6. **code (`to_hex_gdf` + `log_density_plot`)** — copy from
-   [025:128-183](../notebooks/025_HexHeatmaps.md). Copy the Natural Earth
+   [025:128-183](../../notebooks/025_HexHeatmaps.md). Copy the Natural Earth
    coast clip + extent/aspect block
-   ([025:186-213](../notebooks/025_HexHeatmaps.md), Baltic only; drop the
+   ([025:186-213](../../notebooks/025_HexHeatmaps.md), Baltic only; drop the
    subbasin overlay — not used here).
 7. **code (horizon → age_bin + panel grid)** — for each horizon,
    `age_bin = horizon_days // age_bin_days`; select
    `counts[counts.age_bin == age_bin]`, `to_hex_gdf`, `log_density_plot`
    into one subplot per horizon (grid like
-   [025:296-309](../notebooks/025_HexHeatmaps.md), titled `"{h} d"`).
+   [025:296-309](../../notebooks/025_HexHeatmaps.md), titled `"{h} d"`).
 8. **md + code (validation)** — regime, months, horizons→age_bins,
    per-horizon `sum(n_obs)`. Computed dynamically.
 
@@ -200,7 +202,7 @@ baltic_panel_height_in = 6           # int
 ### Cell-by-cell outline
 
 1. **md** — title + description.
-2. **code (imports)** — 025's block ([025:31-41](../notebooks/025_HexHeatmaps.md))
+2. **code (imports)** — 025's block ([025:31-41](../../notebooks/025_HexHeatmaps.md))
    + `re`.
 3. **code (parse params + Paths)** — parse `quantile_levels`,
    `release_months`; cast Paths.
@@ -218,7 +220,7 @@ baltic_panel_height_in = 6           # int
    hexes — instant, no dask.
 7. **code (`to_hex_value_gdf` + `hex_value_plot` + coast)** — adapt
    025's `to_hex_gdf` (merge value series onto key geometry) and
-   `log_density_plot` ([025:128-183](../notebooks/025_HexHeatmaps.md)),
+   `log_density_plot` ([025:128-183](../../notebooks/025_HexHeatmaps.md)),
    renamed and **without** `np.log10`/`cmap="viridis"`: distance is
    linear → default colormap, matplotlib auto-ranged, colorbar in km.
 8. **code (one map per quantile)** — loop `quantile_levels`, one
@@ -236,7 +238,7 @@ baltic_panel_height_in = 6           # int
   (`legend_kwds={"label": ...}` — geopandas derives no unit label). Carry
   025's layout/registration overrides (aspect figsize, hex
   `edgecolor="face"/linewidth=0.4`, black coastline) per
-  [docs/visualisations.md](../docs/visualisations.md); do **not** carry
+  [docs/visualisations.md](../../docs/visualisations.md); do **not** carry
   `cmap="viridis"` or `np.log10`.
 
 ---
@@ -263,13 +265,13 @@ baltic_panel_height_in = 6           # int
 
 ## Out of scope
 
-The deferred work in [analysis.md](analysis.md) — the everywhere→
+The deferred work in [analysis.md](../analysis.md) — the everywhere→
 everywhere bottom transfer matrix `T` and the bottom-Ekman comparison —
 is not covered here.
 
 ## Implementation / verification notes
 
-- Build with the [jupytext skill](../.agents/skills/jupytext/SKILL.md):
+- Build with the [jupytext skill](../../.agents/skills/jupytext/SKILL.md):
   new notebooks are `py:percent,md,ipynb` with the `.py` authoritative;
   commit all three forms, the `.ipynb` code-only.
 - 024b uses the multi-task Dask job-script pattern of 023/024; 026/027 use
@@ -277,7 +279,7 @@ is not covered here.
 - Test-run via papermill `--cwd notebooks/`, sweeping `regime` (and
   `release_year` for 024b). Build 024b before 027; build 024 before 026.
 - Lighter model for mechanical authoring; review after.
-- When implemented: docs (extend [hexbinning_and_connectivity.md](../docs/hexbinning_and_connectivity.md)
+- When implemented: docs (extend [hexbinning_and_connectivity.md](../../docs/hexbinning_and_connectivity.md)
   for 024b; the 026/027 entries already live in
-  [docs/visualisations.md](../docs/visualisations.md)), move this plan to
+  [docs/visualisations.md](../../docs/visualisations.md)), move this plan to
   `plans/done/`.
