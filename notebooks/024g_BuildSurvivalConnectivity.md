@@ -178,6 +178,18 @@ hexid_to_subidx = pd.Series(
     subid_to_idx.reindex(hex_sub.to_numpy()).to_numpy(), index=key["hex_id"].astype(int)
 )
 
+# The sidecar obs axis is read as hours throughout — the window slice, the
+# age-bin divisor and the per-step exponent all convert with a literal 24 or
+# with `output_dt_hours` alone — so any other cadence would silently mis-bin
+# every age.
+assert output_dt_hours == 1, (
+    f"output_dt_hours={output_dt_hours}: the obs↔time conversion here is "
+    f"hardcoded hourly"
+)
+assert connectivity_max_days >= age_bin_days, (
+    f"connectivity_max_days={connectivity_max_days} d is shorter than one age "
+    f"bin ({age_bin_days} d)"
+)
 n_agebin = -(-connectivity_max_days // age_bin_days)
 print(f"{n_sub} subbasin slots (incl. -1 sentinel), {n_agebin} age bins "
       f"× {age_bin_days} d")

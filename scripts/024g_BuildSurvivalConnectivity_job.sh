@@ -13,6 +13,8 @@
 # compact BeachingForcing sidecar and the key parquet, so they are CPU-bound
 # rather than GPFS-bound and packing them tight costs nothing.
 
+set -euo pipefail
+
 # Survival-weighted connectivity reducer: reads the BeachingForcing sidecar
 # written by 024d_BuildBeachingForcing plus the 024a key, writes one survconn
 # parquet per (regime, release_year, release_month, rate-model member) with
@@ -75,6 +77,9 @@ export BAND_M CONNECTIVITY_MAX_DAYS
 
 mkdir -p notebooks_executed/Visualisations/
 
+# `set -e` would abort on a failing pipeline before `rc` is read, so the
+# exit status is captured in the `||` branch instead.
+rc=0
 for year in "${YEARS[@]}"; do
     for month in $(seq 1 12); do
         printf '%s\0' "${year} ${month}"
@@ -119,8 +124,7 @@ done | xargs -0 -P "${SLURM_NTASKS}" -n 1 bash -c '
     # Propagate the final status: without this the loop ends on `sleep`,
     # bash -c exits 0, and xargs reports success for an exhausted cell.
     exit ${rc}
-' _
-rc=$?
+' _ || rc=$?
 
 jobinfo
 exit ${rc}
