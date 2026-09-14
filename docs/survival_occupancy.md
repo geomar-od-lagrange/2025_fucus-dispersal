@@ -35,7 +35,7 @@ contiguous hex index (occupancy is *dense* — every obs, every hex — unlike
 024e's sparse in-band deposits) and runs to `occupancy_max_days` (default
 120 d, ≥ the largest 030 horizon and ≤ the sidecar's `window_days`), **not**
 024e's `max_float_days` viability cutoff. Partitioned per
-`(regime, year, month)`; `030` pools the monthly partitions.
+`(regime, year, month)`; `030` pools the monthly partitions selected by its `season` parameter.
 
 ## Store schema
 
