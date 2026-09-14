@@ -208,6 +208,7 @@ print(f"key: {len(key):,} hexes; pooled {len(beaching_files)} (year, month) part
 print(f"season {season} (months {season_months}); release years {release_years}")
 print(f"beaching rows: {len(beaching):,}")
 
+
 # %% [markdown]
 # # Rendering helpers
 #
@@ -383,6 +384,7 @@ for h in time_horizons_days:
     export_path = export_dir / f"029_{regime}_{season}_{member}_T{h}d.geojson"
     g.to_file(export_path, driver="GeoJSON")
     print(f"wrote {export_path} ({len(g):,} hexes)")
+
 
 # %% [markdown]
 # # Cumulative beached fraction vs. age
