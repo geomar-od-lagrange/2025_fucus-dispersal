@@ -19,3 +19,4 @@ notebooks_executed/*
 
 tmp_papermill_test/
 min_data/
+notebooks/parcels-*/

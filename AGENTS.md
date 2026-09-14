@@ -116,13 +116,25 @@ filename.
   `notebooks/024_*` — occupancy counts store; `notebooks/024b_*` —
   per-source-hex distance histogram store. The two stores are the heavy
   per-`(regime, year)` trajectory-zarr aggregations.
+- `notebooks/024c_*` — source→sink connectivity store, reduced from the
+  024 counts store.
+- `notebooks/024d_*` — beaching forcing sidecar: per real drifter and
+  hour, the rate-model-free ingredients (onshore Stokes, distance to
+  land, hex id, shore flag, displacement), one zarr per trajectory zarr.
+  The heavy trajectory + raw-Stokes pass. `notebooks/024e_*` (stranding
+  weight) and `notebooks/024f_*` (survival-weighted occupancy) are
+  seconds-per-zarr reducers over it, one store per rate-model member.
 - `notebooks/025_*`, `notebooks/026_*`, `notebooks/026a_*`,
-  `notebooks/026b_*`, `notebooks/027_*` — lightweight parquet-only
-  consumers of the hex store (no Dask cluster): hex density (025),
+  `notebooks/026b_*`, `notebooks/027_*`, `notebooks/028_*`,
+  `notebooks/029_*`, `notebooks/030_*`, `notebooks/031_*` — lightweight
+  parquet-only consumers (no Dask cluster): hex density (025),
   elapsed-time-horizon density via the counts `age_bin` axis (026), the
   same horizon maps split per origin subbasin (026a) and per origin
   subbasin × release year (026b), per-source-hex crow-flies distance
-  quantiles via the 024b store (027).
+  quantiles via the 024b store (027), the subbasin connectivity matrix
+  from the 024c store (028), beaching maps (029) and survival occupancy
+  heatmaps (030) for one 024e/024f member, and the rate-model sweep
+  across members (031).
 
 ## Data access
 

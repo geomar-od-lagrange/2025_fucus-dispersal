@@ -63,6 +63,12 @@ push particles through no-slip walls.
 
 ## Open concern: spread bridges thin land barriers
 
+**Unconfirmed.** This section reasons from the spread's reach and the wave
+grid's land mask; nobody has checked whether the interpolated field actually
+carries open-ocean Stokes into the Curonian Lagoon or any other enclosed
+water, nor whether any Fucus release feeds those waters. Deferred until a
+particle is seen there; treat the mechanism below as a hypothesis.
+
 The 3×3 rolling-mean spread (N=5 iterations, in
 `_spread_into_nan` / `_interp_stokes_to_bsh`) bridges land barriers
 narrower than the spread reach. With Baltic high-res at 2 km grid and
@@ -102,3 +108,6 @@ as the production setting for now.
 - [2d_field_extraction.md](2d_field_extraction.md) — preprocessor;
   Stokes is one of three variants.
 - [seeding.md](seeding.md) — how the sweep targets `surface_stokes`.
+- [wam_extrapolation.md](wam_extrapolation.md) — how the beaching
+  diagnostic re-reads this field at the coast, where the blocked-face
+  mask above suppresses it.
