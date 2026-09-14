@@ -53,7 +53,6 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from shapely.geometry import box
@@ -96,13 +95,6 @@ extent_lon_max = 30.7
 extent_lat_min = 53.0
 extent_lat_max = 66.0
 
-# Colormap: log where-stranded density spans several decades, so a
-# perceptually uniform map is load-bearing (as 025/026; docs/visualisations.md).
-cmap = "viridis"
-# Print-ready figure geometry: full page width in mm and the raster dpi.
-fig_width_mm = 180
-fig_dpi = 300
-
 # %% [markdown]
 # # Parse parameters
 #
@@ -120,6 +112,8 @@ SEASON_MONTHS = {
 }
 
 output_root = Path(output_root)
+if season not in SEASON_MONTHS:
+    raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
 season_months = SEASON_MONTHS[season]
 time_horizons_days = [int(x) for x in time_horizons_days_csv.split(",") if x]
 for h in time_horizons_days:
@@ -136,17 +130,17 @@ for h in time_horizons_days:
         f"age_bin_days in 024e and here"
     )
 
-# Print-ready raster: figures go into the manuscript at a fixed column width,
-# so figure.dpi is pinned to the savefig dpi (deliberate override of the
-# AGENTS.md "no dpi/figsize" default — see docs/visualisations.md).
-mpl.rcParams["figure.dpi"] = fig_dpi
-fig_width_in = fig_width_mm / 25.4
+# Print-ready output: every saved figure is one full text-width (180 mm)
+# figure at 300 dpi, so panels land in the manuscript at their final size
+# (rationale in docs/visualisations.md).
+FIGURE_WIDTH_IN = 180 / 25.4
+FIGURE_DPI = 300
 # Hex seam stroke. edgecolor="face" means this is not a visible outline -- it
 # closes the ~1 px anti-aliasing seam between adjacent polygons so the grid
 # reads as a continuous field. The seam is a fixed PIXEL artifact, so pinning
 # the stroke to ~1 px at the output dpi keeps the seam closed while letting
 # the resulting hex dilation shrink as resolution rises.
-hex_seam_lw = 1.1 * 72 / fig_dpi
+hex_seam_lw = 1.1 * 72 / FIGURE_DPI
 
 figure_dir = output_root / "Figures" / "029"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -244,7 +238,7 @@ def hex_map(gdf, ax, norm=None, title=None, label=None):
     if not gdf.empty:
         cax = ax.inset_axes([1.02, 0.0, 0.035, 1.0])
         gdf.plot(
-            ax=ax, column="value", cmap=cmap, norm=norm, legend=True, cax=cax,
+            ax=ax, column="value", norm=norm, legend=True, cax=cax,
             legend_kwds={"label": label} if label else None,
             edgecolor="face", linewidth=hex_seam_lw, zorder=1,
         )
@@ -301,12 +295,12 @@ gdf_stranded = hex_gdf(beached, "beach_hex")
 strand_norm = log_norm(gdf_stranded["value"])
 
 fig, ax = plt.subplots(layout="constrained")
-fig.set_size_inches(fig_width_in, grid_height_in(1, 1, domain_aspect, fig_width_in))
+fig.set_size_inches(FIGURE_WIDTH_IN, grid_height_in(1, 1, domain_aspect, FIGURE_WIDTH_IN))
 hex_map(gdf_stranded, ax, norm=strand_norm, title="stranded weight",
         label="stranded weight (particles)")
 fig_path = figure_dir / f"WhereStranded_{regime}_r{hex_radius}m_{season}_{member}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
-fig.savefig(fig_path, dpi=fig_dpi)
+fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
 plt.show()
 
@@ -330,13 +324,13 @@ frac = frac[frac["release_hex"] >= 0].merge(
 ).pipe(gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326")
 
 fig, ax = plt.subplots(layout="constrained")
-fig.set_size_inches(fig_width_in, grid_height_in(1, 1, domain_aspect, fig_width_in))
+fig.set_size_inches(FIGURE_WIDTH_IN, grid_height_in(1, 1, domain_aspect, FIGURE_WIDTH_IN))
 # Linear default scale (fraction in [0, 1]); no norm override needed.
 hex_map(frac, ax, norm=None, title="beached fraction per source hex",
         label="beached fraction")
 fig_path = figure_dir / f"BeachedFraction_{regime}_r{hex_radius}m_{season}_{member}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
-fig.savefig(fig_path, dpi=fig_dpi)
+fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
 plt.show()
 
@@ -360,14 +354,14 @@ horizon_norm = log_norm(all_h)
 ncols = len(time_horizons_days)
 fig, axes = plt.subplots(1, ncols, layout="constrained", squeeze=False)
 fig.set_size_inches(
-    fig_width_in, grid_height_in(1, ncols, domain_aspect, fig_width_in)
+    FIGURE_WIDTH_IN, grid_height_in(1, ncols, domain_aspect, FIGURE_WIDTH_IN)
 )
 for ax, h in zip(axes.flat, time_horizons_days):
     hex_map(gdfs[h], ax, norm=horizon_norm, title=f"stranded by {h} d",
             label="stranded weight (particles)")
 fig_path = figure_dir / f"BeachingHorizons_{regime}_r{hex_radius}m_{season}_{member}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
-fig.savefig(fig_path, dpi=fig_dpi)
+fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
 plt.show()
 
@@ -411,14 +405,19 @@ def beached_fraction_curve(df):
 
 
 curve = beached_fraction_curve(beaching)
+# Reindexing onto the pooled age axis leaves a gap wherever a year stranded
+# nothing in that bin. The curve is cumulative, so the value there is the
+# previous bin's, not "missing": forward-fill it, and read the bins before a
+# year's first stranding as the 0 they are. Without this the band's min is the
+# nanmin over whichever years happen to carry a bin.
 per_year = pd.DataFrame(
     {y: beached_fraction_curve(g) for y, g in beaching.groupby("release_year")}
-).reindex(curve.index)
+).reindex(curve.index).ffill().fillna(0.0)
 
 fig, ax = plt.subplots(layout="constrained")
 # Print-ready width; a line panel needs no map aspect, so half the page width
 # in height reads as a normal wide chart.
-fig.set_size_inches(fig_width_in, 0.45 * fig_width_in)
+fig.set_size_inches(FIGURE_WIDTH_IN, 0.45 * FIGURE_WIDTH_IN)
 curve.plot(ax=ax)
 ax.fill_between(
     curve.index, per_year.min(axis=1), per_year.max(axis=1), alpha=0.3,
@@ -428,7 +427,7 @@ ax.set_ylabel("cumulative beached fraction")
 ax.legend()
 fig_path = figure_dir / f"BeachedFractionCurve_{regime}_r{hex_radius}m_{season}_{member}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
-fig.savefig(fig_path, dpi=fig_dpi)
+fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
 plt.show()
 
@@ -451,7 +450,7 @@ median_disp = float(
 )
 
 fig, ax = plt.subplots(layout="constrained")
-fig.set_size_inches(fig_width_in, 0.45 * fig_width_in)
+fig.set_size_inches(FIGURE_WIDTH_IN, 0.45 * FIGURE_WIDTH_IN)
 # drawstyle="steps-mid": the x axis is a binned quantity, so a step reads as
 # the histogram it is; a categorical bar plot would label every bin and the
 # axis runs to hundreds of bins (docs/visualisations.md).
@@ -459,7 +458,7 @@ disp_weight.plot(ax=ax, drawstyle="steps-mid")
 ax.set_ylabel("stranded weight")
 fig_path = figure_dir / f"StrandingTravelDistance_{regime}_r{hex_radius}m_{season}_{member}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
-fig.savefig(fig_path, dpi=fig_dpi)
+fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
 print(f"weight-weighted median travel distance at stranding: {median_disp:.1f} km")
 plt.show()

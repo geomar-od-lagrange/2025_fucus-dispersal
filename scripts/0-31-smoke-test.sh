@@ -315,8 +315,9 @@ pixi run papermill notebooks/028_SubbasinConnectivityMatrix.ipynb \
     --cwd notebooks/
 
 # 029/030 pool the monthly partitions of one member for one season, at the
-# reducers' age_bin_days of 1 d. Only age bin 0 exists in a 4 h run, so 029 maps the
-# cumulative "1 d" horizon and 030 the snapshot "0 d" one. 031 sweeps a
+# reducers' age_bin_days of 1 d. Only age bin 0 exists in a 4 h run, so both
+# take the "1 d" horizon: 029 cumulatively (strandings in bins before 1 d) and
+# 030 as the snapshot bin ending at 1 d (ages in [0, 1) d). 031 sweeps a
 # one-member list.
 echo
 echo "==== 029 BeachingMaps (surface_stokes) ===="
@@ -339,7 +340,7 @@ pixi run papermill notebooks/030_SurvivalHeatmaps.ipynb \
     -r season ALL \
     -p member "${SMOKE_MEMBER}" \
     -p age_bin_days 1 \
-    -r time_horizons_days_csv "0" \
+    -r time_horizons_days_csv "1" \
     --cwd notebooks/
 
 echo
