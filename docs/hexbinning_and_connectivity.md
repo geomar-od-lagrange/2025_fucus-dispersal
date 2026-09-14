@@ -21,7 +21,9 @@ sister of the multi-TB raw zarrs. The counts store is the substrate behind
 (density at a selected `age_bin`); the distance store is the substrate
 behind `notebooks/027_HexDistanceQuantiles.md`. `notebooks/024c_BuildHexConnectivity.py`
 re-aggregates the counts store a third way, into a subbasin→subbasin
-connectivity table read by `notebooks/028_SubbasinConnectivityMatrix.py`.
+connectivity table read by `notebooks/028_SubbasinConnectivityMatrix.py`;
+`notebooks/024g_BuildSurvivalConnectivity.py` builds the survival-weighted
+counterpart from the 024d sidecar.
 Raw zarrs stay the source of truth for per-trajectory diagnostics.
 
 ## Counts schema
@@ -107,9 +109,65 @@ Connectivity here means **residence** (particle-time spent in the target
 subbasin), not particle flux (a deduped first-arrival count) — the latter
 needs trajectory identity, which the counts store has already collapsed, so
 it would require a fresh pass over the zarrs rather than a re-partition of
-counts. `notebooks/028_SubbasinConnectivityMatrix.py` is the consumer: it
-pools years and two release-month scopes (all-year, Aug/Sep), reports the
-`-1`-dropped fraction, and prints/plots the named-subbasin matrix.
+counts.
+
+## Survival-weighted connectivity schema
+
+`notebooks/024g_BuildSurvivalConnectivity.py` is the same origin→target table
+with beaching progressively removed: each `(trajectory, obs)` sample is
+weighted by the surviving un-beached fraction `S = exp(−A)` at that age, the
+rate model of [beaching.md](beaching.md) and
+[survival_occupancy.md](survival_occupancy.md). It reduces the `024d`
+beaching-forcing sidecar (never the counts store), mapping the hourly `hex`
+and the per-trajectory `release_hex` through the key's `helcom_subbasin`
+column, and is partitioned per `(regime, year, month, rate-model member)`:
+
+```
+output_root/HexAggregates/
+  HexAgg_survconn_r<radius>m_<regime>_<year>_mMM_<member>.parquet
+```
+
+| column | meaning |
+|--------|---------|
+| `origin_subbasin` | subbasin of `release_hex`; `-1` = unnamed, as in 024c |
+| `target_subbasin` | subbasin of the hourly position; `-1` = unnamed |
+| `release_doy` | release day-of-year of the originating zarr |
+| `age_bin` | `floor(age_days / age_bin_days)`, capped at `connectivity_max_days` |
+| `n_obs` | unweighted particle-timesteps |
+| `w_obs` | survival-weighted particle-timesteps (`Σ exp(−A)`) |
+
+`n_obs` is emitted alongside `w_obs` — not read back from 024c — because the
+two stores describe **different populations**: the sidecar holds water-seeded
+("real") drifters only (024d drops the zero-first-step-displacement
+particles), while 024/024c keep land-seeded particles as `-1` sentinel rows.
+Carrying both weights over the same rows is what makes 028's weighted vs.
+unweighted comparison self-consistent. Build gates: `w_obs <= n_obs`
+everywhere, the `n_obs` total equals every `(trajectory, obs)` sample in the
+window (nothing dropped — `-1` targets are kept), and age bin 0 holds exactly
+`released real drifters × age_bin_days × 24` samples.
+
+## Connectivity views (028)
+
+`notebooks/028_SubbasinConnectivityMatrix.py` consumes either store, selected
+by its `member` parameter: `""` reads the 024c partitions and plots `n_obs`;
+a rate-model tag reads the 024g partitions and plots `w_obs`. It pools the
+release years, restricts to one release `season` (DJF/MAM/JJA/SON/ALL — the
+contract lives in [visualisations.md](visualisations.md)), drops `-1` rows
+from the matrix and reports the dropped fraction. Three views:
+
+- **Raw residence matrix**, log scale, pooled over every age bin.
+- **Emission fraction** `x / x.sum(axis=1)` — the share of an origin's
+  cumulative particle-time that sits in each target, one figure per age
+  horizon `T`. Cumulative and half-open: ages `< T` days, i.e.
+  `age_bin * age_bin_days < T`. Row-normalising is what makes origins
+  comparable; raw rows differ by orders of magnitude with release count.
+- **Interannual range** — the emission fraction recomputed per release year,
+  reduced to mean / min / max per (origin, target, horizon).
+
+Exports land under `output_root/Exports/028/` as long-form CSV,
+`connectivity_<regime>_<season>_<member-or-unweighted>_T<horizon>d_` +
+`{n_obs, emission_fraction, emission_fraction_by_year}.csv`; figures under
+`output_root/Figures/028/` with the same tags in the filename.
 
 ## Key file (geoparquet, one row per hex)
 
