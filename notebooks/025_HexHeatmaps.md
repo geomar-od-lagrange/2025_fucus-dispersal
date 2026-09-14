@@ -320,7 +320,9 @@ def percentage_norm(gdf):
     two decades above the bulk; scaling to the maximum paints every other
     hex the same dark colour and the map says nothing. The colorbar is
     drawn with an over-range arrow so the saturation is explicit."""
-    return Normalize(vmax=gdf["percentage"].quantile(0.99)) if not gdf.empty else Normalize()
+    if gdf.empty:
+        return Normalize()
+    return Normalize(vmin=0, vmax=gdf["percentage"].quantile(0.99))
 
 
 def dilution_norm(gdf):
@@ -349,7 +351,7 @@ def hex_map(gdf, column, ax, extent, norm, coast, title=None, cbar_label=True):
         # side-by-side colorbars and their tick labels.
         cax = ax.inset_axes([0.0, -0.09, 1.0, 0.035])
         over = bool(gdf[column].max() > norm.vmax)
-        under = bool(gdf[column].min() < norm.vmin)
+        under = bool(norm.vmin is not None and gdf[column].min() < norm.vmin)
         gdf.plot(
             ax=ax, column=column, norm=norm, legend=True, cax=cax,
             legend_kwds={
