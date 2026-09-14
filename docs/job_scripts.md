@@ -104,8 +104,8 @@ grid, but each cell reads only the compact BeachingForcing sidecar and the key
 parquet — seconds per zarr, ~3 min for a whole month — so they are CPU-bound,
 not GPFS-bound: small `--ntasks` (12), no `--spread-job`, no `--constraint`.
 Both take `[regime] [hex_radius] [stagger_max_s]` positionally and the
-rate-model member from the environment (`RATE_FORM`, `W_C`, `TAU_STORM_HOURS`,
-`TAU_CALM_DAYS`, `DELTA`, `TAU0_HOURS`, `W_TAU`, `BAND_M`, `MAX_FLOAT_DAYS`),
+rate-model member from the environment (`W_C`, `TAU_STRONG_HOURS`,
+`TAU_CALM_DAYS`, `DELTA`, `BAND_M`, `MAX_FLOAT_DAYS`),
 so a sweep is a loop of submissions differing only in an export; each
 reconstructs the member tag the notebook builds, so an executed notebook and
 the parquet it wrote match by eye. The kernel-race retry and the per-cell
@@ -118,10 +118,10 @@ and `-p output_root`:
 
 | script | positional args |
 |---|---|
-| `024c_BuildHexConnectivity_job.sh` | `[regime] [year] [hex_radius]` (reads the 024 counts store, writes connectivity) |
+| `024c_BuildHexConnectivity_job.sh` | `[regime] [year] [hex_radius]` (reads the 024 counts store, writes connectivity; default `regime` is `surface_stokes`) |
 | `025_HexHeatmaps_job.sh` | `[regime] [year] [hex_radius]` |
 | `026*_job.sh`, `027_HexDistanceQuantiles_job.sh` | `[regime] [hex_radius]` |
-| `028_SubbasinConnectivityMatrix_job.sh` | `[regime] [hex_radius]` |
+| `028_SubbasinConnectivityMatrix_job.sh` | `[regime] [hex_radius]` (default `regime` is `surface_stokes`) |
 | `029_BeachingMaps_job.sh`, `030_SurvivalHeatmaps_job.sh` | `[regime] [hex_radius] [member]` |
 | `031_BeachingSweep_job.sh` | `[regime] [hex_radius] [members_csv] [labels_csv] [baseline_member]` |
 

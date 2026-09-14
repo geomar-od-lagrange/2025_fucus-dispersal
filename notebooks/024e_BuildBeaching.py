@@ -49,20 +49,17 @@
 # **Rate model: a two-state hazard.**
 #
 # ```
-# 1/τ = 1/τ_calm + trap · r(w_on) / τ_storm      in band, else 0
+# 1/τ = 1/τ_calm + trap · r(w_on) / τ_strong     in band, else 0
 # r(w) = clip((w − w_c + δ/2) / δ, 0, 1)         step at w_c, optional
 #                                                linear edge of width δ
 # ```
 #
-# Nothing in the data constrains the shape of `r` between calm and storm, so
-# a shape parameter is pure nuisance; the step is the limit of any such form
-# and its one knob, `w_c`, means what it says. Once `τ_storm ≪` storm
-# duration the model degenerates gracefully into an **exposure model**: the
-# beached fraction is the share of particles ever in band during a storm hour
-# inside the viability window. The superseded saturating ramp
-# `s(w) = 2w/(w + w_tau)`, `τ = τ0/s`, is retained under
-# `rate_form = "saturating"` purely so the pre-sidecar stores can be
-# reproduced from the sidecar.
+# Nothing in the data constrains the shape of `r` between calm and strong
+# wave, so a shape parameter is pure nuisance; the step is the limit of any
+# such form and its one knob, `w_c`, means what it says. Once
+# `τ_strong ≪` strong-wave-episode duration the model degenerates gracefully
+# into an **exposure model**: the beached fraction is the share of particles
+# ever in band during a strong-wave hour inside the viability window.
 #
 # **Land-seeded particles** never enter: the sidecar holds water-seeded
 # ("real") drifters only.
@@ -112,28 +109,18 @@ release_month = 8
 # Hex radius (must match an existing key file built by 024a).
 hex_radius = 6000
 
-# Rate model. `step` is the two-state hazard; `saturating` is the superseded
-# ramp, kept only to reproduce the pre-sidecar stores.
-rate_form = "step"
-
-# --- step parameters ---
+# --- step-hazard parameters ---
 # Onshore-Stokes threshold (m/s); THE sweep axis. Measured in-band forcing:
 # p75 0.057, p90 0.088, p99 0.15 m/s.
 w_c = 0.1
 # e-folding time (h) while the onshore forcing is above w_c. Below ~6 h
-# everything in band during a Baltic storm strands and the value stops
-# mattering.
-tau_storm_hours = 3.0
+# everything in band during a Baltic strong-wave episode strands and the
+# value stops mattering.
+tau_strong_hours = 3.0
 # Background in-band timescale (d), independent of forcing; 0 turns it off.
 tau_calm_days = 0.0
 # Linear edge width (m/s) around w_c; 0 gives a hard step.
 delta = 0.0
-
-# --- saturating parameters, used only by the superseded ramp ---
-# Beaching timescale (h) at an onshore forcing of w_tau.
-tau0_hours = 480.0
-# Reference onshore-Stokes forcing (m/s).
-w_tau = 0.05
 
 # Near-shore band width (m); must be ≤ the sidecar's `band_max_m`.
 band_m = 2000.0
@@ -178,16 +165,11 @@ if not key_path.exists():
 
 # The member tag names the rate-model point in the store filename. Consumers
 # take it as an opaque string parameter and never parse it.
-if rate_form == "step":
-    member = (
-        f"step_wc{w_c:g}_ts{tau_storm_hours:g}"
-        f"_tc{f'{tau_calm_days:g}' if tau_calm_days > 0 else 'inf'}"
-        + (f"_d{delta:g}" if delta > 0 else "")
-    )
-elif rate_form == "saturating":
-    member = f"sat_t{tau0_hours:g}_wt{w_tau:g}"
-else:
-    raise ValueError(f"unknown rate_form: {rate_form!r}")
+member = (
+    f"step_wc{w_c:g}_ts{tau_strong_hours:g}"
+    f"_tc{f'{tau_calm_days:g}' if tau_calm_days > 0 else 'inf'}"
+    + (f"_d{delta:g}" if delta > 0 else "")
+)
 member = member.replace(".", "p")
 print(f"member: {member}")
 
@@ -214,8 +196,8 @@ sidecar_dir = output_root / f"BeachingForcing/{regime}/{release_year}"
 # the full release pool.
 #
 # `disp_bin = floor(disp_km / disp_bin_km)` is a **diagnostic axis, never a
-# mask**: storm stranding of freshly released material at home is a real
-# outcome. The sidecar saturates `disp` at 255 km, so the top bin
+# mask**: strong-wave stranding of freshly released material at home is a
+# real outcome. The sidecar saturates `disp` at 255 km, so the top bin
 # (`255 // disp_bin_km`) pools everything from `disp_bin_km · (255 //
 # disp_bin_km)` km outwards.
 #
@@ -229,31 +211,20 @@ def beaching_exponent(w_on, dist, flat):
     """Per-step beaching exponent `a = Δt/τ` from the sidecar ingredients.
 
     Returns `(in_band, r, a)` — the band gate, the forcing ramp (the share of
-    the storm rate that is on), and the per-step exponent, all
+    the strong-wave rate that is on), and the per-step exponent, all
     `(trajectory, obs)`.
     """
     in_band = (dist.astype("int16") * 25 < band_m) & (dist != 255)
     w = w_on.astype("float32")
     trap = np.where(flat, trap_flat, trap_wall).astype("float32")
-    if rate_form == "step":
-        if delta > 0:
-            r = np.clip((w - w_c + delta / 2) / delta, 0.0, 1.0).astype("float32")
-        else:
-            r = (w >= w_c).astype("float32")
-        inv_tau_h = np.float32(
-            1.0 / (tau_calm_days * 24.0) if tau_calm_days > 0 else 0.0
-        ) + trap * r / np.float32(tau_storm_hours)
-        a = np.where(in_band, output_dt_hours * inv_tau_h, np.float32(0.0))
+    if delta > 0:
+        r = np.clip((w - w_c + delta / 2) / delta, 0.0, 1.0).astype("float32")
     else:
-        # Written exactly as the pre-sidecar notebooks wrote it, so the
-        # reproduction of the old stores is not blurred by a re-association
-        # of the float32 arithmetic.
-        r = 2.0 * w / (w + w_tau)
-        a = np.where(
-            in_band,
-            output_dt_hours / (tau0_hours / (trap * np.maximum(r, 1e-6))),
-            0.0,
-        )
+        r = (w >= w_c).astype("float32")
+    inv_tau_h = np.float32(
+        1.0 / (tau_calm_days * 24.0) if tau_calm_days > 0 else 0.0
+    ) + trap * r / np.float32(tau_strong_hours)
+    a = np.where(in_band, output_dt_hours * inv_tau_h, np.float32(0.0))
     return in_band, r, a
 
 
@@ -404,13 +375,13 @@ print(f"computed {len(beaching):,} rows in {time.time() - t0:.1f}s")
 # # Exposure statistics
 #
 # The plan's decision criteria for a member: how much of the near-shore
-# residence is "storm" residence, how many particles ever see a storm hour in
-# band, the forcing distribution the threshold is cutting, and where the
-# stranding-age mass sits.
+# residence is "strong-wave" residence, how many particles ever see a
+# strong-wave hour in band, the forcing distribution the threshold is
+# cutting, and where the stranding-age mass sits.
 
 # %%
 ex = pd.DataFrame(EXPOSURE)
-storm_share = ex["active_steps"].sum() / max(ex["in_band_steps"].sum(), 1)
+strong_share = ex["active_steps"].sum() / max(ex["in_band_steps"].sum(), 1)
 ever_share = ex["n_ever_active"].sum() / max(ex["n_traj"].sum(), 1)
 beached_frac = ex["beached"].sum() / max(ex["total"].sum(), 1)
 cum = np.cumsum(DEP_BY_HOUR)
@@ -419,11 +390,11 @@ median_age_h = (
 )
 print(f"exposure statistics [member={member}, band_m={band_m:g}, "
       f"max_float_days={max_float_days}]")
-print(f"  {'in-band hours with r > 0 (storm hours)':45s} {100 * storm_share:8.2f} %")
-print(f"  {'particles ever in band on a storm hour':45s} {100 * ever_share:8.2f} %")
-print(f"  {'beached fraction':45s} {100 * beached_frac:8.2f} %")
+print(f"  {'in-band strong-wave hours (r > 0)':42s} {100 * strong_share:8.2f} %")
+print(f"  {'particles ever in band, strong wave':42s} {100 * ever_share:8.2f} %")
+print(f"  {'beached fraction':42s} {100 * beached_frac:8.2f} %")
 age_txt = f"{median_age_h / 24:8.2f} d" if median_age_h >= 0 else f"{'n/a':>8s}"
-print(f"  {'median stranding age':45s} {age_txt}")
+print(f"  {'median stranding age':42s} {age_txt}")
 print(f"  w_onshore over in-band hours (mean of per-sidecar quantiles, m/s):")
 for q in QS:
     col = f"w_on_p{q:g}"
@@ -492,17 +463,11 @@ beached = float(beaching.loc[beaching["beach_hex"] >= 0, "weight"].sum())
 print(f"regime={regime}, release_year={release_year}"
       + (f", month={release_month}" if release_month else "")
       + f", hex_radius={hex_radius} m, member={member}")
-if rate_form == "step":
-    print(f"  params: max_float_days={max_float_days}, band_m={band_m:g}, "
-          f"w_c={w_c:g}, tau_storm_hours={tau_storm_hours:g}, "
-          f"tau_calm_days={tau_calm_days:g}, delta={delta:g}, "
-          f"trap_flat/wall={trap_flat:g}/{trap_wall:g}"
-          + (" (degenerate — shore type inert)" if trap_flat == trap_wall else ""))
-else:
-    print(f"  params: max_float_days={max_float_days}, band_m={band_m:g}, "
-          f"tau0_hours={tau0_hours:g}, w_tau={w_tau:g}, "
-          f"trap_flat/wall={trap_flat:g}/{trap_wall:g}"
-          + (" (degenerate — shore type inert)" if trap_flat == trap_wall else ""))
+print(f"  params: max_float_days={max_float_days}, band_m={band_m:g}, "
+      f"w_c={w_c:g}, tau_strong_hours={tau_strong_hours:g}, "
+      f"tau_calm_days={tau_calm_days:g}, delta={delta:g}, "
+      f"trap_flat/wall={trap_flat:g}/{trap_wall:g}"
+      + (" (degenerate — shore type inert)" if trap_flat == trap_wall else ""))
 print(f"  drifters (Σweight): {total:,.0f}")
 print(f"  beached:           {beached:,.0f} ({100 * beached / max(total, 1):.1f}%)")
 print(f"  release_doys:      {beaching['release_doy'].nunique()} "

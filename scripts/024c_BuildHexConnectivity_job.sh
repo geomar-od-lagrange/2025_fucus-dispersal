@@ -8,12 +8,12 @@
 
 # Lightweight: reads the 024 counts parquet + key, no Dask cluster.
 # One (regime, release_year, hex_radius) per submit, e.g.:
-#   sbatch scripts/024c_BuildHexConnectivity_job.sh surface 2019 6000
-#   sbatch scripts/024c_BuildHexConnectivity_job.sh surface 2020 6000
+#   sbatch scripts/024c_BuildHexConnectivity_job.sh surface_stokes 2019 6000
+#   sbatch scripts/024c_BuildHexConnectivity_job.sh surface_stokes 2020 6000
 # 024_BuildHexAggregates_job.sh and 024a_BuildHexKey_job.sh must have run
 # first for the matching (regime, release_year, hex_radius).
 
-regime="${1:-surface}"
+regime="${1:-surface_stokes}"
 year="${2:-2019}"
 hex_radius="${3:-6000}"
 

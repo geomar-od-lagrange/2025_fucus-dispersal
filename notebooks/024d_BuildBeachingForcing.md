@@ -442,10 +442,20 @@ class OnshoreStokes:
             if not todo.any():
                 break
             src = donor
-            for shifted in (
-                np.roll(src, 1, 0), np.roll(src, -1, 0),
-                np.roll(src, 1, 1), np.roll(src, -1, 1),
-            ):
+            # A plain np.roll wraps the vacated edge in from the far side of
+            # the grid, which is a land-blind jump across the domain —
+            # exactly what propagating through water exists to prevent. Fill
+            # the vacated row/column with -1 (absent) instead, so an edge
+            # cell never adopts a donor from the opposite edge.
+            down = np.full_like(src, -1)
+            down[1:, :] = src[:-1, :]
+            up = np.full_like(src, -1)
+            up[:-1, :] = src[1:, :]
+            right = np.full_like(src, -1)
+            right[:, 1:] = src[:, :-1]
+            left = np.full_like(src, -1)
+            left[:, :-1] = src[:, 1:]
+            for shifted in (down, up, right, left):
                 take = todo & (donor < 0) & (shifted >= 0)
                 donor = np.where(take, shifted, donor)
                 rounds = np.where(take, r, rounds)

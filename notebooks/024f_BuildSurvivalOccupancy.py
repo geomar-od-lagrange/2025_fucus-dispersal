@@ -105,30 +105,21 @@ age_bin_days = 10
 # Sidecar cadence (hours).
 output_dt_hours = 1
 
-# Rate model. `step` is the two-state hazard: nothing happens below the
-# onshore-Stokes threshold `w_c`, and in-band particles strand on a
-# `tau_storm_hours` timescale above it, plus an optional forcing-independent
-# background `tau_calm_days`. `saturating` is the superseded ramp
-# s(w) = 2w/(w + w_tau) with tau = tau0/s, kept only so the pre-sidecar
-# stores can be reproduced from the sidecar; it cannot express "drifts for a
-# year in ordinary conditions, strands within hours in a storm".
-rate_form = "step"
+# Rate model: a two-state hazard. Nothing happens below the onshore-Stokes
+# threshold `w_c`, and in-band particles strand on a `tau_strong_hours`
+# timescale above it, plus an optional forcing-independent background
+# `tau_calm_days` — expressing "drifts for a year in ordinary conditions,
+# strands within hours in strong waves".
 
-# --- step parameters ---
+# --- step-hazard parameters ---
 # Onshore-Stokes threshold (m/s); THE sweep axis.
 w_c = 0.1
 # e-folding time (h) while the onshore forcing is above w_c.
-tau_storm_hours = 3.0
+tau_strong_hours = 3.0
 # Background in-band timescale (d), independent of forcing; 0 turns it off.
 tau_calm_days = 0.0
 # Linear edge width (m/s) around w_c; 0 gives a hard step.
 delta = 0.0
-
-# --- saturating parameters, used only by the superseded ramp ---
-# Beaching timescale (h) at an onshore forcing of w_tau.
-tau0_hours = 480.0
-# Reference onshore-Stokes forcing (m/s).
-w_tau = 0.05
 
 # Near-shore band width (m); must be ≤ the sidecar's `band_max_m`.
 band_m = 2000.0
@@ -156,16 +147,11 @@ if not key_path.exists():
 
 # The member tag names the rate-model point in the store filename. Consumers
 # take it as an opaque string parameter and never parse it.
-if rate_form == "step":
-    member = (
-        f"step_wc{w_c:g}_ts{tau_storm_hours:g}"
-        f"_tc{f'{tau_calm_days:g}' if tau_calm_days > 0 else 'inf'}"
-        + (f"_d{delta:g}" if delta > 0 else "")
-    )
-elif rate_form == "saturating":
-    member = f"sat_t{tau0_hours:g}_wt{w_tau:g}"
-else:
-    raise ValueError(f"unknown rate_form: {rate_form!r}")
+member = (
+    f"step_wc{w_c:g}_ts{tau_strong_hours:g}"
+    f"_tc{f'{tau_calm_days:g}' if tau_calm_days > 0 else 'inf'}"
+    + (f"_d{delta:g}" if delta > 0 else "")
+)
 member = member.replace(".", "p")
 print(f"member: {member}")
 
@@ -204,31 +190,20 @@ def beaching_exponent(w_on, dist, flat):
     """Per-step beaching exponent `a = Δt/τ` from the sidecar ingredients.
 
     Returns `(in_band, r, a)` — the band gate, the forcing ramp (the share of
-    the storm rate that is on), and the per-step exponent, all
+    the strong-wave rate that is on), and the per-step exponent, all
     `(trajectory, obs)`.
     """
     in_band = (dist.astype("int16") * 25 < band_m) & (dist != 255)
     w = w_on.astype("float32")
     trap = np.where(flat, trap_flat, trap_wall).astype("float32")
-    if rate_form == "step":
-        if delta > 0:
-            r = np.clip((w - w_c + delta / 2) / delta, 0.0, 1.0).astype("float32")
-        else:
-            r = (w >= w_c).astype("float32")
-        inv_tau_h = np.float32(
-            1.0 / (tau_calm_days * 24.0) if tau_calm_days > 0 else 0.0
-        ) + trap * r / np.float32(tau_storm_hours)
-        a = np.where(in_band, output_dt_hours * inv_tau_h, np.float32(0.0))
+    if delta > 0:
+        r = np.clip((w - w_c + delta / 2) / delta, 0.0, 1.0).astype("float32")
     else:
-        # Written exactly as the pre-sidecar notebooks wrote it, so the
-        # reproduction of the old stores is not blurred by a re-association
-        # of the float32 arithmetic.
-        r = 2.0 * w / (w + w_tau)
-        a = np.where(
-            in_band,
-            output_dt_hours / (tau0_hours / (trap * np.maximum(r, 1e-6))),
-            0.0,
-        )
+        r = (w >= w_c).astype("float32")
+    inv_tau_h = np.float32(
+        1.0 / (tau_calm_days * 24.0) if tau_calm_days > 0 else 0.0
+    ) + trap * r / np.float32(tau_strong_hours)
+    a = np.where(in_band, output_dt_hours * inv_tau_h, np.float32(0.0))
     return in_band, r, a
 
 
@@ -356,17 +331,11 @@ print(f"wrote {survocc_path} ({survocc_path.stat().st_size / 1e6:.2f} MB)")
 print(f"regime={regime}, release_year={release_year}"
       + (f", month={release_month}" if release_month else "")
       + f", hex_radius={hex_radius} m, member={member}")
-if rate_form == "step":
-    print(f"  params: occupancy_max_days={occupancy_max_days}, band_m={band_m:g}, "
-          f"w_c={w_c:g}, tau_storm_hours={tau_storm_hours:g}, "
-          f"tau_calm_days={tau_calm_days:g}, delta={delta:g}, "
-          f"trap_flat/wall={trap_flat:g}/{trap_wall:g}"
-          + (" (degenerate — shore type inert)" if trap_flat == trap_wall else ""))
-else:
-    print(f"  params: occupancy_max_days={occupancy_max_days}, band_m={band_m:g}, "
-          f"tau0_hours={tau0_hours:g}, w_tau={w_tau:g}, "
-          f"trap_flat/wall={trap_flat:g}/{trap_wall:g}"
-          + (" (degenerate — shore type inert)" if trap_flat == trap_wall else ""))
+print(f"  params: occupancy_max_days={occupancy_max_days}, band_m={band_m:g}, "
+      f"w_c={w_c:g}, tau_strong_hours={tau_strong_hours:g}, "
+      f"tau_calm_days={tau_calm_days:g}, delta={delta:g}, "
+      f"trap_flat/wall={trap_flat:g}/{trap_wall:g}"
+      + (" (degenerate — shore type inert)" if trap_flat == trap_wall else ""))
 per_bin = survocc.groupby("age_bin")[["occ", "surv"]].sum()
 per_bin["drifting"] = per_bin["surv"] / per_bin["occ"]
 print(per_bin.to_string(float_format=lambda v: f"{v:,.3f}"))

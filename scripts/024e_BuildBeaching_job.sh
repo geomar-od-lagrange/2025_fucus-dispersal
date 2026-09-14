@@ -19,18 +19,16 @@
 # (regime, release_year, release_month, rate-model member). No trajectory
 # zarrs, no raw Stokes, no raster.
 #
-# Usage: sbatch scripts/024e_BuildBeaching_job.sh [regime] [hex_radius]
+# Usage: sbatch scripts/024e_BuildBeaching_job.sh [regime] [hex_radius] [stagger_max_s]
 #
 # Rate-model parameters come from the environment so a sweep is a loop of
 # submissions that differ only in an export:
 #
-#   RATE_FORM   step | saturating          (default step)
-#   W_C         onshore-Stokes threshold, m/s        (step)
-#   TAU_STORM_HOURS  e-folding time above W_C        (step)
-#   TAU_CALM_DAYS    background in-band timescale, d; 0 = off   (step)
-#   DELTA       linear edge width around W_C, m/s; 0 = hard step (step)
-#   TAU0_HOURS, W_TAU   the superseded saturating ramp   (saturating)
-#   BAND_M, MAX_FLOAT_DAYS              (both forms)
+#   W_C         onshore-Stokes threshold, m/s
+#   TAU_STRONG_HOURS  e-folding time above W_C
+#   TAU_CALM_DAYS    background in-band timescale, d; 0 = off
+#   DELTA       linear edge width around W_C, m/s; 0 = hard step
+#   BAND_M, MAX_FLOAT_DAYS
 #
 # 024a_BuildHexKey_job.sh and 024d_BuildBeachingForcing_job.sh must have run
 # first for the matching hex_radius / (regime, year).
@@ -44,13 +42,10 @@ unset SLURM_CPU_BIND SLURM_CPU_BIND_LIST SLURM_CPU_BIND_TYPE SLURM_CPU_BIND_VERB
 regime="${1:-surface_stokes}"
 hex_radius="${2:-6000}"
 
-RATE_FORM="${RATE_FORM:-step}"
 W_C="${W_C:-0.1}"
-TAU_STORM_HOURS="${TAU_STORM_HOURS:-3.0}"
+TAU_STRONG_HOURS="${TAU_STRONG_HOURS:-3.0}"
 TAU_CALM_DAYS="${TAU_CALM_DAYS:-0.0}"
 DELTA="${DELTA:-0.0}"
-TAU0_HOURS="${TAU0_HOURS:-480.0}"
-W_TAU="${W_TAU:-0.05}"
 BAND_M="${BAND_M:-2000.0}"
 MAX_FLOAT_DAYS="${MAX_FLOAT_DAYS:-60}"
 
@@ -58,14 +53,10 @@ MAX_FLOAT_DAYS="${MAX_FLOAT_DAYS:-60}"
 # store filename, so a notebook and the parquet it wrote are matched by eye.
 # awk's %g is printf's %g is Python's :g, so the two constructions agree.
 fmt_g() { awk -v x="$1" 'BEGIN { printf "%g", x }'; }
-if [ "${RATE_FORM}" = "step" ]; then
-    tc=$(awk -v x="${TAU_CALM_DAYS}" 'BEGIN { if (x > 0) printf "%g", x; else printf "inf" }')
-    member="step_wc$(fmt_g "${W_C}")_ts$(fmt_g "${TAU_STORM_HOURS}")_tc${tc}"
-    if awk -v x="${DELTA}" 'BEGIN { exit !(x > 0) }'; then
-        member="${member}_d$(fmt_g "${DELTA}")"
-    fi
-else
-    member="sat_t$(fmt_g "${TAU0_HOURS}")_wt$(fmt_g "${W_TAU}")"
+tc=$(awk -v x="${TAU_CALM_DAYS}" 'BEGIN { if (x > 0) printf "%g", x; else printf "inf" }')
+member="step_wc$(fmt_g "${W_C}")_ts$(fmt_g "${TAU_STRONG_HOURS}")_tc${tc}"
+if awk -v x="${DELTA}" 'BEGIN { exit !(x > 0) }'; then
+    member="${member}_d$(fmt_g "${DELTA}")"
 fi
 member="${member//./p}"
 echo "member: ${member}"
@@ -76,7 +67,7 @@ stagger_max_s="${3:-15}"
 
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
 export output_root regime hex_radius stagger_max_s member
-export RATE_FORM W_C TAU_STORM_HOURS TAU_CALM_DAYS DELTA TAU0_HOURS W_TAU
+export W_C TAU_STRONG_HOURS TAU_CALM_DAYS DELTA
 export BAND_M MAX_FLOAT_DAYS
 
 mkdir -p notebooks_executed/Visualisations/
@@ -110,13 +101,10 @@ done | xargs -0 -P "${SLURM_NTASKS}" -n 1 bash -c '
             -p release_year ${year} \
             -p release_month ${month} \
             -p hex_radius ${hex_radius} \
-            -p rate_form ${RATE_FORM} \
             -p w_c ${W_C} \
-            -p tau_storm_hours ${TAU_STORM_HOURS} \
+            -p tau_strong_hours ${TAU_STRONG_HOURS} \
             -p tau_calm_days ${TAU_CALM_DAYS} \
             -p delta ${DELTA} \
-            -p tau0_hours ${TAU0_HOURS} \
-            -p w_tau ${W_TAU} \
             -p band_m ${BAND_M} \
             -p max_float_days ${MAX_FLOAT_DAYS} \
             -k python

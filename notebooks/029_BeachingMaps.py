@@ -22,10 +22,10 @@
 # One regime per run; release years pooled by globbing the store partitions.
 #
 # The rate model is a two-state hazard — a background rate in the near-shore
-# band plus a storm rate switched on where the onshore Stokes forcing exceeds
-# a threshold (`docs/beaching.md`). Its settings are baked into the reducer's
-# opaque `member` tag, which selects the partitions read here and labels every
-# figure; this notebook never parses the tag. Draws:
+# band plus a strong-wave rate switched on where the onshore Stokes forcing
+# exceeds a threshold (`docs/beaching.md`). Its settings are baked into the
+# reducer's opaque `member` tag, which selects the partitions read here and
+# labels every figure; this notebook never parses the tag. Draws:
 #
 # 1. **Where-stranded density** — beached weight (expected particles) per
 #    `beach_hex` (log scale).
@@ -136,10 +136,10 @@ figure_dir.mkdir(parents=True, exist_ok=True)
 # Layout: flat files under ``output_root/HexAggregates/`` —
 # ``HexAgg_key_r<radius>m.parquet`` and the per-(year, month) partitions
 # ``HexAgg_beaching_r<radius>m_<regime>_<year>_mMM_<member>.parquet`` written
-# by 024e. `release_month = 0` pools every month across every year; a nonzero
-# month keeps just that month (across years). Matching only `_mMM` files means
-# any ad-hoc whole-year build (no suffix) is ignored, so months never
-# double-count.
+# by 024e. `release_month = 0` pools every month across every year, and also
+# picks up a whole-year partition (no `_mMM` suffix at all, written when 024e
+# itself ran with `release_month = 0`); a nonzero month keeps just that
+# month's `_mMM` partitions (across years).
 
 # %%
 store_root = output_root / "HexAggregates"
@@ -147,7 +147,7 @@ key = gpd.read_parquet(store_root / f"HexAgg_key_r{hex_radius}m.parquet")
 
 # Figure-filename tag: a specific month, or "" when pooling all months.
 month_suffix = f"_m{release_month:02d}" if release_month else ""
-month_re = rf"_m{release_month:02d}" if release_month else r"_m\d{2}"
+month_re = rf"_m{release_month:02d}" if release_month else r"(?:_m\d{2})?"
 _PART_RE = re.compile(
     rf"HexAgg_beaching_r{hex_radius}m_{regime}_(\d{{4}}){month_re}"
     rf"_{re.escape(member)}\.parquet$"
@@ -342,8 +342,8 @@ plt.show()
 # release point at the deposit step, in `disp_bin_km` bins — pooled over every
 # source hex. The residual (never-beached) rows carry `disp_bin = -1` and drop
 # out with the `beach_hex = -1` filter. Short-travel strandings are kept: a
-# storm stranding freshly released material near home is a real outcome of the
-# threshold rate model, not an artefact to mask.
+# strong-wave event stranding freshly released material near home is a real
+# outcome of the threshold rate model, not an artefact to mask.
 
 # %%
 disp_weight = beached.groupby("disp_bin")["weight"].sum()

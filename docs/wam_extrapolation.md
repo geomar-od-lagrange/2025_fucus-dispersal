@@ -33,10 +33,11 @@ weight:
   sweep on the geodesic fill reproduced the Euclidean numbers to within
   0.15 points on every sweep member (e.g. 60.1 % → 60.2 %), and
   fill distance barely moved (2.74 → 2.67 km). So Euclidean nearest-wet
-  rarely crossed land in a way that mattered. Geodesic is kept because it
-  cannot do so *by construction* and because it distinguishes unreachable
-  water (capped and counted) from reachable, which the Euclidean version
-  could not — not because it changes the answer.
+  rarely crossed land in a way that mattered. Geodesic is kept because the
+  propagation is blocked by BSH land and by the grid edge *by
+  construction*, and because it distinguishes unreachable water (capped and
+  counted) from reachable, which the Euclidean version could not — not
+  because it changes the answer.
 - **4-neighbour, not 8.** A 3×3 dilation squeezes between diagonally
   touching land cells — the same thin-barrier bridging the `surface_stokes`
   N=5 Stokes spread is faulted for.

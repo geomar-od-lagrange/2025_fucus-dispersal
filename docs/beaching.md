@@ -70,18 +70,22 @@ forcing ([wam_extrapolation.md](wam_extrapolation.md)).
 ## The rate model
 
 Inside the near-shore band the beaching hazard is a Δt-invariant e-folding
-rate with two states — a forcing-independent background and a storm term:
+rate with two states — a forcing-independent background and a strong-wave
+term. `w_c = 0.10` m/s is the p93 of in-band onshore Stokes — a windy day
+with the right fetch, not a meteorological storm — and direction and fetch
+set the onshore forcing as much as wind strength does, hence "strong wave"
+rather than "storm":
 
 ```
-1/τ = 1/τ_calm + trap · r(w_on) / τ_storm          in band, else 0
-r(w) = clip((w − w_c + δ/2) / δ, 0, 1)             step at w_c, optional
-                                                   linear edge of width δ
+1/τ = 1/τ_calm + trap · r(w_on) / τ_strong    in band, else 0
+r(w) = clip((w − w_c + δ/2) / δ, 0, 1)        step at w_c, optional
+                                               linear edge of width δ
 ```
 
-Nothing in the data constrains the shape of `r` between calm and storm, so a
-shape parameter (Hill exponent, half-saturation) is pure nuisance; the step is
-the limiting case of any such form and its one knob means what it says. The
-surviving weight decays by `exp(−a)` each in-band step (`a = Δt/τ`), and the
+Nothing in the data constrains the shape of `r` between calm and strong-wave,
+so a shape parameter (Hill exponent, half-saturation) is pure nuisance; the
+step is the limiting case of any such form and its one knob means what it
+says. The surviving weight decays by `exp(−a)` each in-band step (`a = Δt/τ`), and the
 weight deposited at step `h` is the telescoping survival difference
 `dep = exp(−A_before) − exp(−A_after)`, `A` the running `Σ a` — the probability
 that a first-stranding process strands at `h`, so the ensemble sum is the
@@ -91,7 +95,7 @@ the window is the never-beached residual.
 | parameter | meaning | how it is chosen |
 |---|---|---|
 | `w_c` | onshore Stokes above which stranding is on (m/s) | against the measured in-band forcing (p75 0.057, p90 0.088, p99 0.15 m/s); **the** sweep axis |
-| `tau_storm_hours` | e-folding time while `w_on ≥ w_c` | hours; below ~6 h everything in band during a Baltic storm strands and the value stops mattering |
+| `tau_strong_hours` | e-folding time while `w_on ≥ w_c` | hours; below ~6 h everything in band during a strong-wave event strands and the value stops mattering |
 | `tau_calm_days` | background in-band rate regardless of forcing; 0 = off | ∞ or O(1 yr); a year loses 15 % over 60 d, so it is a real axis |
 | `delta` | linear edge width around `w_c` | 0 (hard step) by default; `≈0.02` checks against nearest-hour / nearest-cell sampling noise |
 | `trap_flat`, `trap_wall` | shore-type factor | deliberately degenerate (both 1.0); the seam for a substrate map |
@@ -99,17 +103,16 @@ the window is the never-beached residual.
 | `max_float_days` | viability window (d); slices the sidecar's `obs` axis | 60; a step-function `L(t)` |
 | `age_bin_days`, `disp_bin_km` | store axis granularity | 10 d, 10 km |
 
-Once `τ_storm ≪` storm duration the model degenerates gracefully into an
-**exposure model**: the beached fraction is the share of particles ever in band
-during a storm hour inside the viability window, and the stranding map is
-coastal residence × storm climatology — so the per-month / per-year splits, not
-the pooled view, are the primary products. Storm stranding of freshly released
-material is signal, not artefact: Fucus releases are coastal, so a particle can
-be exposed from `t = 0`. `disp_bin` records the crow-flies travel distance at
-stranding precisely so that can be *shown* rather than filtered out — a
-diagnostic axis, never a mask. The superseded saturating ramp
-`s(w) = 2w/(w + w_tau)`, `τ = τ0/s`, survives in `024e`/`024f` only as
-`rate_form = "saturating"`, to reproduce the pre-sidecar stores.
+Once `τ_strong` ≪ strong-wave event duration the model degenerates gracefully
+into an **exposure model**: the beached fraction is the share of particles
+ever in band during a strong-wave hour inside the viability window, and the
+stranding map is coastal residence × strong-wave climatology — so the
+per-month / per-year splits, not the pooled view, are the primary products.
+Strong-wave stranding of freshly released material is signal, not artefact:
+Fucus releases are coastal, so a particle can be exposed from `t = 0`.
+`disp_bin` records the crow-flies travel distance at stranding precisely so
+that can be *shown* rather than filtered out — a diagnostic axis, never a
+mask.
 
 ### Provenance
 
@@ -124,12 +127,19 @@ double-counting it; that does not apply here, because the `surface_stokes` runs
 zero the cross-shore Stokes transport at blocked faces
 ([stokes_drift.md](stokes_drift.md)) — the onshore push is resolved in the
 forcing but removed from the drift. That is an argument, not a validation: there
-is no observational constraint on the rate here, hence the sweep range. `trap`
-is degenerate because BSH's `H0 ≤ 0` tidal-flat flag
+is no observational constraint on the rate here, hence the sweep range.
+
+`trap` is degenerate because BSH's `H0 ≤ 0` tidal-flat flag
 ([h0_semantics.md](h0_semantics.md)) is no retentiveness proxy for the tide-free
 Baltic, because moving `trap_flat` from 2.0 to 1.0 shifted the beached total by
 0.9 points, and because Daily et al. and Onink et al. both report terrain
-variation mattering little. `shore_type` is a diagnostic label, never a result.
+variation mattering little.
+
+`shore_type` is a diagnostic label, never a result: the store records
+`wall`/`flat` at each stranding site, but because `trap_flat == trap_wall`
+the label cannot move any weight, so any difference between the two classes
+in the output reflects the coastline's own composition, not substrate. It is
+carried so a real substrate classification can be joined against it later.
 
 ## Store schema
 
@@ -151,35 +161,39 @@ monthly partitions by summing.
 Deposits + residual per source hex sum to that hex's released drifter count, so
 the beached fraction is `sum(weight | beach_hex ≥ 0) / sum(weight)`. The
 `member` tag names the rate-model point and consumers take it as an opaque
-string: `step_wc<w_c>_ts<tau_storm_hours>_tc<tau_calm_days|inf>[_d<delta>]`, or
-`sat_t<tau0_hours>_wt<w_tau>` for the superseded ramp, `.` → `p` (e.g.
-`step_wc0p1_ts3_tcinf`). `disp_bin_km` is a build↔consumer contract *not* stored
+string: `step_wc<w_c>_ts<tau_strong_hours>_tc<tau_calm_days|inf>[_d<delta>]`,
+`.` → `p` (e.g. `step_wc0p1_ts3_tcinf`). `disp_bin_km` is a build↔consumer contract *not* stored
 in the parquet — pass `029`/`031` the value `024e` built with, exactly as
 `distance_bin_km` works in the distance store
 ([hexbinning_and_connectivity.md](hexbinning_and_connectivity.md)).
 
 ## Production setting
 
-The reducer defaults: `w_c = 0.10` m/s, `τ_storm = 3 h`, `τ_calm = ∞`,
+The reducer defaults: `w_c = 0.10` m/s, `τ_strong = 3 h`, `τ_calm = ∞`,
 `δ = 0`, `trap ≡ 1`, `band_m = 2000`, `max_float_days = 60` — member tag
 `step_wc0p1_ts3_tcinf`. `w_c = 0.10` is the p93 of onshore Stokes over
-in-band hours, so 3.9 % of in-band hours count as storm hours. Pooled over
-surface_stokes 2016–2019 (16.58 M real drifters):
+in-band hours, so 3.9 % of in-band hours count as strong-wave hours. Pooled
+over surface_stokes 2016–2019 (16.58 M real drifters):
 
 | quantity | value |
 |---|---|
 | beached within 60 d | 75.9 % |
-| drifters ever in band during a storm hour | 83.7 % |
+| drifters ever in band during a strong-wave hour | 83.7 % |
 | stranding hexes (weight > 1) | 1 736 |
 | Gini of stranded weight over hexes | 0.62 |
 | median stranding age / travel distance | 10–20 d / 40–50 km |
 
+The Gini is computed over hexes that *receive* weight — zero-weight hexes are
+dropped, so it measures concentration among receiving hexes, not over the
+whole coast; the stranding-hex count above it is what anchors that scale. 0 =
+every receiving hex takes an equal share, 1 = one hex takes everything.
+
 The two exposure numbers being close is the exposure limit at work: at
-`τ_storm = 3 h` almost everything in band during a storm strands, so `w_c`
-alone decides the total. The setting is a working choice, not a
-calibration — there is no observational constraint on `w_c` in this study,
-so results are reported as the range below, and `w_c` is the number to argue
-about.
+`τ_strong = 3 h` almost everything in band during a strong-wave event
+strands, so `w_c` alone decides the total. The setting is a working choice,
+not a calibration — there is no observational constraint on `w_c` in this
+study, so results are reported as the range below, and `w_c` is the number
+to argue about.
 
 **Seasonality is the dominant signal**, interannual variability is not
 (beached %, releases pooled over years / months):
@@ -193,15 +207,18 @@ about.
 |---|---|---|---|---|
 | `w_c = 0.10` | 74 | 79 | 74 | 77 |
 
-Autumn releases meet the storm season inside their viability window; the
-per-month partitions are the primary products, the pooled year a summary.
+Autumn releases meet the strong-wave season inside their viability window;
+the per-month partitions are the primary products, the pooled year a
+summary.
 
 ## Sensitivity
 
-Sweep over the 48 partitions per member (`031`, `Figures/031/`); `τ_storm`
+Sweep over the 48 partitions per member (`031`, `Figures/031/`); `τ_strong`
 in hours, `τ_calm` in days, `ever` = share of drifters ever exposed to a
-storm hour in band, Spearman = per-hex stranded weight against the
-production member:
+strong-wave hour in band, Spearman = per-hex stranded weight against the
+production member. Gini is over hexes that receive weight (see Production
+setting above); it rises with `w_c` because a higher threshold keeps only
+the wave-exposed shores:
 
 | member | beached % | ever % | Gini | Spearman |
 |---|---|---|---|---|
@@ -210,24 +227,21 @@ production member:
 | **`w_c = 0.10`** | **75.9** | **83.7** | **0.62** | 1 |
 | `w_c = 0.15` | 36.7 | 47.3 | 0.70 | 0.89 |
 | `w_c = 0.10`, `τ_calm = 365` | 78.1 | 83.7 | 0.69 | — |
-| `w_c = 0.10`, `τ_storm = 1` | 81.6 | 83.7 | 0.59 | 0.99 |
-| `w_c = 0.10`, `τ_storm = 12` | 60.2 | 83.7 | 0.66 | 0.98 |
+| `w_c = 0.10`, `τ_strong = 1` | 81.6 | 83.7 | 0.59 | 0.99 |
+| `w_c = 0.10`, `τ_strong = 12` | 60.2 | 83.7 | 0.66 | 0.98 |
 | `w_c = 0.10`, `δ = 0.02` | 77.2 | 88.0 | 0.61 | 0.9997 |
-| saturating `τ0 = 480 h, w_tau = 0.05` | 42.8 | — | 0.76 | — |
 
 - **`w_c` is the axis.** It moves the total from 37 % to 94 % across
   p72–p99 of the forcing and is the only knob that reorders the map:
   adjacent values share 84 of the top-100 stranding hexes, `0.10` vs `0.15`
   share 59. Per-source beached fractions are more stable (Spearman ≥ 0.92
-  between any two members).
-- **`τ_storm` scales the total, not the pattern** (Spearman ≥ 0.98 from
+  between any two members). Gini tracks it, 0.57 at `w_c = 0.05` to 0.70 at
+  `w_c = 0.15`.
+- **`τ_strong` scales the total, not the pattern** (Spearman ≥ 0.98 from
   1 h to 12 h); below ~6 h it is irrelevant.
 - **`τ_calm = 1 yr`** adds 2–7 points and ~180 low-weight hexes by draining
   calm-water residents; it changes where nothing else strands.
 - **`δ`** is noise-level: keep the hard step.
-- **The saturating form** (kept in 024e for reproduction) gives a lower total
-  at a much older, farther stranding profile — its rate is highest at weak
-  forcing, so it strands slowly everywhere instead of fast where waves hit.
 
 **The beached fraction is not a reportable number**; the pattern and the
 seasonal contrast are.

@@ -41,7 +41,7 @@ import pandas as pd
 output_root = "../output"
 
 # One (regime, release_year) per run.
-regime = "surface"
+regime = "surface_stokes"
 release_year = 2019
 
 # Hex radius (must match an existing key + counts file).

@@ -11,12 +11,12 @@
 # prints the subbasin→subbasin residence matrix and emits linear + log
 # heatmap PNGs for two release-month scopes (all-year and Aug/Sep).
 # Submit once per (regime, hex_radius), e.g.:
-#   sbatch scripts/028_SubbasinConnectivityMatrix_job.sh surface 6000
+#   sbatch scripts/028_SubbasinConnectivityMatrix_job.sh surface_stokes 6000
 #   sbatch scripts/028_SubbasinConnectivityMatrix_job.sh bottom 6000
 # age_bin_days falls back to the notebook default (10) and must match the
 # value 024c built the connectivity store with.
 
-regime="${1:-surface}"
+regime="${1:-surface_stokes}"
 hex_radius="${2:-6000}"
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
 

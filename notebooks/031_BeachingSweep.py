@@ -107,7 +107,11 @@ store_root = output_root / "HexAggregates"
 key = gpd.read_parquet(store_root / f"HexAgg_key_r{hex_radius}m.parquet")
 
 month_suffix = f"_m{release_month:02d}" if release_month else ""
-month_re = rf"_m{release_month:02d}" if release_month else r"_m\d{2}"
+# `release_month = 0` pools every `_mMM` partition across years, and also
+# picks up a whole-year partition (no `_mMM` suffix, written when 024e itself
+# ran with `release_month = 0`); a nonzero month matches only that month's
+# `_mMM` partitions.
+month_re = rf"_m{release_month:02d}" if release_month else r"(?:_m\d{2})?"
 
 
 # %% [markdown]

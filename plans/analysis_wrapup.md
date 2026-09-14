@@ -96,7 +96,7 @@ Beaching uses the **weighted / fractional** deposition scheme (each particle
 deposits fractional stranding weight along its coastal path; deterministic,
 noise-free at the high-age tail, composes with a Fucus lifetime `L(t)`) — the
 retired stochastic first-stranding draw agreed to <0.2 % on totals. The rate is
-a two-state hazard, `1/τ = 1/τ_calm + trap·r(w_on)/τ_storm` in band, with
+a two-state hazard, `1/τ = 1/τ_calm + trap·r(w_on)/τ_strong` in band, with
 `trap` wired but degenerate (`trap_flat = trap_wall = 1.0`), so onshore wave
 forcing is the only term modulating it — see
 [beaching.md](../docs/beaching.md).
@@ -115,7 +115,7 @@ year only as a summary.** The beaching sweep
 ([../docs/beaching.md](../docs/beaching.md), "Production setting") showed
 that release month moves the beached fraction by ~25 points (64 % for
 Feb–Apr releases vs 89 % for Sep–Nov at `w_c = 0.10`) while release year
-moves it by ~5. Autumn releases meet the storm season inside their
+moves it by ~5. Autumn releases meet the strong-wave season inside their
 viability window; spring releases do not. Pooling twelve monthly releases
 averages two different regimes into a number that describes neither.
 
@@ -126,7 +126,7 @@ partitioned by `release_doy`, so this is a consumer-side change only.
 - **Decide the seasons.** Candidates: calendar months; quarters; or a
   biology-led split (spring gamete release vs. autumn storms). The
   analysis plan already asks for Aug/Sep as the focus period
-  ([analysis.md](analysis.md)); check whether Aug–Nov as "storm season" and
+  ([analysis.md](analysis.md)); check whether Aug–Nov as "strong-wave season" and
   Mar–Jul as "calm season" separates the beaching signal cleanly enough
   to be the two headline panels.
 - **Consumers.** 025/026/026a/026b/027/028/029/030 gain a

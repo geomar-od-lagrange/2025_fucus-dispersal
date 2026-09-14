@@ -19,8 +19,10 @@ write disjoint filenames, so they can't race. Compact, query-friendly
 sister of the multi-TB raw zarrs. The counts store is the substrate behind
 `notebooks/025_HexHeatmaps.md` (density) and `notebooks/026_TimeHorizonMaps.md`
 (density at a selected `age_bin`); the distance store is the substrate
-behind `notebooks/027_HexDistanceQuantiles.md`. Raw zarrs stay the source
-of truth for per-trajectory diagnostics.
+behind `notebooks/027_HexDistanceQuantiles.md`. `notebooks/024c_BuildHexConnectivity.py`
+re-aggregates the counts store a third way, into a subbasin→subbasin
+connectivity table read by `notebooks/028_SubbasinConnectivityMatrix.py`.
+Raw zarrs stay the source of truth for per-trajectory diagnostics.
 
 ## Counts schema
 
@@ -69,6 +71,45 @@ deriving quantiles from the pooled cumulative count (027). Per-year
 quantiles cannot be correctly averaged across years. `distance_bin_km` is
 the build↔consumer contract (like `hex_radius` / `age_bin_days`); it is
 not stored, so 027 must read with the same value.
+
+## Connectivity schema
+
+`notebooks/024c_BuildHexConnectivity.py` re-aggregates the counts store into
+a HELCOM subbasin→subbasin **residence** table, one parquet per
+`(regime, year)`:
+
+```
+output_root/HexAggregates/
+  HexAgg_connectivity_r<radius>m_<regime>_<year>.parquet
+```
+
+| column            | meaning                                                 |
+|-------------------|----------------------------------------------------------|
+| `origin_subbasin` | HELCOM subbasin id of `release_hex`'s centroid; `-1` = unnamed |
+| `target_subbasin` | HELCOM subbasin id of `target_hex`'s centroid; `-1` = unnamed |
+| `release_doy`     | release day-of-year of the originating zarr (kept axis)   |
+| `age_bin`         | `age_bin` carried over unchanged from counts (kept axis)  |
+| `n_obs`           | summed `(trajectory, obs)` particle-timesteps             |
+
+`origin_subbasin`/`target_subbasin` come from the key's `helcom_subbasin`
+column via `release_hex`/`target_hex` — each hex maps to exactly **one**
+centroid subbasin, so the `groupby` is a pure re-partition of `n_obs`, not a
+re-aggregation: no counts row is dropped or duplicated, so the sum is
+conserved and checked as the build's validation gate
+(`conn["n_obs"].sum() == counts["n_obs"].sum()`). Two distinct unnamed
+states fold to the single sentinel `-1` on each side: hexes absent from the
+key (land-seed/NaN, `hex_id == -1` in counts) and in-key hexes outside every
+named polygon (`helcom_subbasin == -1`, the `_outside` category). Filter with
+`>= 0` at read time for named-subbasin-only views, same convention as the
+counts store.
+
+Connectivity here means **residence** (particle-time spent in the target
+subbasin), not particle flux (a deduped first-arrival count) — the latter
+needs trajectory identity, which the counts store has already collapsed, so
+it would require a fresh pass over the zarrs rather than a re-partition of
+counts. `notebooks/028_SubbasinConnectivityMatrix.py` is the consumer: it
+pools years and two release-month scopes (all-year, Aug/Sep), reports the
+`-1`-dropped fraction, and prints/plots the named-subbasin matrix.
 
 ## Key file (geoparquet, one row per hex)
 
@@ -178,4 +219,4 @@ independent reseeded reruns are summed additively by the groupby.
 - [seeding.md](seeding.md) — release set the `release_hex` derives from.
 - [h0_semantics.md](h0_semantics.md) — `mean_depth_m` filter.
 - [2d_field_extraction.md](2d_field_extraction.md) — coastline geojsons.
-- [visualisations.md](visualisations.md) — notebooks 025–027.
+- [visualisations.md](visualisations.md) — notebooks 025–028.

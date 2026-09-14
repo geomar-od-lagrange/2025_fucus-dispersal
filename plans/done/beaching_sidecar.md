@@ -5,11 +5,12 @@
 from the text below: sidecar `hex` is stored everywhere (survival occupancy
 needs open-water hexes), `hex_radius` is part of the sidecar currency check,
 the reducer window is half-open `[0, max_float_days)`, and the saturating
-form stays in 024e as `rate_form="saturating"` for reproducing older stores.
-Stokes day files are resolved by the sample's calendar year (a window crossing
-New Year previously saw zero forcing). `δ` was tested and dropped (Spearman
-0.9997 against the hard step); production defaults `w_c = 0.10`,
-`τ_storm = 3 h`, `τ_calm = ∞`.
+form below is gone — the two-state hazard is the only rate model. Stokes day
+files are resolved by the sample's calendar year (a window crossing New Year
+previously saw zero forcing). `δ` was tested and dropped (Spearman 0.9997
+against the hard step); the upper state is named for its forcing rather than
+for weather, so `τ_storm` is `tau_strong_hours`. Production defaults
+`w_c = 0.10`, `τ_strong = 3 h`, `τ_calm = ∞`.
 
 Cache the per-(particle, hour) ingredients of the beaching rate once, so
 that every choice of rate model — `τ0`, `w_tau`, the functional form of
@@ -19,8 +20,8 @@ numpy pass with no trajectory or Stokes I/O.
 ## Problem
 
 The pre-sidecar beaching and survival-occupancy builders (now
-[`024e_BuildBeaching`](../notebooks/024e_BuildBeaching.py) and
-[`024f_BuildSurvivalOccupancy`](../notebooks/024f_BuildSurvivalOccupancy.py))
+[`024e_BuildBeaching`](../../notebooks/024e_BuildBeaching.py) and
+[`024f_BuildSurvivalOccupancy`](../../notebooks/024f_BuildSurvivalOccupancy.py))
 each re-read the trajectory zarrs and re-sample the raw WAM Stokes field for
 every parameter setting. Measured on the production run (surface_stokes,
 2016–2019, 292 zarrs, 16.6 M real drifters):

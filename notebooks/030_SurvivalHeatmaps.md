@@ -19,10 +19,10 @@ jupyter:
 Parquet-only consumer of the survival-occupancy store built by
 `024f_BuildSurvivalOccupancy` (+ the `024a` key). The survival curve behind
 it uses the same two-state hazard as the beaching store — background rate in
-the near-shore band plus a storm rate above an onshore-Stokes threshold, its
-settings baked into the opaque `member` tag that selects the partitions read
-here (`docs/beaching.md`). For each elapsed-time horizon it draws three
-panels:
+the near-shore band plus a strong-wave rate above an onshore-Stokes
+threshold, its settings baked into the opaque `member` tag that selects the
+partitions read here (`docs/beaching.md`). For each elapsed-time horizon it
+draws three panels:
 
 1. **Occupancy** — plain particle-residence density (`occ`), the baseline
    (no beaching), on a log scale.
@@ -116,7 +116,11 @@ store_root = output_root / "HexAggregates"
 key = gpd.read_parquet(store_root / f"HexAgg_key_r{hex_radius}m.parquet")
 
 month_suffix = f"_m{release_month:02d}" if release_month else ""
-month_re = rf"_m{release_month:02d}" if release_month else r"_m\d{2}"
+# `release_month = 0` pools every `_mMM` partition across years, and also
+# picks up a whole-year partition (no `_mMM` suffix, written when 024f itself
+# ran with `release_month = 0`); a nonzero month matches only that month's
+# `_mMM` partitions.
+month_re = rf"_m{release_month:02d}" if release_month else r"(?:_m\d{2})?"
 _PART_RE = re.compile(
     rf"HexAgg_survocc_r{hex_radius}m_{regime}_(\d{{4}}){month_re}"
     rf"_{re.escape(member)}\.parquet$"

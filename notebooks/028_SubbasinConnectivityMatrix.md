@@ -47,7 +47,7 @@ from matplotlib.colors import LogNorm
 # Read root of the hex-aggregate store.
 output_root = "../output"
 # Which regime's connectivity partitions to read; one regime per run.
-regime = "surface"
+regime = "surface_stokes"
 # Hex radius of the store (built by 024a/024c). Must match files on disk.
 hex_radius = 6000
 # Age-bin granularity of the connectivity store (must match 024). Pooled away

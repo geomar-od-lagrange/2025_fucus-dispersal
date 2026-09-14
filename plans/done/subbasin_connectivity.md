@@ -1,5 +1,9 @@
 # Subbasin→subbasin connectivity store
 
+**Implemented.** See [../../docs/hexbinning_and_connectivity.md](../../docs/hexbinning_and_connectivity.md)
+for the current schema and [../../docs/visualisations.md](../../docs/visualisations.md)
+for 028, the matrix consumer.
+
 ## Purpose
 
 A HELCOM subbasin-resolved connectivity aggregate: for each
@@ -88,7 +92,7 @@ come from the key, same as counts.
 
 ```python
 output_root = "../output"
-regime = "surface"
+regime = "surface_stokes"
 release_year = 2019
 hex_radius = 6000
 age_bin_days = 10   # must match the counts file being read
@@ -167,7 +171,7 @@ primitive (`output_root`, `regime`, `hex_radius`, `age_bin_days`).
 
 ```python
 output_root = "../output"
-regime = "surface"
+regime = "surface_stokes"
 hex_radius = 6000
 age_bin_days = 10   # store contract; pooled away here but kept explicit
 ```
@@ -189,8 +193,8 @@ it only if a no-op param reads as noise.
 ## Docs follow-up
 
 On implementation, add a "Connectivity" section to
-[../docs/hexbinning_and_connectivity.md](../docs/hexbinning_and_connectivity.md)
+[../../docs/hexbinning_and_connectivity.md](../../docs/hexbinning_and_connectivity.md)
 (schema table + the residence-vs-flux note + the sum-preserved
 invariant) and a 028 entry to
-[../docs/visualisations.md](../docs/visualisations.md); move this plan to
+[../../docs/visualisations.md](../../docs/visualisations.md); move this plan to
 `plans/done/`.

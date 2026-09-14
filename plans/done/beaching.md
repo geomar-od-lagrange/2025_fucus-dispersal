@@ -1,7 +1,8 @@
 # Beaching (post-simulation) — design note
 
 **Implemented.** See [../../docs/beaching.md](../../docs/beaching.md) for
-the current state (`024d_BuildBeaching` + `029_BeachingMaps`). This note is
+the current state (`024d_BuildBeachingForcing` → `024e_BuildBeaching` →
+`029_BeachingMaps`). This note is
 the original design rationale and literature basis. **The production scheme
 is the weighted / fractional variant** — the deterministic expectation of
 the first-stranding rule sketched below, chosen for noise-free high-age
