@@ -1,5 +1,8 @@
 *.ipynb_checkpoints
 __pycache__/
+
+# Credentials — Copernicus Land Monitoring Service machine-to-machine key
+.clms.json
 *.pyc
 output/*
 *.sif
