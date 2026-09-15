@@ -158,7 +158,9 @@ plain clone. Top-level layout (`<source>_<dataset>`):
 geojson baked by 000), `bsh_hbmnoku_static/` (BSH static grids
 including H0 in `static_file_{fine,coarse}/` plus the wet-cell
 coastline geojsons), `bsh_hbmnoku_demo/` (one-day BSH HBMnoku c/h/t/z
-demo subset), and `cmems_stokes_sample/` (one-day Stokes drift) — all
+demo subset), `cmems_stokes_sample/` (one-day Stokes drift), and
+`shoreclass_bsh_coastline/` (per-sub-segment `flat_fraction` of the BSH
+coastline, consumed by 024d) — all
 under the attributions listed in `ATTRIBUTION.md`.
 
 `scripts/obtain/*.sh` is the canonical recipe for each input from
