@@ -414,6 +414,30 @@ completed job; every pair then waits on the whole 010 id set. `ALLOW_MISSING=1`
 is what lets `submit_aggregates.sh` queue a year whose trajectory directory
 does not exist yet, which is the normal case here.
 
+### Submitting against a sick controller
+
+Every `sbatch` in the chain goes through `robust_sbatch`
+(`scripts/slurm_submit.sh`), because a loaded slurmctld fails with `Socket
+timed out on send/recv operation` *after* creating the job — a naive retry
+then queues the work twice. So each stage carries a job name that is unique to
+it and stable across reruns (`<tag>-<regime>-<year>-024b`, `<tag>-024d`, …,
+where `<tag>` hashes the 010 id set), and the queue rather than sbatch's exit
+status decides what still needs submitting:
+
+| situation | what happens |
+| --- | --- |
+| sbatch times out, job was created | `squeue --me -n <name>` finds it, id adopted |
+| sbatch times out, nothing created | retried, 15→120 s backoff, 6 attempts |
+| squeue unreachable too | give up on that stage — "unknown" never resubmits |
+| name already queued (rerun) | adopted, never resubmitted |
+
+The chain is therefore idempotent: rerun the identical command after a partial
+failure and it adopts what is queued, submits only the rest, and prints an
+`adopted`/`submitted` column saying which was which. An aborted run still
+prints the stages it did queue plus the command to resume. A stage that has
+already *finished* has left the queue and would be submitted again, so resume
+while the chain is still pending.
+
 Logs land under `output_root/logs/<stage>/` (`aggregates`, `024d`, `024efg`,
 `025-031`, `headline`), the chain's own submission record under
 `logs/chain/chain_<timestamp>.log`. Stage E is a hook: if

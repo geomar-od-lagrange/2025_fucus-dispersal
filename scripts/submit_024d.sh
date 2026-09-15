@@ -16,6 +16,7 @@
 #   ONLY_STEMS_FILE=/path/stems.txt scripts/submit_024d.sh   # retry a subset
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source "$(dirname "$0")/slurm_submit.sh"
 
 job=scripts/024d_BuildBeachingForcing_job.sh
 max_tasks=${MAX_TASKS:-292}
@@ -27,4 +28,7 @@ ntasks=$(( njobs < max_tasks ? njobs : max_tasks ))
 exclude=$(sed 's/#.*//' scripts/node-blacklist.txt | tr -d '[:blank:]' \
           | grep -v '^$' | paste -sd,)
 echo "${njobs} zarrs, --ntasks=${ntasks}, excluding: ${exclude:-<none>}"
-exec sbatch --ntasks="${ntasks}" ${exclude:+--exclude="${exclude}"} "$@" "${job}"
+# robust_sbatch, not sbatch: it retries a controller that times out and adopts
+# a timed-out-but-created job by --job-name instead of queueing a second copy.
+# Its last line is "<job id> <adopted|submitted>" rather than sbatch's own.
+robust_sbatch --ntasks="${ntasks}" ${exclude:+--exclude="${exclude}"} "$@" "${job}"

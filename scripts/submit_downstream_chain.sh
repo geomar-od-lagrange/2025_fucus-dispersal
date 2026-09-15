@@ -27,6 +27,17 @@
 #      zombie, and the fix is to rerun the failed unit and resubmit D alone.
 #   E  the headline regeneration, afterok on D.
 #
+# Every submission goes through robust_sbatch (scripts/slurm_submit.sh), so a
+# controller that times out mid-chain is survivable: each stage carries a job
+# name that is unique to it and stable across reruns
+# ("<tag>-<regime>-<year>-024b", "<tag>-024d", ...), where <tag> is a hash of
+# the 010 id set, and the queue -- not sbatch's exit status -- decides whether
+# a stage still needs submitting. That makes the whole chain idempotent: rerun
+# the identical command after a partial failure and it adopts what is already
+# queued and submits only the rest. The table at the end says which was which.
+# A stage that has already *finished* is no longer in the queue and would be
+# submitted again, so resume while the chain is still pending.
+#
 # The (regime, year) pairs are read off the 010 jobs themselves -- `scontrol
 # show job <id>` still knows the Command line, which carries the regime (in the
 # script name) and the release year (first argument). When scontrol no longer
@@ -43,11 +54,14 @@
 #   HEX_RADIUS            hex radius for every stage (default 6000)
 #   MAX_CONSUMER_TASKS    concurrency cap for stage D (default 12)
 #   HEADLINE_JOB          stage E job script (default scripts/headline_report_job.sh)
+#   CHAIN_TAG             job-name prefix (default: hash of the 010 id set)
+#   SBATCH_RETRY_DELAYS   submission backoff, see scripts/slurm_submit.sh
 #
 # A dry run prints the whole graph without touching the queue: put a fake
 # `sbatch` that echoes its arguments first on $PATH.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source "$(dirname "$0")/slurm_submit.sh"
 
 [ $# -ge 1 ] || {
     echo "usage: scripts/submit_downstream_chain.sh <010-job-id> [<010-job-id> ...]" >&2
@@ -72,6 +86,8 @@ for id in ${ids}; do
     [[ "${id}" =~ ^[0-9]+$ ]] || { echo "not a job id: ${id}" >&2; exit 1; }
 done
 all_dep=$(paste -sd: <<< "${ids}")
+# Stable across reruns of the same chain, distinct between different ones.
+tag=${CHAIN_TAG:-fx$(md5sum <<< "${ids}" | cut -c1-8)}
 
 echo "downstream chain: git $(git rev-parse HEAD)"
 if [ -n "$(git status --porcelain)" ]; then
@@ -79,6 +95,7 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 echo "010 jobs: $(paste -sd, <<< "${ids}")"
 echo "hex_radius=${hex_radius} output_root=${output_root}"
+echo "job-name tag: ${tag} (rerun this command to adopt whatever is queued)"
 echo
 
 # --- which (regime, year) pairs, and what each waits for ------------------
@@ -121,37 +138,65 @@ stokes_dep=$(awk '$1=="surface_stokes" {print $3}' <<< "${pairs}" | tr ':' '\n' 
 exclude=$(sed 's/#.*//' scripts/node-blacklist.txt | tr -d '[:blank:]' \
           | grep -v '^$' | paste -sd,)
 
-graph=""   # "<stage>|<job id>|<what>|<dependency>" per line, printed at the end
+graph=""   # "<stage>|<job id>|<how>|<what>|<dependency>" per line
+chain_complete=""
+
+# Printed however the script ends, so an aborted run still says what it queued
+# and how to finish it.
+summary() {
+    echo
+    printf '%-2s %-10s %-9s %-44s %s\n' stage job how what dependency
+    printf '%-2s %-10s %-9s %-44s %s\n' -- ---------- --------- \
+        -------------------------------------------- ----------
+    printf '%s' "${graph}" \
+        | awk -F'|' '{printf "%-2s %-10s %-9s %-44s %s\n", $1, $2, $3, $4, $5}'
+    echo
+    echo "chain log: ${chainlog}"
+    if [ -z "${chain_complete}" ]; then
+        echo
+        echo "INCOMPLETE: only the stages above are queued. Rerun the identical"
+        echo "command to finish it -- queued stages are adopted by job name:"
+        echo "  scripts/submit_downstream_chain.sh $(paste -sd' ' <<< "${ids}")"
+    fi
+}
+trap summary EXIT
 
 # --- stage A: per-(regime, year) aggregates -------------------------------
 a_ids=()
 while read -r regime year dep; do
     [ -n "${regime}" ] || continue
-    out=$(ALLOW_MISSING=1 scripts/submit_aggregates.sh "${regime}" "${year}" "${hex_radius}" \
+    # `|| true`: a triple that the controller cut off half-way still prints the
+    # ids it did queue, and those go into the table below before this run
+    # stops -- a rerun then adopts them by name.
+    out=$(ALLOW_MISSING=1 NAME_PREFIX="${tag}-${regime}-${year}-" \
+        scripts/submit_aggregates.sh "${regime}" "${year}" "${hex_radius}" \
             --dependency=afterany:"${dep}" \
-            --output="${logroot}/aggregates/%x_%j.out")
-    counts=$(awk '$1=="024"  {print $3}' <<< "${out}")
-    dist=$(awk   '$1=="024b" {print $3}' <<< "${out}")
-    conn=$(awk   '$1=="024c" {print $3}' <<< "${out}")
+            --output="${logroot}/aggregates/%x_%j.out") || true
+    read -r counts counts_how <<< "$(awk '$1=="024"  {print $3, $4}' <<< "${out}")"
+    read -r dist   dist_how   <<< "$(awk '$1=="024b" {print $3, $4}' <<< "${out}")"
+    read -r conn   conn_how   <<< "$(awk '$1=="024c" {print $3, $4}' <<< "${out}")"
+    [ -n "${counts}" ] && graph+="A|${counts}|${counts_how}|024 counts ${regime} ${year}|afterany:${dep}"$'\n'
+    [ -n "${dist}" ] && graph+="A|${dist}|${dist_how}|024b distance ${regime} ${year}|afterany:${dep}"$'\n'
+    [ -n "${conn}" ] && graph+="A|${conn}|${conn_how}|024c connectivity ${regime} ${year}|afterok:${counts}"$'\n'
     for j in "${counts}" "${dist}" "${conn}"; do
-        [ -n "${j}" ] || { echo "submit_aggregates.sh ${regime} ${year} returned no job id" >&2; exit 1; }
+        [ -n "${j}" ] || { echo "submit_aggregates.sh ${regime} ${year} did not queue its full triple" >&2; exit 1; }
     done
     a_ids+=("${counts}" "${dist}" "${conn}")
-    graph+="A|${counts}|024 counts ${regime} ${year}|afterany:${dep}"$'\n'
-    graph+="A|${dist}|024b distance ${regime} ${year}|afterany:${dep}"$'\n'
-    graph+="A|${conn}|024c connectivity ${regime} ${year}|afterok:${counts}"$'\n'
 done <<< "${pairs}"
 
 # --- stage B: beaching sidecars (surface_stokes only) ---------------------
-b_id=$(scripts/submit_024d.sh --parsable --dependency=afterany:"${stokes_dep}" | tail -n1)
+read -r b_id b_how <<< "$(scripts/submit_024d.sh --parsable \
+    --job-name="${tag}-024d" \
+    --dependency=afterany:"${stokes_dep}" | tail -n1)"
 [ -n "${b_id}" ] || { echo "submit_024d.sh returned no job id" >&2; exit 1; }
-graph+="B|${b_id}|024d beaching sidecars surface_stokes|afterany:${stokes_dep}"$'\n'
+graph+="B|${b_id}|${b_how}|024d beaching sidecars surface_stokes|afterany:${stokes_dep}"$'\n'
 
 # --- stage C: the 024e/024f/024g reducers ---------------------------------
-c_id=$(scripts/submit_024efg.sh --parsable --dependency=afterok:"${b_id}" \
-        --kill-on-invalid-dep=yes | tail -n1)
+read -r c_id c_how <<< "$(scripts/submit_024efg.sh --parsable \
+    --job-name="${tag}-024efg" --dependency=afterok:"${b_id}" \
+    --kill-on-invalid-dep=yes | tail -n1)"
 [ -n "${c_id}" ] || { echo "submit_024efg.sh returned no job id" >&2; exit 1; }
-graph+="C|${c_id}|024efg reducers, every member|afterok:${b_id}"$'\n'
+graph+="C|${c_id}|${c_how}|024efg reducers, every member|afterok:${b_id}"$'\n'
 
 # --- stage D: the parquet-only consumers ----------------------------------
 # The work list is static (the 031 member set is resolved inside the job, at
@@ -159,32 +204,29 @@ graph+="C|${c_id}|024efg reducers, every member|afterok:${b_id}"$'\n'
 nunits=$(LIST_ONLY=1 bash "${consumers_job}" | wc -l)
 ntasks=$(( nunits < max_consumer_tasks ? nunits : max_consumer_tasks ))
 d_dep=$(printf '%s\n' "${a_ids[@]}" "${c_id}" | paste -sd:)
-d_id=$(sbatch --parsable --ntasks="${ntasks}" \
+read -r d_id d_how <<< "$(robust_sbatch --ntasks="${ntasks}" \
         ${exclude:+--exclude="${exclude}"} \
+        --job-name="${tag}-consumers" \
         --dependency=afterok:"${d_dep}" --kill-on-invalid-dep=yes \
-        "${consumers_job}")
-graph+="D|${d_id}|025-031 consumers, ${nunits} units, ${ntasks} concurrent|afterok:${d_dep}"$'\n'
+        "${consumers_job}")"
+graph+="D|${d_id}|${d_how}|025-031 consumers, ${nunits} units, ${ntasks} tasks|afterok:${d_dep}"$'\n'
 
 # --- stage E: the headline regeneration -----------------------------------
 # ==== HOOK ====  Owned by the headline agent. Wired the moment the script
 # exists under this name; until then the chain simply has no stage E and says
 # so, rather than queueing a job that cannot run.
 if [ -f "${headline_job}" ]; then
-    e_id=$(sbatch --parsable ${exclude:+--exclude="${exclude}"} \
+    read -r e_id e_how <<< "$(robust_sbatch ${exclude:+--exclude="${exclude}"} \
+            --job-name="${tag}-headline" \
             --dependency=afterok:"${d_id}" --kill-on-invalid-dep=yes \
             --output="${logroot}/headline/%x_%j.out" \
-            "${headline_job}")
-    graph+="E|${e_id}|headline (${headline_job})|afterok:${d_id}"$'\n'
+            "${headline_job}")"
+    graph+="E|${e_id}|${e_how}|headline (${headline_job})|afterok:${d_id}"$'\n'
 else
     echo "WARNING: stage E skipped -- no ${headline_job} on disk."
     echo "WARNING: regenerate the headline by hand, or submit it with"
     echo "WARNING:   sbatch --dependency=afterok:${d_id} ${headline_job}"
-    graph+="E|-|headline SKIPPED (no ${headline_job})|afterok:${d_id}"$'\n'
+    graph+="E|-|-|headline SKIPPED (no ${headline_job})|afterok:${d_id}"$'\n'
 fi
 
-echo
-printf '%-2s %-10s %-52s %s\n' stage job what dependency
-printf '%-2s %-10s %-52s %s\n' -- ---------- ---------------------------------------------------- ----------
-printf '%s' "${graph}" | awk -F'|' '{printf "%-2s %-10s %-52s %s\n", $1, $2, $3, $4}'
-echo
-echo "chain log: ${chainlog}"
+chain_complete=1

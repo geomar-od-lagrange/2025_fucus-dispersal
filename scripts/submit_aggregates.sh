@@ -18,8 +18,13 @@
 #       --dependency=afterany:<010 job id>     # zarrs do not exist yet
 #
 # 024a_BuildHexKey_job.sh must have run first for the matching hex_radius.
+#
+# $NAME_PREFIX gives the three jobs stable, unique names ("<prefix>024" and so
+# on), which is what makes a retried or rerun submission adopt an already
+# queued job instead of duplicating it -- see scripts/slurm_submit.sh.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source "$(dirname "$0")/slurm_submit.sh"
 
 regime=${1:?usage: submit_aggregates.sh <regime> <year> [hex_radius] [sbatch args...]}
 year=${2:?usage: submit_aggregates.sh <regime> <year> [hex_radius] [sbatch args...]}
@@ -46,9 +51,10 @@ if [ "${nzarr}" -eq 0 ] && [ -z "${ALLOW_MISSING:-}" ]; then
     exit 1
 fi
 
+name_prefix=${NAME_PREFIX:-}
 exclude=$(sed 's/#.*//' scripts/node-blacklist.txt | tr -d '[:blank:]' \
           | grep -v '^$' | paste -sd,)
-sb=(sbatch --parsable)
+sb=(--parsable)
 if [ -n "${exclude}" ]; then
     sb+=(--exclude="${exclude}")
 fi
@@ -57,15 +63,28 @@ sb+=("$@")
 echo "regime=${regime} year=${year} hex_radius=${hex_radius} zarrs=${nzarr}" \
      "excluding: ${exclude:-<none>}"
 
-counts=$("${sb[@]}" scripts/024_BuildHexAggregates_job.sh "${regime}" "${year}" "${hex_radius}")
-distance=$("${sb[@]}" scripts/024b_BuildHexDistance_job.sh "${regime}" "${year}" "${hex_radius}")
+# Each id is reported the moment it lands, not in a block at the end: when the
+# controller refuses the second or third of the triple, the caller still learns
+# what was queued -- and rerunning adopts it by name rather than duplicating it.
+read -r counts counts_how <<< "$(robust_sbatch "${sb[@]}" \
+    ${name_prefix:+--job-name="${name_prefix}024"} \
+    scripts/024_BuildHexAggregates_job.sh "${regime}" "${year}" "${hex_radius}")"
+[ -n "${counts}" ] || { echo "024 counts: not queued" >&2; exit 1; }
+echo "024  counts       ${counts} ${counts_how}"
+
+read -r distance distance_how <<< "$(robust_sbatch "${sb[@]}" \
+    ${name_prefix:+--job-name="${name_prefix}024b"} \
+    scripts/024b_BuildHexDistance_job.sh "${regime}" "${year}" "${hex_radius}")"
+[ -n "${distance}" ] || { echo "024b distance: not queued" >&2; exit 1; }
+echo "024b distance     ${distance} ${distance_how}"
+
 # 024c's own dependency comes after the passed-through "$@", and sbatch keeps
 # the last --dependency it sees: a caller that chains the whole triple behind
 # an 010 run (scripts/submit_downstream_chain.sh) still gets afterok:counts
 # here, which already waits on that 010 job transitively.
-connectivity=$("${sb[@]}" --dependency=afterok:"${counts}" \
-    scripts/024c_BuildHexConnectivity_job.sh "${regime}" "${year}" "${hex_radius}")
-
-echo "024  counts       ${counts}"
-echo "024b distance     ${distance}"
-echo "024c connectivity ${connectivity}  (afterok:${counts})"
+read -r connectivity connectivity_how <<< "$(robust_sbatch "${sb[@]}" \
+    --dependency=afterok:"${counts}" \
+    ${name_prefix:+--job-name="${name_prefix}024c"} \
+    scripts/024c_BuildHexConnectivity_job.sh "${regime}" "${year}" "${hex_radius}")"
+[ -n "${connectivity}" ] || { echo "024c connectivity: not queued" >&2; exit 1; }
+echo "024c connectivity ${connectivity} ${connectivity_how} (afterok:${counts})"
