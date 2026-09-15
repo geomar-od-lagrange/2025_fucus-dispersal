@@ -18,7 +18,7 @@ without touching the runs.
 
 | Stage | File | Reads | Writes |
 |-------|------|-------|--------|
-| Sidecar | [`024d_BuildBeachingForcing`](../notebooks/024d_BuildBeachingForcing.py) | trajectory zarrs + raw `baltic_highres` Stokes + BSH H0 statics + `024a` key | one forcing zarr per trajectory zarr |
+| Sidecar | [`024d_BuildBeachingForcing`](../notebooks/024d_BuildBeachingForcing.py) | trajectory zarrs + raw `baltic_highres` Stokes + BSH H0 statics + shoreline-class table + `024a` key | one forcing zarr per trajectory zarr |
 | Reduce | [`024e_BuildBeaching`](../notebooks/024e_BuildBeaching.py) | sidecar + key | `HexAgg_beaching_*.parquet` |
 | Consume | [`029_BeachingMaps`](../notebooks/029_BeachingMaps.py) | beaching parquet + key | PNGs under `Figures/029/` |
 | Sweep | [`031_BeachingSweep`](../notebooks/031_BeachingSweep.py) | several members + key | PNGs under `Figures/031/` |
@@ -40,13 +40,13 @@ into the source zarr) and `release_hex` (int32, `024a` key space).
 | `w_on` | float16, Zstd | onshore Stokes (m/s); exactly 0 outside the sampled band | exact for the zeros; max abs error on the beached fraction 2e-8, per-hex ≤ 4e-5 rel. |
 | `dist` | uint8, 25 m steps | distance to BSH land; 255 = beyond `band_max_m` or no position | 25 m ≪ `raster_dx_m` = 500 m; nulling beyond the band halves the array |
 | `hex` | int32 | `024a` hex id of the position, everywhere; -1 = no position | survival occupancy needs the hex in open water too; 190 k ids do not fit int16; runs compress ~200× |
-| `flat` | bool | nearest land is fronted by a tidal-flat (`H0 ≤ 0`) cell | the seam for a substrate map; costs nothing |
+| `ff` | uint8, percent | flat fraction of the nearest coastal land cell, in band (0 outside) | the substrate axis of the rate model; one byte, compresses like `dist` |
 | `disp` | uint8, km | crow-flies displacement from release; 255 = saturated | slowly varying, so it compresses like `hex` |
 
 Attrs record provenance and the sampling contract the reducers assert against
 (`band_max_m`, `window_days`, `raster_dx_m`, `stokes_fill_max_cells`,
-`hex_radius`, `release_time`/`release_doy`/`regime`/`release_year`, source
-trajectory and obs counts, `builder`, `git_sha`); chunks are `(10000, nobs)`,
+`hex_radius`, `shoreclass_sha256`, `release_time`/`release_doy`/`regime`/`release_year`,
+source trajectory and obs counts, `builder`, `git_sha`); chunks are `(10000, nobs)`,
 every array written with `numcodecs.Zstd(level=5)`.
 
 All five are **parameter-free with respect to the rate model** — `τ`, the band
@@ -98,7 +98,7 @@ the window is the never-beached residual.
 | `tau_strong_hours` | e-folding time while `w_on ≥ w_c` | hours; below ~6 h everything in band during a strong-wave event strands and the value stops mattering |
 | `tau_calm_days` | background in-band rate regardless of forcing; 0 = off | ∞ or O(1 yr); a year loses 15 % over 60 d, so it is a real axis |
 | `delta` | linear edge width around `w_c` | 0 (hard step) by default; `≈0.02` checks against nearest-hour / nearest-cell sampling noise |
-| `trap_flat`, `trap_wall` | shore-type factor | deliberately degenerate (both 1.0); the seam for a substrate map |
+| `trap_flat`, `trap_wall` | strong-wave rate factor on a fully flat / fully walled cell; the realised factor is `trap_wall + (trap_flat − trap_wall)·ff/100` | 1.0 / 1.0 for the production member, which makes shore type inert; a member that moves them names them in its tag |
 | `band_m` | near-shore band width (m), ≤ the sidecar's `band_max_m` | 2000; quantised by the mask — on the 5 km coarse grid 1–4 km all select the same first cell ring, so sweep it coarsely and report fine nest and coarse regions apart |
 | `max_float_days` | viability window (d); slices the sidecar's `obs` axis | 60; a step-function `L(t)` |
 | `age_bin_days`, `disp_bin_km` | store axis granularity | 10 d, 10 km |
@@ -129,17 +129,37 @@ zero the cross-shore Stokes transport at blocked faces
 forcing but removed from the drift. That is an argument, not a validation: there
 is no observational constraint on the rate here, hence the sweep range.
 
-`trap` is degenerate because BSH's `H0 ≤ 0` tidal-flat flag
-([h0_semantics.md](h0_semantics.md)) is no retentiveness proxy for the tide-free
-Baltic, because moving `trap_flat` from 2.0 to 1.0 shifted the beached total by
-0.9 points, and because Daily et al. and Onink et al. both report terrain
-variation mattering little.
+### Shore type
 
-`shore_type` is a diagnostic label, never a result: the store records
-`wall`/`flat` at each stranding site, but because `trap_flat == trap_wall`
-the label cannot move any weight, so any difference between the two classes
-in the output reflects the coastline's own composition, not substrate. It is
-carried so a real substrate classification can be joined against it later.
+`ff` is the **flat fraction** of a coastal cell: the share of classified
+shoreline inside it that is low and unconsolidated (sand, shingle, marsh,
+mudflat) rather than a hard wall (rock, cliff, armoured bank). It comes from
+`data/shoreclass_bsh_coastline/bsh_coastline_k2_flatfraction.parquet` —
+sub-segment midpoints in EPSG:3035, one `flat_fraction` and one `seg_len_m`
+each (attribution in `ATTRIBUTION.md`). `024d` snaps the midpoints onto its
+own 500 m EPSG:3035 raster (the table's CRS, so no reprojection), takes the
+`seg_len_m`-weighted mean per cell, and lets cells the table does not reach
+inherit from the nearest that does. A sub-segment with **no class
+attribution counts 0.5** — halfway between the two trap weights, so
+unattributed coast is neither pushed towards trapping nor away from it, and
+no separate "unknown" flag has to be carried through the reducers. Per
+position, `ff` is the value of the nearest land cell, as percent.
+
+The rate model scales the strong-wave term by
+`trap = trap_wall + (trap_flat − trap_wall)·ff/100`, linear in the fraction,
+so a half-flat cell traps halfway between the two weights rather than being
+forced into a class. The production member sets both weights to 1.0, which
+makes shore type inert — Daily et al. and Onink et al. both report terrain
+variation mattering little, so a shore-type-sensitive member is a
+sensitivity axis, not the baseline. Such a member names its weights in its
+tag (`…_tf<flat>_tw<wall>`, `.` → `p`, e.g.
+`step_wc0p1_ts3_tcinf_tf1_tw0p25`), so it writes its own store files; the
+suffix is absent whenever both weights are 1.0.
+
+`shore_type` in the store is a threshold label on the same fraction —
+`flat` where `ff ≥ 50` at the stranding hour, else `wall` — and is
+diagnostic: at the production weights it cannot move any weight, so a
+difference between the classes reflects the coastline's own composition.
 
 ## Store schema
 
@@ -155,14 +175,15 @@ summing the monthly partitions whose month falls in its `season` parameter
 | `release_doy` | release day-of-year of the originating zarr |
 | `beach_hex` | hex where the weight stranded; `-1` = never-beached residual |
 | `beach_age_bin` | `floor(deposit_age_days / age_bin_days)`; `-1` for residual |
-| `shore_type` | `wall` / `flat` at the stranding site (`none` for residual); diagnostic only while `trap` is degenerate |
+| `shore_type` | `flat` where the stranding site's `ff ≥ 50`, else `wall` (`none` for residual); diagnostic |
 | `disp_bin` | `floor(disp_km / disp_bin_km)`; `-1` for residual. The sidecar saturates `disp` at 255 km, so the top bin pools everything beyond |
 | `weight` | summed stranded weight (expected particles) in the group |
 
 Deposits + residual per source hex sum to that hex's released drifter count, so
 the beached fraction is `sum(weight | beach_hex ≥ 0) / sum(weight)`. The
 `member` tag names the rate-model point and consumers take it as an opaque
-string: `step_wc<w_c>_ts<tau_strong_hours>_tc<tau_calm_days|inf>[_d<delta>]`,
+string:
+`step_wc<w_c>_ts<tau_strong_hours>_tc<tau_calm_days|inf>[_d<delta>][_tf<trap_flat>_tw<trap_wall>]`,
 `.` → `p` (e.g. `step_wc0p1_ts3_tcinf`). `disp_bin_km` is a build↔consumer contract *not* stored
 in the parquet — pass `029`/`031` the value `024e` built with, exactly as
 `distance_bin_km` works in the distance store
@@ -171,7 +192,7 @@ in the parquet — pass `029`/`031` the value `024e` built with, exactly as
 ## Production setting
 
 The reducer defaults: `w_c = 0.10` m/s, `τ_strong = 3 h`, `τ_calm = ∞`,
-`δ = 0`, `trap ≡ 1`, `band_m = 2000`, `max_float_days = 60` — member tag
+`δ = 0`, `trap_flat = trap_wall = 1`, `band_m = 2000`, `max_float_days = 60` — member tag
 `step_wc0p1_ts3_tcinf`. `w_c = 0.10` is the p93 of onshore Stokes over
 in-band hours, so 3.9 % of in-band hours count as strong-wave hours. Pooled
 over surface_stokes 2016–2019 (16.58 M real drifters):

@@ -10,8 +10,9 @@ S(t) = exp(−A(t)),   A(t) = cumsum(Δt/τ) over in-band steps
 ```
 
 with the same two-state near-shore rate `τ` as the
-[beaching diagnostic](beaching.md) — including its degenerate `trap`, so
-onshore wave forcing is the only term that modulates the rate. `A` grows only
+[beaching diagnostic](beaching.md) — including its `trap` shore-type factor,
+inert at the production 1.0/1.0 weights, so onshore wave forcing is the only
+term that modulates the rate there. `A` grows only
 inside the near-shore band, so open-water residence is undiluted while weight
 lingering in a wave-exposed band decays fast. This is the occupancy analogue of
 024e's fractional stranding: **024e records where the weight leaves
@@ -70,8 +71,9 @@ At each horizon `T`, `030` selects the snapshot bin *ending* at `T` —
 `age_bin = T/age_bin_days − 1`, i.e. ages in `[T − age_bin_days, T)` —
 and draws occupancy vs. survival-weighted (shared `LogNorm`) vs. surviving
 fraction (linear 0–1). The drifting fraction falls with age, most steeply where
-near-shore residence coincides with onshore waves — with `trap` degenerate the
-depletion pattern is a *wave-exposure* field, not a substrate one. Absolute
+near-shore residence coincides with onshore waves — at the production
+`trap_flat = trap_wall = 1` the depletion pattern is a *wave-exposure* field,
+not a substrate one. Absolute
 rates are parameter-sensitive ([beaching.md](beaching.md)); read the *pattern*.
 
 ## Cross-references
