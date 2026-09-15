@@ -3,7 +3,7 @@
 #SBATCH --ntasks=73
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=60G
-#SBATCH --time=24:00:00
+#SBATCH --time=36:00:00
 #SBATCH --partition=base
 
 module load gcc12-env/12.3.0
@@ -11,8 +11,13 @@ module load singularity/3.11.5
 
 # Submit from the repo root — relative paths and `-B $PWD:/work` assume it.
 
-# Override release year via positional arg, e.g. `sbatch <script> 2024`.
+# Positional args: release year, then how many of the year's releases to run.
+# `n_releases` exists because the last forced year is partial -- a release only
+# runs if its whole simulation_days window sits inside the available forcing.
+# Submit via `scripts/submit_010.sh <regime> <year> [n_releases]`, which sets
+# `--ntasks` to the same count so the allocation matches the work.
 year="${1:-2019}"
+n_releases="${2:-73}"
 
 repo_root=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
@@ -52,12 +57,14 @@ run_experiment() {
 export -f run_experiment
 export repo_root output_root container calc_dt_mins output_dt_mins particles_per_cell
 
-# 73 releases per year at doy = 1 + 5n for n ∈ [0, 72] (doys 1..361,
-# leap-year-agnostic). One papermill per start_time. The surface_stokes
+echo "year=${year} n_releases=${n_releases} SLURM_NTASKS=${SLURM_NTASKS}"
+
+# Releases at doy = 1 + 5n for n ∈ [0, n_releases-1]; a full year is 73 of
+# them (doys 1..361, leap-year-agnostic). One papermill per start_time. The surface_stokes
 # regime layers BSH surface currents with CMEMS Stokes drift (Baltic
 # high-res + WAVERYS fallback for the German Bight strip); the
 # preprocessed 2D fieldset is produced by 003_prepare_2d_fields.py.
-for n in $(seq 0 72); do
+for n in $(seq 0 $((n_releases - 1))); do
     doy=$((1 + 5 * n))
     # Derive both times from year+doy; never feed an ISO datetime back into
     # `date -d` — its parser silently drops "+N days" after a T-time.

@@ -46,6 +46,54 @@ the manuscript figure, not a preview (rationale in
 products of `025`/`026`/`026a`/`026b`/`027`, long-form CSV for `028`'s
 connectivity matrices.
 
+## The Parcels runs (010)
+
+`scripts/010_FucusDispersal_{surface,bottom,surface_stokes}_job.sh` fan out one
+single-process papermill run per release (`xargs -P ${SLURM_NTASKS}` over `srun
+--ntasks=1 --exact` steps), each writing one trajectory zarr under
+`output_root/Trajectories/<regime>/<year>/`. Two positional args:
+
+| arg | default | meaning |
+|---|---|---|
+| `$1` | `2019` | release year |
+| `$2` | `73` | number of releases to run, taken from the front of the schedule |
+
+Releases sit at `doy = 1 + 5n`, `n ∈ [0, n_releases-1]` — 73 per full year, doys
+1…361, the same regardless of leap year. Each run integrates `simulation_days=220`
+forward from `<doy>T00:15:00`, so the *last* release of year Y needs forcing
+through roughly Y+1-08-03. `n_releases` is how a year at the end of the forcing
+record runs only the releases whose whole 220-day window is covered: with 2D
+fields ending 2025-12-31, the 2025 releases that fit are `n ∈ [0, 28]` (doys
+1…141, last window closing 2025-12-27), so `n_releases=29`.
+
+Submit through the wrapper rather than `sbatch` directly:
+
+```bash
+scripts/submit_010.sh <regime> <year> [n_releases] [extra sbatch args...]
+
+scripts/submit_010.sh bottom 2022              # full year, --ntasks=73
+scripts/submit_010.sh surface_stokes 2025 29   # partial year, --ntasks=29
+```
+
+`--ntasks` has to equal the release count and an `#SBATCH` directive cannot read
+the job script's own arguments, so the wrapper sets both from one number — a
+29-release job books 29 tasks, not 73. It also expands
+`scripts/node-blacklist.txt` into `--exclude=` (as `submit_024d.sh` does) and
+passes further `sbatch` flags through.
+
+At `--mem-per-cpu=60G` a 73-task job needs ~19–25 nodes, so these are the
+largest allocations in the pipeline; submit a couple at a time and let SLURM
+queue the rest. `--time=36:00:00` (the `base` cap is 48 h): observed wall times
+run 5–19 h, and the fieldset the notebook builds grows with every year of 2D
+fields on disk, because `010` globs the whole `2d_fields/` directory rather than
+the run window.
+
+**Forcing gaps are silent.** The notebook intersects the fine and coarse file
+stems and drops whatever is missing from either, with a warning; Parcels then
+interpolates straight across the hole instead of raising. Check `2d_fields/` for
+missing 6-hourly stems in every year a run window touches before submitting, and
+record the holes with the results.
+
 ## Multi-task dask layout
 
 `--ntasks=N ≥ 3`, one role per SLURM task: task 0 the dask scheduler plus a
