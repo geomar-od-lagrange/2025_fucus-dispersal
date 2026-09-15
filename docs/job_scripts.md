@@ -136,6 +136,24 @@ reconstructs the member tag the notebook builds, so an executed notebook and
 the parquet it wrote match by eye. The kernel-race retry and the per-cell
 `JUPYTER_RUNTIME_DIR` above apply here too.
 
+When *every* member has to be rebuilt at once — after a sidecar rebuild
+invalidates all of them — `scripts/024efg_ReduceAll_job.sh` replaces that loop
+of one-member submissions with a single 024d-shaped job whose unit of work is
+one `(reducer, member, year, month)` cell: 25 members (14 for 024e, 7 for 024f,
+4 for 024g) x 4 years x 12 months = 1200 cells, driven by
+`xargs -P ${SLURM_NTASKS}` over `srun -n1 -N1 --exact --no-kill` steps with the
+same 3-attempt kernel-race retry and `OK`/`FAIL` tally. The members are a plain
+table in the script rather than an environment sweep, so the exact set is read
+off the source, and the tag each cell produces is rebuilt there exactly as the
+notebooks build it (including the `_tf{}_tw{}` suffix a shore-type-sensitive
+member carries). `tau_calm_days = 0` is how the notebooks spell an infinite
+calm timescale; it tags as `tcinf`. `scripts/submit_024efg.sh` mirrors
+`submit_024d.sh` — it expands the node blacklist into `--exclude` and passes
+extra `sbatch` args through, so chaining it behind the sidecar build is
+`scripts/submit_024efg.sh --ntasks=292 --dependency=afterok:<024d job id>`.
+Reducers are light (`--mem-per-cpu=6G`, `--cpus-per-task=2`), so the 12 h limit
+is slack, not an estimate.
+
 ## Parquet-only consumers
 
 Single task, no Dask, one submission per run; each runs under
