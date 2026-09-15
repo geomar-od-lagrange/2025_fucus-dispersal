@@ -40,7 +40,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
-SRUN_STEP="srun --ntasks=1 --cpus-per-task=${SLURM_CPUS_PER_TASK} --exact"
+# Drop any CPU-bind mask inherited from the batch step; otherwise a step that
+# lands on a second node of a fragmented allocation fails with "CPU binding
+# outside of job step allocation" and srun exits 64 before papermill ever
+# starts (jobs 23836462 / 23836463). -N1 keeps a single-task step from being
+# spread over the allocation's nodes, --exact sets its own binding, and
+# --mem-per-cpu stops the first step claiming the node's whole memory.
+unset SLURM_CPU_BIND SLURM_CPU_BIND_LIST SLURM_CPU_BIND_TYPE SLURM_CPU_BIND_VERBOSE
+
+SRUN_STEP="srun -n1 -N1 --exact --cpus-per-task=${SLURM_CPUS_PER_TASK}"
+SRUN_STEP="${SRUN_STEP} --mem-per-cpu=${SLURM_MEM_PER_CPU}M"
 WORKER_ARGS="--scheduler-file ${SCHEDULER_FILE} --interface ib0"
 
 # Task 0: scheduler + attached workers (shape auto-detected from cgroup).
