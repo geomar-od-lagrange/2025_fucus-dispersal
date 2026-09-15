@@ -14,6 +14,8 @@
 #
 #   scripts/submit_aggregates.sh bottom 2020
 #   scripts/submit_aggregates.sh surface_stokes 2025 6000 --time=12:00:00
+#   ALLOW_MISSING=1 scripts/submit_aggregates.sh bottom 2025 6000 \
+#       --dependency=afterany:<010 job id>     # zarrs do not exist yet
 #
 # 024a_BuildHexKey_job.sh must have run first for the matching hex_radius.
 set -euo pipefail
@@ -26,14 +28,20 @@ shift $(( $# < 3 ? $# : 3 ))
 
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
 trajdir=${output_root}/Trajectories/${regime}/${year}
-if [ ! -d "${trajdir}" ]; then
+# ALLOW_MISSING=1 drops the on-disk check, for a submit chained behind the 010
+# run that will write those zarrs (scripts/submit_downstream_chain.sh): at
+# submit time the directory does not exist yet, and the notebooks discover the
+# zarrs when they finally run.
+nzarr=0
+if [ -d "${trajdir}" ]; then
+    # Under `set -e` a bare count of a year that has not been run yet would
+    # abort with no message, so the directory is checked before it is counted.
+    nzarr=$(find "${trajdir}" -maxdepth 1 -name '*.zarr' -type d | wc -l)
+elif [ -z "${ALLOW_MISSING:-}" ]; then
     echo "no such trajectory directory: ${trajdir}" >&2
     exit 1
 fi
-# Under `set -e` a bare count of a year that has not been run yet would abort
-# with no message, so the directory is checked before it is counted.
-nzarr=$(find "${trajdir}" -maxdepth 1 -name '*.zarr' -type d | wc -l)
-if [ "${nzarr}" -eq 0 ]; then
+if [ "${nzarr}" -eq 0 ] && [ -z "${ALLOW_MISSING:-}" ]; then
     echo "no trajectory zarrs under ${trajdir}" >&2
     exit 1
 fi
@@ -51,6 +59,10 @@ echo "regime=${regime} year=${year} hex_radius=${hex_radius} zarrs=${nzarr}" \
 
 counts=$("${sb[@]}" scripts/024_BuildHexAggregates_job.sh "${regime}" "${year}" "${hex_radius}")
 distance=$("${sb[@]}" scripts/024b_BuildHexDistance_job.sh "${regime}" "${year}" "${hex_radius}")
+# 024c's own dependency comes after the passed-through "$@", and sbatch keeps
+# the last --dependency it sees: a caller that chains the whole triple behind
+# an 010 run (scripts/submit_downstream_chain.sh) still gets afterok:counts
+# here, which already waits on that 010 job transitively.
 connectivity=$("${sb[@]}" --dependency=afterok:"${counts}" \
     scripts/024c_BuildHexConnectivity_job.sh "${regime}" "${year}" "${hex_radius}")
 

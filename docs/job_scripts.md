@@ -346,10 +346,80 @@ away.
 Every default is `regime=surface_stokes`, `hex_radius=6000`. `age_bin_days`,
 `time_horizons_days_csv`, `disp_bin_km` and the origin/year filters fall back
 to the notebook defaults and must match what the corresponding builder wrote.
+Each ends in `jobinfo || true`: the accounting tool is the last command, so
+without that its status, not papermill's, would be the job's — and an
+`afterok` dependency would fire on a figure that was never drawn. Same reason
+`024c` carries `set -euo pipefail`.
+
+### The whole consumer matrix in one job
+
+`scripts/025-031_ConsumersAll_job.sh` runs every consumer figure of the study
+as one `srun` step per `(stage, regime, season, member)`, `xargs -P
+${SLURM_NTASKS}` over the same fan-out the 024d/024efg drivers use. Each step
+invokes the per-stage script above, so those stay the single source of the
+papermill contract and this driver only decides which combinations run:
+
+| stages | coverage | units |
+|---|---|---|
+| 025, 026, 026a, 026b, 027 | {surface_stokes, bottom} × 5 seasons | 50 |
+| 028 | surface_stokes unweighted + production member, bottom unweighted, × 5 seasons | 15 |
+| 029, 030 | surface_stokes, production member, × 5 seasons | 10 |
+| 031 | surface_stokes × 5 seasons, `members_csv` = every 024e member on disk | 5 |
+
+`LIST_ONLY=1 bash scripts/025-031_ConsumersAll_job.sh` prints the 80 units;
+`STAGES` / `REGIMES` / `SEASONS` restrict the matrix. The 031 member list is
+read off `HexAggregates/` inside the job, not at submit time — the reducers
+write those stores minutes earlier in the chain below, so any hardcoded list
+would be stale by construction.
+
+Per-task shape is `8 cpu × 16G = 128 GB`, sized from the heaviest unit rather
+than the median: measured `sacct` MaxRSS over four release years is 56.3 GiB
+for 026, 49.6 for 026b, 40.2 for 026a, 32.8 for 025 against 0.2 for 027 and
+<0.1 for 028. The counts-store consumers hold the pooled store in memory, so
+their peak grows with the release-year count. One job at that shape beats ~80
+one-task allocations queueing independently behind the same dependency for
+work that is minutes long; the price is that the cheap two thirds of the
+matrix book memory they do not need.
 
 `scripts/0-31-smoke-test.sh` runs the whole chain (000–031) on one host
 against the demo subset in `data/`, with no SLURM — the integration check for
 a fresh clone, not a scientific run.
+
+## Unattended: the downstream chain
+
+`scripts/submit_downstream_chain.sh <010-job-id> ...` queues everything below
+the Parcels runs as one SLURM dependency graph and exits. The 010 runs take
+24–48 h, far past any session watching them, so the chain is submitted once
+and left alone.
+
+```
+A  024 + 024b + 024c per (regime, year)   afterany on that pair's 010 job
+B  024d sidecars, surface_stokes          afterany on the surface_stokes 010 jobs
+C  024e/024f/024g reducers                afterok on B
+D  025-031 consumers, 80 units            afterok on every A job and on C
+E  headline regeneration                  afterok on D
+```
+
+`afterany` where the stage discovers its own work on disk (a release year
+whose 010 run died contributes the zarrs it wrote, and the notebooks pool what
+exists); `afterok` where a partial input would silently corrupt the output.
+`--kill-on-invalid-dep=yes` on the `afterok` edges turns an unsatisfiable
+dependency into a cancelled job rather than one pending forever.
+
+The `(regime, year)` pairs are read off the 010 jobs themselves — `scontrol
+show job <id>` still carries the `Command` line, whose script name is the
+regime and whose first argument is the release year. Pass
+`REGIME_YEARS="bottom:2020 surface_stokes:2020"` when scontrol has forgotten a
+completed job; every pair then waits on the whole 010 id set. `ALLOW_MISSING=1`
+is what lets `submit_aggregates.sh` queue a year whose trajectory directory
+does not exist yet, which is the normal case here.
+
+Logs land under `output_root/logs/<stage>/` (`aggregates`, `024d`, `024efg`,
+`025-031`, `headline`), the chain's own submission record under
+`logs/chain/chain_<timestamp>.log`. Stage E is a hook: if
+`scripts/headline_report_job.sh` is absent the chain says so and submits
+nothing, and the printed warning carries the one `sbatch` line that wires it
+later.
 
 ## Cross-references
 
