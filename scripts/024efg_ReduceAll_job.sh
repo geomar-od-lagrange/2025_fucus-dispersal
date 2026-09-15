@@ -1,6 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=024efg_reduce
 #SBATCH --partition=base
+# Concurrency ceiling for a direct `sbatch`. scripts/submit_024efg.sh sizes the
+# allocation from the discovered work list instead (capped at the same value),
+# so a small grid books a small allocation.
 #SBATCH --ntasks=292
 #SBATCH --cpus-per-task=2
 #SBATCH --mem-per-cpu=6G
@@ -13,10 +16,12 @@
 
 # Re-reduce every beaching store from the rebuilt 024d sidecars, in one job.
 #
-# Unit of work = one (reducer, member, year, month) cell. Each cell is a
-# seconds-per-zarr numpy pass over ~6 sidecar zarrs plus the 024a key, so a
-# cell is 1-2 min and the 1200-cell grid drains in a handful of rounds at
-# --ntasks=292. Concurrency is whatever --ntasks the scheduler grants
+# Unit of work = one (reducer, member, year, month) cell: the member table
+# below crossed with every (release year, month) that has a BeachingForcing
+# sidecar on disk (12 per full release year). Each cell is a seconds-per-zarr
+# numpy pass over ~6 sidecar zarrs plus the 024a key, so a cell is 1-2 min and
+# the grid drains in a handful of rounds. Concurrency is whatever --ntasks the
+# scheduler grants
 # (`xargs -P ${SLURM_NTASKS}`), independent of the work-list length, so the
 # same script can be resubmitted throttled.
 #
@@ -28,7 +33,9 @@
 # scripts/node-blacklist.txt into `sbatch --exclude=` (an #SBATCH directive
 # cannot read a file) and passes extra args through, e.g.
 #
-#   scripts/submit_024efg.sh --ntasks=292 --dependency=afterok:<024d job id>
+#   scripts/submit_024efg.sh --dependency=afterok:<024d job id>
+#   YEARS="2020 2021" scripts/submit_024efg.sh       # restrict the year set
+#   LIST_ONLY=1 bash scripts/024efg_ReduceAll_job.sh # print the cells
 #
 # The allocation-level exclusion is deliberately NOT repeated as a step-level
 # `srun --exclude`: that made SLURM serialise the steps ("step creation
@@ -49,8 +56,6 @@ band_m=2000.0
 max_float_days=60
 occupancy_max_days=120
 connectivity_max_days=120
-YEARS=(2016 2017 2018 2019)
-MONTHS=($(seq 1 12))
 logdir=${output_root}/logs/024efg
 mkdir -p "${logdir}/executed"
 
@@ -190,18 +195,43 @@ run_one() {
 }
 export -f run_one
 
+# "<year> <month>" per cell: the distinct release months that have a
+# BeachingForcing sidecar on disk for this regime. The year set is not a
+# literal -- it is whatever 024d has written, so a release year joins the grid
+# as soon as its sidecars land, and a partial year contributes only the months
+# it actually has. $YEARS (space-separated) restricts it; unset takes all.
+list_cells() {
+    for p in "${output_root}/BeachingForcing/${regime}"/*/*.zarr; do
+        [ -d "${p}" ] || continue
+        year=$(basename "$(dirname "${p}")")
+        [ -z "${YEARS:-}" ] || [[ " ${YEARS} " == *" ${year} "* ]] || continue
+        stamp=$(basename "${p}")
+        stamp=${stamp#*_BSH_}
+        month=${stamp:4:2}
+        echo "${year} ${month#0}"
+    done | sort -u -k1,1n -k2,2n
+}
+
 # "reducer w_c ts tc delta tf tw year month" per line.
 list_work() {
+    local cells
+    cells=$(list_cells)
     while read -r reducer w_c ts tc delta tf tw; do
         [ -n "${reducer}" ] || continue
-        for year in "${YEARS[@]}"; do
-            for month in "${MONTHS[@]}"; do
-                echo "${reducer} ${w_c} ${ts} ${tc} ${delta} ${tf} ${tw} ${year} ${month}"
-            done
-        done
+        while read -r year month; do
+            echo "${reducer} ${w_c} ${ts} ${tc} ${delta} ${tf} ${tw} ${year} ${month}"
+        done <<< "${cells}"
     done <<< "${MEMBERS}"
 }
 
+# Work-list preview, for sizing the allocation (scripts/submit_024efg.sh) or
+# eyeballing what a $YEARS selection resolves to.
+if [ -n "${LIST_ONLY:-}" ]; then
+    list_work
+    exit 0
+fi
+
+ncells=$(list_cells | wc -l)
 njobs=$(list_work | wc -l)
 # Provenance header: the store parquets carry git_sha + slurm_job_id as attrs,
 # and this pins what that job was, in the .out next to the OK/FAIL tally.
@@ -215,8 +245,9 @@ echo "024efg members:"
 echo "${MEMBERS}" | while read -r reducer w_c ts tc delta tf tw; do
     [ -n "${reducer}" ] && echo "  ${reducer} $(member_tag "${w_c}" "${ts}" "${tc}" "${delta}" "${tf}" "${tw}")"
 done
-echo "024efg: ${njobs} cells, ${SLURM_NTASKS} concurrent, regime=${regime}," \
-     "hex_radius=${hex_radius}, years ${YEARS[*]}, logs -> ${logdir}"
+echo "024efg: ${njobs} cells (${ncells} (year, month) cells per member)," \
+     "${SLURM_NTASKS} concurrent, regime=${regime}, hex_radius=${hex_radius},"\
+     "years $(list_cells | cut -d' ' -f1 | uniq | paste -sd,), logs -> ${logdir}"
 
 # `set -e` must not kill the driver when a task exhausts its retries; run_one
 # already swallows its own status and reports FAIL, and the tally below is the

@@ -1,6 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=024d_forcing
 #SBATCH --partition=base
+# Concurrency ceiling for a direct `sbatch`. scripts/submit_024d.sh sizes the
+# allocation from the discovered work list instead, so a short list books a
+# short allocation.
 #SBATCH --ntasks=292
 #SBATCH --cpus-per-task=2
 #SBATCH --mem-per-cpu=9G
@@ -19,13 +22,14 @@
 #
 # Unit of work = one trajectory zarr, not a (year, month) cell. At
 # window_days=220 (the full Parcels simulation, obs=5280) a cell's ~6 zarrs run
-# strictly sequentially inside one papermill process, so the month grid caps
-# concurrency at 48 and makes wall time 6x the per-zarr cost. One srun step per
-# zarr is 292 independent single-process numpy runs (no MPI, no Dask) whose
+# strictly sequentially inside one papermill process, so a month grid caps
+# concurrency at 12 per release year and makes wall time 6x the per-zarr cost.
+# One srun step per zarr is one independent single-process numpy run per zarr
+# (no MPI, no Dask) whose
 # bottleneck is streaming trajectory + hourly Stokes off GPFS, so they want
 # horizontal filesystem reach rather than node locality -- but --spread-job is
 # the wrong lever at this task count: it asks for one node per task, and a
-# 292-node request against ~94 idle nodes pends on (Resources) indefinitely
+# 292-node request against ~94 idle nodes pended on (Resources) indefinitely
 # (job 23834728). --distribution=cyclic alone round-robins the tasks over
 # however many nodes the scheduler grants, which is the spread that matters.
 # No --constraint either: it only shrinks the eligible pool.
@@ -35,7 +39,7 @@
 # 18 GB is that plus 55% headroom. Steps there ran at 12 GB/task with no
 # oom-kill, so the margin is thin rather than absent.
 #
-# njobs is fixed at 292 by the zarr count, concurrency is whatever --ntasks the
+# njobs is set by the zarr count on disk, concurrency is whatever --ntasks the
 # scheduler grants (`xargs -P ${SLURM_NTASKS}`), so the two rescale
 # independently: resubmit with --ntasks=146 under load without editing this.
 # Tasks share no output, and the notebook skips sidecars that already carry the
@@ -50,8 +54,10 @@
 #
 # Usage: scripts/submit_024d.sh
 #   scripts/submit_024d.sh --ntasks=146                            # throttle
+#   YEARS="2020 2021" scripts/submit_024d.sh                       # subset
 #   ONLY_STEMS_FILE=/path/stems.txt scripts/submit_024d.sh --ntasks=8  # retry
 #     (that file holds one "<year> <stem>" line per zarr to rebuild)
+#   LIST_ONLY=1 bash scripts/024d_BuildBeachingForcing_job.sh      # print work
 # 024a_BuildHexKey_job.sh must have run first for the matching hex_radius.
 
 set -euo pipefail
@@ -61,7 +67,6 @@ cd "${SLURM_SUBMIT_DIR:-$PWD}"
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
 regime=surface_stokes
 hex_radius=6000
-YEARS=(2016 2017 2018 2019)
 logdir=${output_root}/logs/024d
 mkdir -p "${logdir}/executed"
 
@@ -121,19 +126,30 @@ run_one() {
 }
 export -f run_one
 
-# "year stem" per line: the full 292-zarr enumeration, or the retry subset.
+# "<year> <stem>" per line: every trajectory zarr on disk for this regime, or
+# the retry subset. The year set is not a literal -- it is whatever 010 has
+# written, so a release year joins the work list as soon as its runs land.
+# $YEARS (space-separated) restricts it; an unset $YEARS takes all of them.
 list_work() {
     if [ -n "${ONLY_STEMS_FILE:-}" ]; then
         grep -v '^[[:space:]]*$' "${ONLY_STEMS_FILE}"
         return
     fi
-    for year in "${YEARS[@]}"; do
-        for p in "${output_root}/Trajectories/${regime}/${year}"/*.zarr; do
-            b=$(basename "${p}")
-            echo "${year} ${b%.zarr}"
-        done
+    for p in "${output_root}/Trajectories/${regime}"/*/*.zarr; do
+        [ -d "${p}" ] || continue
+        year=$(basename "$(dirname "${p}")")
+        [ -z "${YEARS:-}" ] || [[ " ${YEARS} " == *" ${year} "* ]] || continue
+        b=$(basename "${p}")
+        echo "${year} ${b%.zarr}"
     done
 }
+
+# Work-list preview, for sizing the allocation (scripts/submit_024d.sh) or
+# eyeballing what a $YEARS / $ONLY_STEMS_FILE selection resolves to.
+if [ -n "${LIST_ONLY:-}" ]; then
+    list_work
+    exit 0
+fi
 
 njobs=$(list_work | wc -l)
 # Provenance header: the sidecar zarrs carry git_sha + slurm_job_id as attrs,

@@ -1,9 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=024g_BuildSurvivalConnectivity
-# One cell per (year, month) = |YEARS| x 12 = 48 cells; each cell is a
-# seconds-per-sidecar numpy pass over the BeachingForcing sidecar, so a small
-# allocation drains the grid in minutes. Raise --ntasks on the command line
-# when sweeping several members in one job.
+# One cell per (release year, month) that has a BeachingForcing sidecar on
+# disk -- 12 per full release year, fewer for a partial one. Each cell is a
+# seconds-per-sidecar numpy pass over that sidecar, so a small allocation
+# drains the grid in minutes. Raise --ntasks on the command line when sweeping
+# several members in one job.
 #SBATCH --ntasks=12
 #SBATCH --cpus-per-task=2
 #SBATCH --mem-per-cpu=8G
@@ -36,9 +37,8 @@ set -euo pipefail
 #                                  largest matrix horizon 028 asks for
 #
 # 024a_BuildHexKey_job.sh and 024d_BuildBeachingForcing_job.sh must have run
-# first for the matching hex_radius / (regime, year).
-
-YEARS=(2016 2017 2018 2019)
+# first for the matching hex_radius / (regime, year); the (year, month) grid is
+# read off the sidecars they wrote, and $YEARS restricts it to a subset.
 
 # Drop any CPU-bind mask inherited from an outer allocation (present when
 # submitted from inside an interactive job); --exact sets each step's own.
@@ -46,6 +46,31 @@ unset SLURM_CPU_BIND SLURM_CPU_BIND_LIST SLURM_CPU_BIND_TYPE SLURM_CPU_BIND_VERB
 
 regime="${1:-surface_stokes}"
 hex_radius="${2:-6000}"
+output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
+
+# "<year> <month>" per cell: the distinct release months that have a
+# BeachingForcing sidecar on disk for this regime. The year set is not a
+# literal -- it is whatever 024d has written, so a release year joins the grid
+# as soon as its sidecars land, and a partial year contributes only the months
+# it actually has. $YEARS (space-separated) restricts it; unset takes all.
+list_cells() {
+    for p in "${output_root}/BeachingForcing/${regime}"/*/*.zarr; do
+        [ -d "${p}" ] || continue
+        year=$(basename "$(dirname "${p}")")
+        [ -z "${YEARS:-}" ] || [[ " ${YEARS} " == *" ${year} "* ]] || continue
+        stamp=$(basename "${p}")
+        stamp=${stamp#*_BSH_}
+        month=${stamp:4:2}
+        echo "${year} ${month#0}"
+    done | sort -u -k1,1n -k2,2n
+}
+
+# Work-list preview, for eyeballing what a $YEARS selection resolves to
+# without submitting: `LIST_ONLY=1 bash <this script> [regime] [hex_radius]`.
+if [ -n "${LIST_ONLY:-}" ]; then
+    list_cells
+    exit 0
+fi
 
 W_C="${W_C:-0.1}"
 TAU_STRONG_HOURS="${TAU_STRONG_HOURS:-3.0}"
@@ -70,7 +95,6 @@ echo "member: ${member}"
 # script — de-synchronises the Jupyter kernel start-up race.
 stagger_max_s="${3:-15}"
 
-output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
 export output_root regime hex_radius stagger_max_s member
 export W_C TAU_STRONG_HOURS TAU_CALM_DAYS DELTA
 export BAND_M CONNECTIVITY_MAX_DAYS
@@ -80,11 +104,7 @@ mkdir -p notebooks_executed/Visualisations/
 # `set -e` would abort on a failing pipeline before `rc` is read, so the
 # exit status is captured in the `||` branch instead.
 rc=0
-for year in "${YEARS[@]}"; do
-    for month in $(seq 1 12); do
-        printf '%s\0' "${year} ${month}"
-    done
-done | xargs -0 -P "${SLURM_NTASKS}" -n 1 bash -c '
+list_cells | tr '\n' '\0' | xargs -0 -P "${SLURM_NTASKS}" -n 1 bash -c '
     read -r year month <<< "$1"
     tenths=$(( RANDOM % (stagger_max_s * 10 + 1) ))
     sleep "$(( tenths / 10 )).$(( tenths % 10 ))"
