@@ -25,3 +25,5 @@ nesh-srp114   # 2026-09-15: "Node unexpectedly rebooted"
 nesh-srp205   # 2026-09-15: Slurm "Duplicate jobid"
 nesh-srp243   # 2026-09-15: Slurm "Duplicate jobid"
 nesh-srp266   # 2026-09-15: Slurm "Duplicate jobid"
+nesh-clk582   # 2026-09-15: "Kill task failed" while running 010
+nesh-clk599   # 2026-09-15: "Kill task failed" while running 010
