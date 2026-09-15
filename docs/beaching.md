@@ -267,6 +267,33 @@ the wave-exposed shores:
   calm-water residents; it changes where nothing else strands.
 - **`δ`** is noise-level: keep the hard step.
 
+### Trap sensitivity
+
+`trap_flat = trap_wall = 1` makes the substrate term inert, so its weight is
+a sensitivity axis rather than a tuned parameter. Sweeping `trap_wall` at
+`trap_flat = 1` — pure-flat shore keeps the production rate, pure-wall shore
+traps at a fraction of it — over `surface_stokes`, release years **2016–2019**,
+beached fraction by 60 d, and per-`beach_hex` Spearman of stranded weight
+against the production member (n = 1 762 hexes receiving production weight):
+
+| member | beached, ALL | beached, SON | Spearman |
+|---|---|---|---|
+| **`step_wc0p1_ts3_tcinf`** (production) | **0.759** | **0.888** | 1 |
+| `…_tf1_tw0p5` | 0.715 | 0.849 | 0.995 |
+| `…_tf1_tw0p25` | 0.659 | 0.793 | 0.978 |
+| `…_tf1_tw0` | 0.419 | 0.468 | 0.324 |
+
+Moderate wall suppression rescales the total and leaves the map alone: halving
+or quartering the wall rate costs 4–10 points of beached fraction while the
+per-hex pattern is essentially unchanged (Spearman 0.995 / 0.978). Making wall
+shore fully absorbing-free (`trap_wall = 0`) is a different model — it removes
+~45 % of the beaching and reshuffles where the rest lands (Spearman 0.32),
+because wall shores carry 57.5 % of the stranded weight at production settings
+(flat 42.5 %, the coastline's own composition, since shore type is inert
+there). So `trap_wall` is not a smooth knob near zero: keep it free and report
+the range, and do not read `tw0` as a perturbation of the baseline. These are
+2016–2019 numbers; they are refreshed once the 2020–2025 reducers land.
+
 **The beached fraction is not a reportable number**; the pattern and the
 seasonal contrast are.
 

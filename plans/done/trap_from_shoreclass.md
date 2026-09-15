@@ -1,5 +1,9 @@
 # Activate `trap` from the shoreclass sub-segment classification
 
+**Implemented.** Current state in [../../docs/beaching.md](../../docs/beaching.md) — the `ff` sidecar
+variable, the `trap = trap_wall + (trap_flat − trap_wall)·ff/100` rate
+factor, the member-tag suffix, and the "Trap sensitivity" readout.
+
 Re-establish `trap` in the beaching rate as a **continuous substrate factor**,
 driven by the `flat_fraction` table produced by the sidecar repository
 <https://github.com/geomar-od-lagrange/2025_fucus-dispersal_shoreclass>.
@@ -27,7 +31,7 @@ Baltic coverage: 93.3 % attributed (BRISK 79.3 %, CLMS 13.9 %), mean
 
 ## Why this unblocks the term
 
-[docs/beaching.md](../docs/beaching.md) switched `trap` off for a stated
+[docs/beaching.md](../../docs/beaching.md) switched `trap` off for a stated
 reason, not a structural one: the only typing available was BSH's `H0 ≤ 0`
 tidal-flat flag, no retentiveness proxy for a tide-free basin. The sidecar
 types the model's own coastline from substrate evidence, Baltic-wide — and
@@ -96,7 +100,7 @@ filename is unchanged; only a substrate-sensitive one pays for the name.
 call, no new threshold — plus `none` for the residual row. There is no
 `unattributed` level: that coastline is folded into `ff` at 50 and resolves to
 `wall`. The column stops expressing nothing, so `029` and
-[docs/visualisations.md](../docs/visualisations.md) lose the standing
+[docs/visualisations.md](../../docs/visualisations.md) lose the standing
 instruction not to report it. `024f`/`024g` carry the identical raster and
 rate model but no `shore_type` column, and must stay on identical `trap`
 settings or the survival and beaching stores describe different models.
@@ -107,7 +111,7 @@ The sidecar gitignores its `data/processed/`, so the table is not fetchable
 from its GitHub repository. It reaches this study as the derived
 release-points geojson does — a **slimmed blob in the data twin** at
 `data/shoreclass_bsh_coastline/bsh_coastline_k2_flatfraction.parquet`, with
-[`scripts/obtain/obtain_shoreclass.sh`](../scripts/obtain/obtain_shoreclass.sh)
+[`scripts/obtain/obtain_shoreclass.sh`](../../scripts/obtain/obtain_shoreclass.sh)
 as the canonical recipe (clone the sidecar, `pixi run pipeline`, slim, copy).
 `ATTRIBUTION.md` carries the HELCOM BRISK and Copernicus CLMS terms through.
 Sidecar stage 1 needs a CLMS service key (EU Login, *My settings → API
@@ -181,16 +185,12 @@ beaching by ~45 % and substantially redistributes it (rho drops to 0.32) —
 consistent with wall shores being a non-trivial, spatially distinct chunk of
 the baseline stranding field, not a uniform background.
 
-### Next session
+### Still optional
 
-- [ ] Verify-report of the `ff` sidecars (292 zarrs) if not yet written up
-      in `docs/beaching.md`.
-- [ ] Rerun `028` for the survconn trap members.
-- [ ] Rerun `029`/`030` for the production member plus one trap member
-      (`_tf1_tw0p25` is the natural middle choice).
-- [ ] Rerun `031` sweep with the trap members added to `members_csv`.
-- [ ] Write the trap sensitivity (table above) into `docs/beaching.md`
-      "Sensitivity".
-- [ ] Move this plan to `plans/done/` with a pointer to the updated
-      `docs/beaching.md`.
-- [ ] Delete stale `Figures/031/` PNGs that still contain the `sat` member.
+The chain's consumer stage runs `031` over *every* `024e` member on disk, so
+the sweep figures pick the trap members up automatically; `028`/`029`/`030`
+run the production member only, so a trap-member figure from those three is a
+hand submission (`scripts/029_BeachingMaps_job.sh <regime> <radius> <member>
+<season>`, and `028` with the `024g` member). The numbers above are
+2016-2019; refreshing them for 2020-2025 is tracked in
+[../run_extension_2020_2025.md](../run_extension_2020_2025.md).
