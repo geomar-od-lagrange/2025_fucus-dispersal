@@ -32,6 +32,9 @@
 # | `flat` | bool | nearest land is fronted by a tidal flat |
 # | `disp` | uint8 | crow-flies displacement from release (km), 255 = saturated |
 #
+# The `obs` axis is the half-open `[0, window_days*24)` in hours; at the
+# default `window_days = 220` that is the whole Parcels simulation.
+#
 # Every one of these is **parameter-free with respect to the rate model**:
 # `τ`, the functional form of `s(w)`, the band width, the viability window,
 # the trap weights and the age binning are all reductions over these arrays,
@@ -125,10 +128,11 @@ hex_radius = 6000
 # dist reads 255.
 band_max_m = 5000.0
 
-# Hours cached per trajectory, as 0..window_days*24 inclusive. 120 d covers
-# the longest downstream horizon; shorter viability windows are a slice of
+# Hours cached per trajectory, as the half-open [0, window_days*24) in hours
+# — the same convention the reducers slice with. 220 d is the full Parcels
+# simulation (obs=5280 at dt60min); shorter viability windows are a slice of
 # the `obs` axis in the reducers.
-window_days = 120
+window_days = 220
 
 # Zarr output cadence (hours). The trajectory zarrs are dt60min.
 output_dt_hours = 1
@@ -145,6 +149,10 @@ stokes_fill_max_cells = 32
 overwrite = False
 # Stop after this many zarrs of the partition (0 = all); a test knob.
 max_zarrs = 0
+# Build exactly this one trajectory zarr (its stem, no ".zarr"); "" = the
+# whole (regime, release_year[, release_month]) partition. One sidecar per
+# papermill run is how the SLURM job fans 292 zarrs over 292 srun steps.
+only_stem = ""
 
 # %% [markdown]
 # # Derived layout / key + projection
@@ -171,7 +179,10 @@ print(f"sidecars → {forcing_root}")
 
 stokes_dir = output_root / "stokes" / "baltic_highres" / str(release_year)
 
-nobs = window_days * 24 + 1
+# Half-open [0, window_days*24): an inclusive end hour would add a column no
+# source zarr has (obs = 5280 = 220*24) and open a one-hour trailing age bin
+# in every reducer that bins `obs`.
+nobs = window_days * 24
 try:
     git_sha = subprocess.run(
         ["git", "rev-parse", "--short", "HEAD"],
@@ -716,14 +727,17 @@ for p, ts, fn_regime, dt_min in parsed:
     assert ts.year == release_year, (ts, release_year, p)
     assert fn_regime == regime, (fn_regime, regime, p)
     assert dt_min == output_dt_hours * 60, (dt_min, output_dt_hours, p)
-if release_month:
+if only_stem:
+    parsed = [x for x in parsed if x[0].stem == only_stem]
+elif release_month:
     parsed = [x for x in parsed if x[1].month == release_month]
 if not parsed:
     raise FileNotFoundError(
         f"no zarrs at {output_root}/Trajectories/{regime}/{release_year}/"
-        + (f" for month {release_month}" if release_month else "")
+        + (f" named {only_stem}" if only_stem
+           else f" for month {release_month}" if release_month else "")
     )
-if max_zarrs:
+if max_zarrs and not only_stem:
     parsed = parsed[:max_zarrs]
 release_doys = sorted({int(ts.dayofyear) for _, ts, _, _ in parsed})
 print(f"{len(parsed)} zarrs, release_doys "
@@ -758,7 +772,8 @@ for p, ts, _, _ in parsed:
 
 # %%
 print(f"regime={regime}, release_year={release_year}"
-      + (f", month={release_month}" if release_month else "")
+      + (f", stem={only_stem}" if only_stem
+         else f", month={release_month}" if release_month else "")
       + f", hex_radius={hex_radius} m")
 print(f"  band_max_m={band_max_m:g}, window_days={window_days} (nobs={nobs}), "
       f"raster_dx_m={raster_dx_m:g}, stokes_fill_max_cells={stokes_fill_max_cells}")

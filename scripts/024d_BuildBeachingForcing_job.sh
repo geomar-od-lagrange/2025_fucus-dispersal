@@ -1,130 +1,137 @@
 #!/bin/bash
-#SBATCH --job-name=024d_BuildBeachingForcing
-# The grid is |YEARS| x 12 = 48 cells. Asking for more tasks than cells just
-# inflates the allocation (idle slots) and makes the job harder to schedule.
-#SBATCH --ntasks=48
-#SBATCH --cpus-per-task=2
-# 8G x 2 CPU = 16 GB/task. The builder holds a handful of (n_real, nobs)
-# arrays plus the raster; measured peak is ~10.6 GB, so this is ~50% headroom.
-#SBATCH --mem-per-cpu=8G
-#SBATCH --time=04:00:00
+#SBATCH --job-name=024d_forcing
 #SBATCH --partition=base
-# Spread tasks over as many nodes as possible. These cells are independent
-# single-process papermill runs whose bottleneck is streaming trajectory
-# zarrs and hourly Stokes files off GPFS, so what matters is horizontal
-# reach into the distributed filesystem, not node locality. Packing them
-# tight starves the tail: an 8-node allocation of the same 48 cells ran
-# steps min/med/max 11:54/17:55/54:51 against 10:51/16:43/20:54 on 22
-# nodes -- same median, 2.6x worse tail. --spread-job disables the
-# topology/tree plugin, which costs nothing here since there is no MPI.
+#SBATCH --ntasks=292
+#SBATCH --cpus-per-task=2
+#SBATCH --mem-per-cpu=6G
+#SBATCH --time=1-00:00:00
 #SBATCH --spread-job
-# No --constraint: these cells are embarrassingly parallel single-process
-# papermill runs with no MPI and no Dask cluster, so the IB-reliability
-# rationale for pinning to sapphire (srp) does not apply to them. Leaving
-# the whole base partition eligible cuts queue time substantially.
+#SBATCH --distribution=cyclic
+#SBATCH --output=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs/logs/024d/%x_%j.out
 
-# Beaching forcing sidecar: reads the trajectory zarrs + raw baltic_highres
-# Stokes + the 024a key, writes one sidecar zarr per trajectory zarr under
-# output_root/BeachingForcing/<regime>/<year>/. A single-process numpy
-# notebook (no Dask) — each zarr fits in memory and the bottleneck is Stokes
-# I/O, so one papermill run processes a month's ~6 zarrs sequentially
-# (~95 s each at window_days=120).
+# Beaching forcing sidecar: reads one trajectory zarr + the raw baltic_highres
+# Stokes + the 024a key, writes one sidecar zarr under
+# output_root/BeachingForcing/<regime>/<year>/.
 #
-# There are no rate-model parameters here: the sidecar caches the
-# parameter-free ingredients (onshore Stokes, distance to land, hex id,
-# shore type, displacement) and the reducers sweep the rate model over them.
+# Unit of work = one trajectory zarr, not a (year, month) cell. At
+# window_days=220 (the full Parcels simulation, obs=5280) a cell's ~6 zarrs run
+# strictly sequentially inside one papermill process, so the month grid caps
+# concurrency at 48 and makes wall time 6x the per-zarr cost. One srun step per
+# zarr is 292 independent single-process numpy runs (no MPI, no Dask) whose
+# bottleneck is streaming trajectory + hourly Stokes off GPFS -- hence
+# --spread-job + --distribution=cyclic for horizontal filesystem reach rather
+# than node locality, and no --constraint (it only shrinks the eligible pool).
 #
-# Parallelism fans out the (year x month) grid with xargs dispatching one
-# `srun --ntasks=1 -c ${SLURM_CPUS_PER_TASK} --exact` step per cell, like
-# 010_FucusDispersal_*. njobs is fixed by the grid but concurrency is
-# whatever --ntasks the scheduler grants (`xargs -P ${SLURM_NTASKS}`), so the
-# two rescale independently: request fewer tasks under load without editing
-# the job. Cells share no output — one zarr per source zarr — and the
-# notebook skips sidecars that already carry the current sampling
-# parameters, so a partially failed job is simply resubmitted.
+# Memory: 6G x 2 cpu = 12 GB/task. Measured peak at window_days=120 was
+# ~10.6 GB for a whole month held one zarr at a time; a single zarr at 220 d
+# holds the same handful of (n_real, nobs) arrays.
 #
-# Usage: sbatch scripts/024d_BuildBeachingForcing_job.sh [regime] [hex_radius] [stagger_max_s]
-#   sbatch scripts/024d_BuildBeachingForcing_job.sh                   # surface_stokes, 48 cells
-#   sbatch scripts/024d_BuildBeachingForcing_job.sh surface 6000       # sensitivity regime
-#   sbatch --ntasks=8 scripts/024d_BuildBeachingForcing_job.sh         # throttle concurrency
+# njobs is fixed at 292 by the zarr count, concurrency is whatever --ntasks the
+# scheduler grants (`xargs -P ${SLURM_NTASKS}`), so the two rescale
+# independently: resubmit with --ntasks=146 under load without editing this.
+# Tasks share no output, and the notebook skips sidecars that already carry the
+# current sampling parameters, so a partially failed job is just resubmitted.
+#
+# Usage: sbatch scripts/024d_BuildBeachingForcing_job.sh
+#   sbatch --ntasks=146 scripts/024d_BuildBeachingForcing_job.sh   # throttle
+#   ONLY_STEMS_FILE=/path/stems.txt sbatch --ntasks=8 scripts/...  # retry set
+#     (that file holds one "<year> <stem>" line per zarr to rebuild)
 # 024a_BuildHexKey_job.sh must have run first for the matching hex_radius.
 
-YEARS=(2016 2017 2018 2019)
+set -euo pipefail
 
-# Drop any CPU-bind mask inherited from an outer allocation (present when
-# this is submitted from inside an interactive job); otherwise the
-# concurrent srun steps below try to bind to the outer job's CPUs and fail
-# with "CPU binding outside of job step allocation". --exact sets each
-# step's own binding.
-unset SLURM_CPU_BIND SLURM_CPU_BIND_LIST SLURM_CPU_BIND_TYPE SLURM_CPU_BIND_VERBOSE
-
-regime="${1:-surface_stokes}"
-hex_radius="${2:-6000}"
-# Max random start delay per cell, in seconds, drawn at 0.1 s granularity.
-# This is a de-synchroniser for the Jupyter kernel start-up race (ZMQ
-# "Address already in use" when many kernels claim connection files/ports
-# at once — it cost us a cell at 48-way and again at 100-way). The race
-# window is milliseconds, so tenths of a second are the right unit and a
-# few seconds of total spread is plenty; this is NOT bandwidth throttling.
-stagger_max_s="${3:-30}"
+cd "${SLURM_SUBMIT_DIR:-$PWD}"
 
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
-export output_root regime hex_radius stagger_max_s
+regime=surface_stokes
+hex_radius=6000
+YEARS=(2016 2017 2018 2019)
+logdir=${output_root}/logs/024d
+mkdir -p "${logdir}/executed"
 
-mkdir -p notebooks_executed/Visualisations/
+# Drop any CPU-bind mask inherited from an outer allocation; otherwise the
+# concurrent srun steps below fail with "CPU binding outside of job step
+# allocation". --exact sets each step's own binding.
+unset SLURM_CPU_BIND SLURM_CPU_BIND_LIST SLURM_CPU_BIND_TYPE SLURM_CPU_BIND_VERBOSE
 
-echo "grid: ${#YEARS[@]} years x 12 months = $((${#YEARS[@]} * 12)) cells," \
-     "${SLURM_NTASKS} concurrent"
-echo "regime: ${regime}   hex_radius: ${hex_radius}"
-echo "stagger: random 0..${stagger_max_s}s per cell, 0.1s granularity"
+export output_root regime hex_radius logdir
 
-# Emit every "year month" pair; xargs runs up to ${SLURM_NTASKS} at once,
-# each dispatching one srun --ntasks=1 -c N --exact papermill step.
-for year in "${YEARS[@]}"; do
-    for month in $(seq 1 12); do
-        printf '%s\0' "${year} ${month}"
-    done
-done | xargs -0 -P "${SLURM_NTASKS}" -n 1 bash -c '
-    read -r year month <<< "$1"
-    # Bash seeds RANDOM per process, so each xargs child gets its own draw.
-    tenths=$(( RANDOM % (stagger_max_s * 10 + 1) ))
-    sleep "$(( tenths / 10 )).$(( tenths % 10 ))"
-    # Per-cell Jupyter runtime dir. Kernels write connection files into a
-    # shared runtime dir by default; at high concurrency they collide and the
-    # kernel never starts (papermill then writes an output notebook with zero
-    # executed cells and no exception). Arrival-time stagger alone did not fix
-    # this — the failure rate tracked concurrency, not arrival density — so
-    # give every cell its own directory on node-local scratch.
-    export JUPYTER_RUNTIME_DIR="${SLURM_TMPDIR:-/tmp}/jupyter-runtime-$$"
-    mkdir -p "${JUPYTER_RUNTIME_DIR}"
-    ms=$(printf "_m%02d" "${month}")
-    # Retry kernel start-up. jupyter_client picks five free TCP ports by
-    # binding to port 0 and CLOSING the socket, then the kernel re-binds them
-    # later — a TOCTOU window in which a concurrent kernel on the same host
-    # can steal a port. The loser dies with ZMQ "Address already in use"
-    # before running any cell. The window is short and ports are re-drawn on
-    # each attempt, so a couple of retries removes the failure mode.
+run_one() {
+    year=$1
+    stem=$2
+    t0=${SECONDS}
+    # Per-task Jupyter runtime dir. jupyter_client reserves five ZMQ ports by
+    # binding to port 0 and closing them; the kernel re-binds moments later and
+    # a concurrent kernel on the same host can steal one in that window. The
+    # private dir keeps connection files off GPFS; the 3-attempt retry below is
+    # what actually covers the race (port names carry UUIDs).
+    rt="${SLURM_TMPDIR:-${TMPDIR:-/tmp}}/jupyter-runtime-${year}-${stem}"
+    mkdir -p "${rt}"
+    rc=1
     for attempt in 1 2 3; do
-        srun --ntasks=1 --cpus-per-task=${SLURM_CPUS_PER_TASK} --exact \
+        srun -n1 -N1 --exact \
+            --cpus-per-task="${SLURM_CPUS_PER_TASK}" \
+            --mem-per-cpu="${SLURM_MEM_PER_CPU}M" \
+            --job-name="024d_${stem}" \
+            env OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}" \
+                MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK}" \
+                OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK}" \
+                NUMEXPR_NUM_THREADS="${SLURM_CPUS_PER_TASK}" \
+                JUPYTER_RUNTIME_DIR="${rt}" \
             pixi run papermill --cwd notebooks/ \
-            notebooks/024d_BuildBeachingForcing.ipynb \
-            notebooks_executed/Visualisations/024d_BuildBeachingForcing_${regime}_${year}${ms}_r${hex_radius}m.ipynb \
-            -p output_root ${output_root} \
-            -p regime ${regime} \
-            -p release_year ${year} \
-            -p release_month ${month} \
-            -p hex_radius ${hex_radius} \
-            -k python
+                notebooks/024d_BuildBeachingForcing.ipynb \
+                "${logdir}/executed/024d_${year}_${stem}.ipynb" \
+                -p output_root "${output_root}" \
+                -p regime "${regime}" \
+                -p release_year "${year}" \
+                -p hex_radius "${hex_radius}" \
+                -p overwrite True \
+                -r only_stem "${stem}" \
+                -k python && { rc=0; break; }
         rc=$?
-        [ ${rc} -eq 0 ] && break
-        echo "cell attempt ${attempt} failed (rc=${rc}); retrying" >&2
+        echo "attempt ${attempt} failed (rc=${rc}) ${year} ${stem}" >&2
         sleep $(( RANDOM % 10 + 1 ))
     done
-    # Propagate the final status: without this the loop ends on `sleep`,
-    # bash -c exits 0, and xargs reports success for an exhausted cell.
-    exit ${rc}
-' _
-rc=$?
+    if [ ${rc} -eq 0 ]; then
+        echo "OK ${year} ${stem} $(( SECONDS - t0 ))"
+    else
+        echo "FAIL ${year} ${stem}"
+    fi
+    return 0
+}
+export -f run_one
 
-jobinfo
-exit ${rc}
+# "year stem" per line: the full 292-zarr enumeration, or the retry subset.
+list_work() {
+    if [ -n "${ONLY_STEMS_FILE:-}" ]; then
+        grep -v '^[[:space:]]*$' "${ONLY_STEMS_FILE}"
+        return
+    fi
+    for year in "${YEARS[@]}"; do
+        for p in "${output_root}/Trajectories/${regime}/${year}"/*.zarr; do
+            b=$(basename "${p}")
+            echo "${year} ${b%.zarr}"
+        done
+    done
+}
+
+njobs=$(list_work | wc -l)
+echo "024d: ${njobs} zarrs, ${SLURM_NTASKS} concurrent, regime=${regime}," \
+     "hex_radius=${hex_radius}, logs -> ${logdir}"
+
+# `set -e` must not kill the driver when a task exhausts its retries; run_one
+# already swallows its own status and reports FAIL, and the tally below is the
+# authoritative exit code.
+set +e
+list_work | xargs -P "${SLURM_NTASKS}" -L1 bash -c 'run_one "$@"' _ \
+    | tee "${logdir}/${SLURM_JOB_NAME}_${SLURM_JOB_ID}.tally"
+set -e
+
+tally=${logdir}/${SLURM_JOB_NAME}_${SLURM_JOB_ID}.tally
+nok=$(grep -c '^OK ' "${tally}" || true)
+nfail=$(grep -c '^FAIL ' "${tally}" || true)
+echo "024d done: ${nok} OK, ${nfail} FAIL of ${njobs}"
+grep '^FAIL ' "${tally}" | sed 's/^FAIL //' || true
+
+jobinfo || true
+[ "${nfail}" -eq 0 ]
