@@ -169,6 +169,22 @@ inline in it, there being no separate step-level `--output`) lands at
 `output_root/logs/010/%x_%j.out`, created by `submit_010.sh` before `sbatch`
 since `#SBATCH --output` opens its target at job start.
 
+Every job script points `#SBATCH --output` at `output_root/logs/<stage>/`, and
+the wrapper that submits it creates that directory first:
+
+| stage | log directory | created by |
+|---|---|---|
+| 010 | `logs/010/` | `submit_010.sh` |
+| 024 / 024b / 024c | `logs/aggregates/` | `submit_aggregates.sh` |
+| 024d | `logs/024d/` | `submit_024d.sh` |
+| 024e / 024f / 024g | `logs/024efg/` | `submit_024efg.sh` |
+| 025-031 | `logs/025-031/` | `submit_downstream_chain.sh` |
+
+The directive lives in the job script rather than in the submitter's argument
+list so that a hand `sbatch`, or a wrapper called directly instead of through
+`submit_downstream_chain.sh`, still lands its log in the same place instead of
+dropping a `slurm-<id>.out` in the repo root.
+
 ### Forcing gaps are silent
 
 `010` globs `2d_fields/`, intersects the fine and coarse stem sets and drops

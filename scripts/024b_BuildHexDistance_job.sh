@@ -5,6 +5,7 @@
 #SBATCH --mem-per-cpu=8G
 #SBATCH --time=08:00:00
 #SBATCH --partition=base
+#SBATCH --output=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs/logs/aggregates/%x_%j.out
 
 # Multi-task dask layout, one task per SLURM task, adjust --ntasks at submit:
 #   task 0: dask scheduler + one local worker process set

@@ -52,6 +52,9 @@ if [ "${nzarr}" -eq 0 ] && [ -z "${ALLOW_MISSING:-}" ]; then
 fi
 
 name_prefix=${NAME_PREFIX:-}
+# #SBATCH --output opens its target at job start, before the job script runs,
+# so the directory has to exist ahead of submission -- same as submit_010.sh.
+mkdir -p "${output_root}/logs/aggregates"
 exclude=$(sed 's/#.*//' scripts/node-blacklist.txt | tr -d '[:blank:]' \
           | grep -v '^$' | paste -sd,)
 sb=(--parsable)
