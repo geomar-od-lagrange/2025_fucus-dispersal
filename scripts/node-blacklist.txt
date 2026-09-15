@@ -1,0 +1,14 @@
+# NESH compute nodes to keep out of this project's allocations, one hostname
+# per line; "#" comments and blank lines are ignored. Read by
+# scripts/submit_024d.sh (for the sbatch allocation) and by
+# scripts/024d_BuildBeachingForcing_job.sh (for each srun step).
+#
+# To add a node: confirm it is the *culprit*, not collateral. A single node
+# failure makes Slurm cancel every step of the job, so the per-step
+# "CANCELLED ... DUE TO NODE FAILURE" lines in the .out name almost the whole
+# allocation. The culprit is the one `sinfo -p base -t down,drain -o "%n %T %E"`
+# reports with a fresh reason. Nodes already marked down cluster-wide (the
+# standing "HN: IB failed" set) do not belong here -- Slurm never allocates
+# them anyway; this file is for nodes that took a job down while still
+# schedulable.
+nesh-clk542   # 2026-09-15: "Node unexpectedly rebooted" mid-run, killed job 23834688 at 53/292

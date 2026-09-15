@@ -77,7 +77,7 @@ addresses don't dial the proxy.
 ## Horizontal scaling for the GPFS-bound builder (024d)
 
 `scripts/024d_BuildBeachingForcing_job.sh` fans out one independent
-single-process papermill run per `(year, month)` cell (`xargs -P
+single-process papermill run per trajectory zarr, 292 of them (`xargs -P
 ${SLURM_NTASKS}`, so `njobs ≠ ntasks`: throttle concurrency without editing the
 job). No MPI, no Dask; the bottleneck is streaming trajectory zarrs and hourly
 Stokes files off GPFS. Three consequences, all defaults in the script:
@@ -91,10 +91,21 @@ Stokes files off GPFS. Three consequences, all defaults in the script:
 - **No `--constraint`.** Pinning to sapphire (srp) nodes was inherited from
   Dask-backed jobs where IB reliability mattered; here it only shrinks the
   eligible pool and leaves jobs pending indefinitely.
-- **`--ntasks` matched to the cell count** (`|YEARS| x 12 = 48`) and memory
-  sized from measured `sacct MaxRSS` (024d peaks ~10.6 GB, so 8G/cpu x 2).
+- **`--ntasks` matched to the unit count** (292 trajectory zarrs) and memory
+  sized from measured `sacct MaxRSS` (11.02 GiB peak at `window_days=220`,
+  plus 55% headroom: 9G/cpu x 2 = 18 GB).
   Over-requesting either forces the job onto more nodes than it needs and
   pushes it into `(Resources)`.
+
+**Node failures.** A single dying node aborts the whole allocation unless
+`--no-kill` is set (job 23834688 lost `nesh-clk542`, "Node unexpectedly
+rebooted", at 53/292 done), and the resulting per-step "CANCELLED ... DUE TO
+NODE FAILURE" lines name almost every allocated node, so the culprit has to be
+read off `sinfo -t down,drain` instead. Culprits go in
+`scripts/node-blacklist.txt`, which `scripts/submit_024d.sh` expands into
+`sbatch --exclude=` (an `#SBATCH` directive cannot read a file) and the job
+re-applies per `srun` step. Rebuild the missing stems by listing them
+"<year> <stem>" per line and pointing `ONLY_STEMS_FILE` at that file.
 
 **Kernel start-up race.** At high concurrency `jupyter_client` reserves five ZMQ
 ports by binding to port 0 and closing them; the kernel re-binds moments later,

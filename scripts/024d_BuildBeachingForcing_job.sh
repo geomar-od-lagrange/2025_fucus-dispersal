@@ -3,10 +3,15 @@
 #SBATCH --partition=base
 #SBATCH --ntasks=292
 #SBATCH --cpus-per-task=2
-#SBATCH --mem-per-cpu=6G
+#SBATCH --mem-per-cpu=9G
 #SBATCH --time=1-00:00:00
 #SBATCH --spread-job
 #SBATCH --distribution=cyclic
+# Do not abort the whole allocation when one node dies: job 23834688 lost
+# nesh-clk542 mid-run and Slurm killed all 292 steps (53 done). With --no-kill
+# the surviving steps run on; the stems from the dead node come back as FAIL
+# and are resubmitted via ONLY_STEMS_FILE.
+#SBATCH --no-kill
 #SBATCH --output=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs/logs/024d/%x_%j.out
 
 # Beaching forcing sidecar: reads one trajectory zarr + the raw baltic_highres
@@ -22,9 +27,10 @@
 # --spread-job + --distribution=cyclic for horizontal filesystem reach rather
 # than node locality, and no --constraint (it only shrinks the eligible pool).
 #
-# Memory: 6G x 2 cpu = 12 GB/task. Measured peak at window_days=120 was
-# ~10.6 GB for a whole month held one zarr at a time; a single zarr at 220 d
-# holds the same handful of (n_real, nobs) arrays.
+# Memory: 9G x 2 cpu = 18 GB/task. Measured peak at window_days=220 is
+# MaxRSS 11556164K = 11.02 GiB (max over the 292 steps of job 23834688), and
+# 18 GB is that plus 55% headroom. Steps there ran at 12 GB/task with no
+# oom-kill, so the margin is thin rather than absent.
 #
 # njobs is fixed at 292 by the zarr count, concurrency is whatever --ntasks the
 # scheduler grants (`xargs -P ${SLURM_NTASKS}`), so the two rescale
@@ -32,9 +38,13 @@
 # Tasks share no output, and the notebook skips sidecars that already carry the
 # current sampling parameters, so a partially failed job is just resubmitted.
 #
-# Usage: sbatch scripts/024d_BuildBeachingForcing_job.sh
-#   sbatch --ntasks=146 scripts/024d_BuildBeachingForcing_job.sh   # throttle
-#   ONLY_STEMS_FILE=/path/stems.txt sbatch --ntasks=8 scripts/...  # retry set
+# Submit through scripts/submit_024d.sh: it expands scripts/node-blacklist.txt
+# into `sbatch --exclude=` (an #SBATCH directive cannot read a file) and passes
+# extra args through. Each srun step re-applies the same exclusion below.
+#
+# Usage: scripts/submit_024d.sh
+#   scripts/submit_024d.sh --ntasks=146                            # throttle
+#   ONLY_STEMS_FILE=/path/stems.txt scripts/submit_024d.sh --ntasks=8  # retry
 #     (that file holds one "<year> <stem>" line per zarr to rebuild)
 # 024a_BuildHexKey_job.sh must have run first for the matching hex_radius.
 
@@ -54,7 +64,12 @@ mkdir -p "${logdir}/executed"
 # allocation". --exact sets each step's own binding.
 unset SLURM_CPU_BIND SLURM_CPU_BIND_LIST SLURM_CPU_BIND_TYPE SLURM_CPU_BIND_VERBOSE
 
-export output_root regime hex_radius logdir
+# Blacklisted nodes (see scripts/node-blacklist.txt) are kept out of the
+# allocation by scripts/submit_024d.sh and out of every step here.
+exclude=$(sed "s/#.*//" scripts/node-blacklist.txt | tr -d "[:blank:]" \
+          | grep -v "^$" | paste -sd,)
+
+export output_root regime hex_radius logdir exclude
 
 run_one() {
     year=$1
@@ -69,7 +84,7 @@ run_one() {
     mkdir -p "${rt}"
     rc=1
     for attempt in 1 2 3; do
-        srun -n1 -N1 --exact \
+        srun -n1 -N1 --exact --no-kill ${exclude:+--exclude="${exclude}"} \
             --cpus-per-task="${SLURM_CPUS_PER_TASK}" \
             --mem-per-cpu="${SLURM_MEM_PER_CPU}M" \
             --job-name="024d_${stem}" \
