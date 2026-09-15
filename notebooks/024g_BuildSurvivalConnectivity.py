@@ -39,7 +39,7 @@
 #
 # **Reads the beaching-forcing sidecar** built by `024d`, never the counts
 # store and never the trajectory zarrs — the per-(particle, hour) ingredients
-# of the rate (`w_on`, `dist`, `hex`, `flat`) plus `release_hex` are cached
+# of the rate (`w_on`, `dist`, `hex`, `ff`) plus `release_hex` are cached
 # there, so a rate-model member is a seconds-per-zarr numpy pass. Aggregates
 # with `np.bincount` over the dense `(origin, target, age_bin)` index.
 # Partitioned per `(regime, year, month, member)`; `028` pools.
@@ -119,8 +119,10 @@ delta = 0.0
 # Near-shore band width (m); must be ≤ the sidecar's `band_max_m`.
 band_m = 2000.0
 
-# Shore-type retention weights, DELIBERATELY DEGENERATE (both 1.0) — the trap
-# term is wired but currently expresses nothing.
+# Shore-type retention weights: the strong-wave rate is scaled by
+# `trap = trap_wall + (trap_flat - trap_wall) * ff/100`, interpolating between
+# a fully hard-walled and a fully flat cell along the sidecar's flat fraction
+# `ff`. Equal values (the default 1.0/1.0) make the shore type inert.
 trap_flat = 1.0
 trap_wall = 1.0
 
@@ -144,6 +146,10 @@ member = (
     f"step_wc{w_c:g}_ts{tau_strong_hours:g}"
     f"_tc{f'{tau_calm_days:g}' if tau_calm_days > 0 else 'inf'}"
     + (f"_d{delta:g}" if delta > 0 else "")
+    # Only a shore-type-sensitive member carries the trap weights, so the
+    # 1.0/1.0 production tag stays as it is.
+    + (f"_tf{trap_flat:g}_tw{trap_wall:g}"
+       if (trap_flat != 1.0 or trap_wall != 1.0) else "")
 )
 member = member.replace(".", "p")
 print(f"member: {member}")
@@ -217,7 +223,7 @@ def to_subidx(hex_values):
 # reproducing the same store.
 
 # %%
-def beaching_exponent(w_on, dist, flat):
+def beaching_exponent(w_on, dist, ff):
     """Per-step beaching exponent `a = Δt/τ` from the sidecar ingredients.
 
     Returns `(in_band, r, a)` — the band gate, the forcing ramp (the share of
@@ -226,7 +232,10 @@ def beaching_exponent(w_on, dist, flat):
     """
     in_band = (dist.astype("int16") * 25 < band_m) & (dist != 255)
     w = w_on.astype("float32")
-    trap = np.where(flat, trap_flat, trap_wall).astype("float32")
+    # Linear in the flat fraction, so a half-flat cell traps halfway between.
+    trap = (
+        trap_wall + (trap_flat - trap_wall) * ff.astype("float32") / np.float32(100.0)
+    ).astype("float32")
     if delta > 0:
         r = np.clip((w - w_c + delta / 2) / delta, 0.0, 1.0).astype("float32")
     else:
@@ -252,12 +261,13 @@ def connectivity_one_sidecar(path, release_doy):
     sc = sc.isel(obs=slice(0, connectivity_max_days * 24))
     w_on = sc.w_on.values
     dist = sc.dist.values
-    flat = sc.flat.values
+    ff = sc.ff.values
+    assert ff.min() >= 0 and ff.max() <= 100, (ff.min(), ff.max())
     hex_at = sc.hex.values
     release_hex = sc.release_hex.values
     ntraj, nobs = w_on.shape
 
-    _, _, a = beaching_exponent(w_on, dist, flat)
+    _, _, a = beaching_exponent(w_on, dist, ff)
     surv = np.exp(-np.cumsum(a, axis=1)).astype("float32")
 
     origin_idx = to_subidx(release_hex)
@@ -389,8 +399,7 @@ print(f"  params: connectivity_max_days={connectivity_max_days}, "
       f"band_m={band_m:g}, w_c={w_c:g}, "
       f"tau_strong_hours={tau_strong_hours:g}, "
       f"tau_calm_days={tau_calm_days:g}, delta={delta:g}, "
-      f"trap_flat/wall={trap_flat:g}/{trap_wall:g}"
-      + (" (degenerate — shore type inert)" if trap_flat == trap_wall else ""))
+      f"trap_flat/wall={trap_flat:g}/{trap_wall:g}")
 
 named = survconn[
     (survconn["origin_subbasin"] >= 0) & (survconn["target_subbasin"] >= 0)

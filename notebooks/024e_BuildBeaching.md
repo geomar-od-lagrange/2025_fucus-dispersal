@@ -40,8 +40,8 @@ Fucus **lifetime** `L(t)` — survival is `exp(−∫dt/τ)·L(t)`, today's
 
 **This notebook does no I/O beyond the sidecar and the key.** The
 per-(particle, hour) ingredients of the rate — onshore Stokes `w_on`,
-distance to the BSH H0 coast `dist`, the `024a` hex id, the tidal-flat
-shore flag, and the crow-flies displacement from release — are cached by
+distance to the BSH H0 coast `dist`, the `024a` hex id, the shoreline flat
+fraction `ff`, and the crow-flies displacement from release — are cached by
 `024d`, so a rate-model member costs seconds per zarr instead of the ~90 s
 the raster + WAM sampling used to cost.
 
@@ -124,13 +124,10 @@ delta = 0.0
 # Near-shore band width (m); must be ≤ the sidecar's `band_max_m`.
 band_m = 2000.0
 
-# Shore-type retention weights, DELIBERATELY DEGENERATE (both 1.0) — the trap
-# term is wired but currently expresses nothing, so every shore beaches alike
-# for a given wave forcing. The only shore typing available is the BSH
-# `H0 <= 0` tidal-flat flag, which is not a retentiveness proxy for *Baltic*
-# shores: the basin is effectively tide-free, so the flag fires only in the
-# German Bight. The plumbing stays so a real substrate/exposure
-# classification can drive it later — set these apart to enable it.
+# Shore-type retention weights: the strong-wave rate is scaled by
+# `trap = trap_wall + (trap_flat - trap_wall) * ff/100`, interpolating between
+# a fully hard-walled and a fully flat cell along the sidecar's flat fraction
+# `ff`. Equal values (the default 1.0/1.0) make the shore type inert.
 trap_flat = 1.0
 trap_wall = 1.0
 
@@ -168,6 +165,10 @@ member = (
     f"step_wc{w_c:g}_ts{tau_strong_hours:g}"
     f"_tc{f'{tau_calm_days:g}' if tau_calm_days > 0 else 'inf'}"
     + (f"_d{delta:g}" if delta > 0 else "")
+    # Only a shore-type-sensitive member carries the trap weights, so the
+    # 1.0/1.0 production tag stays as it is.
+    + (f"_tf{trap_flat:g}_tw{trap_wall:g}"
+       if (trap_flat != 1.0 or trap_wall != 1.0) else "")
 )
 member = member.replace(".", "p")
 print(f"member: {member}")
@@ -206,7 +207,7 @@ as notebooks own their utilities; the reducers are held equal by
 reproducing the same store.
 
 ```python
-def beaching_exponent(w_on, dist, flat):
+def beaching_exponent(w_on, dist, ff):
     """Per-step beaching exponent `a = Δt/τ` from the sidecar ingredients.
 
     Returns `(in_band, r, a)` — the band gate, the forcing ramp (the share of
@@ -215,7 +216,10 @@ def beaching_exponent(w_on, dist, flat):
     """
     in_band = (dist.astype("int16") * 25 < band_m) & (dist != 255)
     w = w_on.astype("float32")
-    trap = np.where(flat, trap_flat, trap_wall).astype("float32")
+    # Linear in the flat fraction, so a half-flat cell traps halfway between.
+    trap = (
+        trap_wall + (trap_flat - trap_wall) * ff.astype("float32") / np.float32(100.0)
+    ).astype("float32")
     if delta > 0:
         r = np.clip((w - w_c + delta / 2) / delta, 0.0, 1.0).astype("float32")
     else:
@@ -251,13 +255,14 @@ def deposit_one_sidecar(path, release_doy):
     sc = sc.isel(obs=slice(0, max_float_days * 24))
     w_on = sc.w_on.values
     dist = sc.dist.values
-    flat = sc.flat.values
+    ff = sc.ff.values
+    assert ff.min() >= 0 and ff.max() <= 100, (ff.min(), ff.max())
     hex_at = sc.hex.values
     disp = sc.disp.values
     release_hex = sc.release_hex.values.astype(np.int64)
     ntraj, nobs = w_on.shape
 
-    in_band, r, a = beaching_exponent(w_on, dist, flat)
+    in_band, r, a = beaching_exponent(w_on, dist, ff)
     A = np.cumsum(a, axis=1)
     dep = np.exp(-(A - a)) - np.exp(-A)
     residual = np.exp(-A[:, -1])
@@ -294,7 +299,7 @@ def deposit_one_sidecar(path, release_doy):
             pd.DataFrame({
                 "release_hex": rel,
                 "beach_hex": hex_at[:, sl][m],
-                "shore_type": np.where(flat[:, sl][m], "flat", "wall"),
+                "shore_type": np.where(ff[:, sl][m] >= 50, "flat", "wall"),
                 "disp_bin": (disp[:, sl][m] // disp_bin_km).astype(np.int64),
                 "weight": d[m],
             })
@@ -470,8 +475,7 @@ print(f"regime={regime}, release_year={release_year}"
 print(f"  params: max_float_days={max_float_days}, band_m={band_m:g}, "
       f"w_c={w_c:g}, tau_strong_hours={tau_strong_hours:g}, "
       f"tau_calm_days={tau_calm_days:g}, delta={delta:g}, "
-      f"trap_flat/wall={trap_flat:g}/{trap_wall:g}"
-      + (" (degenerate — shore type inert)" if trap_flat == trap_wall else ""))
+      f"trap_flat/wall={trap_flat:g}/{trap_wall:g}")
 print(f"  drifters (Σweight): {total:,.0f}")
 print(f"  beached:           {beached:,.0f} ({100 * beached / max(total, 1):.1f}%)")
 print(f"  release_doys:      {beaching['release_doy'].nunique()} "
