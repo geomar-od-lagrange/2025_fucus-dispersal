@@ -280,11 +280,10 @@ resulting hex dilation shrink as resolution rises.
   where the reducer emits it) axes, on a `LogNorm` floored four decades
   below the peak (weighted deposition's sparse tail carries fractional
   weight). `shore_type` is deliberately **not shown at all** — neither
-  faceted nor broken out in the summary. The reducer runs with a
-  degenerate `trap` (`trap_flat == trap_wall`), so the label expresses
-  nothing about the model, and a wall/flat split would imply resolved
-  coastal morphology where there is only BSH's tidal-flat flag. Surface it
-  when a real substrate classification drives `trap` — see
+  faceted nor broken out in the summary. `shore_type` is a threshold label
+  on the HELCOM BRISK + CLMS flat fraction `ff` at the stranding hour
+  (`flat` if `ff >= 50%` else `wall`); `trap_flat`/`trap_wall` are reducer
+  parameters, named in the member tag only when they differ from 1 — see
   [beaching.md](beaching.md).
 - **Beached fraction per source hex** — a ratio in [0, 1], so the default
   linear norm, no colour override to defend.

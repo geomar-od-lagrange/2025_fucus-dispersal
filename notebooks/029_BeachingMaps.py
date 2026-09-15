@@ -285,10 +285,11 @@ beached = beaching[beaching["beach_hex"] >= 0]
 #
 # Log-scale beached weight (expected particles) per stranding hex, summed over
 # the store's remaining axes (`disp_bin`, and `shore_type` where the reducer
-# emits it). Neither is shown on the maps: `trap` is degenerate, so a
-# `wall`/`flat` split would imply resolved coastal morphology where there is
-# only the BSH tidal-flat flag, and travel distance gets its own figure
-# below.
+# emits it). Neither is shown on the maps: `shore_type` is a threshold label
+# on the HELCOM BRISK + CLMS flat fraction `ff` at the stranding hour (`flat`
+# if `ff >= 50%` else `wall`), while `trap_flat`/`trap_wall` are reducer
+# parameters that only surface in the member tag when they differ from 1;
+# travel distance gets its own figure below.
 
 # %%
 gdf_stranded = hex_gdf(beached, "beach_hex")
