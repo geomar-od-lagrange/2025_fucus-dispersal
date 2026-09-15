@@ -107,7 +107,7 @@ Once `τ_strong` ≪ strong-wave event duration the model degenerates gracefully
 into an **exposure model**: the beached fraction is the share of particles
 ever in band during a strong-wave hour inside the viability window, and the
 stranding map is coastal residence × strong-wave climatology — so the
-per-month / per-year splits, not the pooled view, are the primary products.
+per-season / per-year splits, not the pooled view, are the primary products.
 Strong-wave stranding of freshly released material is signal, not artefact:
 Fucus releases are coastal, so a particle can be exposed from `t = 0`.
 `disp_bin` records the crow-flies travel distance at stranding precisely so
@@ -145,8 +145,9 @@ carried so a real substrate classification can be joined against it later.
 
 `HexAgg_beaching_r<radius>m_<regime>_<year>_mMM_<member>.parquet`, one per
 `(regime, year, month, member)` — a grouped weight table, additive across
-`release_doy`/month/year like the other `024x` stores, so `029` pools the
-monthly partitions by summing.
+`release_doy`/month/year like the other `024x` stores, so `029` pools by
+summing the monthly partitions whose month falls in its `season` parameter
+(DJF/MAM/JJA/SON, or ALL for the whole year).
 
 | column | meaning |
 |--------|---------|
@@ -208,8 +209,10 @@ to argue about.
 | `w_c = 0.10` | 74 | 79 | 74 | 77 |
 
 Autumn releases meet the strong-wave season inside their viability window;
-the per-month partitions are the primary products, the pooled year a
-summary.
+the seasonal products are the primary ones, the pooled year a
+summary. At `w_c = 0.10`, cumulative beached fraction by 60 d is 71 % (DJF),
+67 % (MAM), 77 % (JJA), 89 % (SON) against 76 % pooled, with an interannual
+min–max of ±3–8 points within each season.
 
 ## Sensitivity
 

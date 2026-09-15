@@ -10,6 +10,13 @@
 # Usage from the repo root:
 #     ./scripts/0-31-smoke-test.sh
 #
+# Stage 000 is the one stage that writes inside the repo: it executes
+# notebooks/000_FucusStartLocations.ipynb in place and re-bakes the derived
+# data/helcom_fucus_redlist/fucus_release_points.geojson in the twin (float
+# round-trip noise in the last digits). Both are expected; discard them with
+#     git checkout -- notebooks/000_FucusStartLocations.ipynb
+#     git -C data checkout -- helcom_fucus_redlist/fucus_release_points.geojson
+#
 # Override outputs location:
 #     OUTPUT_ROOT=/work/<user>/fucus_smoke ./scripts/0-31-smoke-test.sh
 #
@@ -143,49 +150,72 @@ pixi run papermill notebooks/024c_BuildHexConnectivity.ipynb \
     -p release_year 2020 \
     --cwd notebooks/
 
+# 025/026/026a/026b read the BSH static H0 grids from the data twin for the
+# 3 m isobath overlay, so they take data_root as well as output_root. They
+# pool every release year and keep one release season; the smoke run has a
+# single January release, so pass season=ALL (DJF would also carry it).
 echo
 echo "==== 025 HexHeatmaps (surface_stokes) ===="
 pixi run papermill notebooks/025_HexHeatmaps.ipynb \
     "${OUTPUT_ROOT}/025_smoke.ipynb" \
+    -p data_root "${REPO_ROOT}/data" \
     -p output_root "${OUTPUT_ROOT}" \
     -p regime "surface_stokes" \
-    -p release_year 2020 \
+    -r season ALL \
     --cwd notebooks/
 
-# 026/027 pool releases across all months/years; the smoke run only has a
-# January release, so pass release_months_csv="" (all months). 026 horizons
-# must be age_bin multiples that the 4 h run actually populates — only
-# age_bin 0 exists, so map the single "0 d" horizon. 027 has 1 particle per
-# cell, so drop the min-trajectory gate.
+# 026/026a/026b horizons are cumulative (every age_bin whose window starts
+# before T), so the smallest horizon that carries data is one age_bin_days;
+# the counts store is built at the 024 default of 10 d and the 4 h run only
+# populates age bin 0, so map the single "10 d" horizon. 026a/026b are
+# restricted to one origin subbasin — unrestricted they emit one figure per
+# seeding subbasin (and per year again in 026b).
 echo
 echo "==== 026 TimeHorizonMaps (surface_stokes) ===="
 pixi run papermill notebooks/026_TimeHorizonMaps.ipynb \
     "${OUTPUT_ROOT}/026_smoke.ipynb" \
+    -p data_root "${REPO_ROOT}/data" \
     -p output_root "${OUTPUT_ROOT}" \
     -p regime "surface_stokes" \
-    -p release_months_csv "" \
-    -r time_horizons_days_csv "0" \
+    -r season ALL \
+    -r time_horizons_days_csv "10" \
     --cwd notebooks/
 
+echo
+echo "==== 026a OriginSubbasinTimeHorizonMaps (surface_stokes) ===="
+pixi run papermill notebooks/026a_OriginSubbasinTimeHorizonMaps.ipynb \
+    "${OUTPUT_ROOT}/026a_smoke.ipynb" \
+    -p data_root "${REPO_ROOT}/data" \
+    -p output_root "${OUTPUT_ROOT}" \
+    -p regime "surface_stokes" \
+    -r season ALL \
+    -r time_horizons_days_csv "10" \
+    -r origin_subbasins_csv "Kiel Bay" \
+    --cwd notebooks/
+
+echo
+echo "==== 026b OriginSubbasinYearTimeHorizonMaps (surface_stokes) ===="
+pixi run papermill notebooks/026b_OriginSubbasinYearTimeHorizonMaps.ipynb \
+    "${OUTPUT_ROOT}/026b_smoke.ipynb" \
+    -p data_root "${REPO_ROOT}/data" \
+    -p output_root "${OUTPUT_ROOT}" \
+    -p regime "surface_stokes" \
+    -r season ALL \
+    -r time_horizons_days_csv "10" \
+    -r origin_subbasins_csv "Kiel Bay" \
+    --cwd notebooks/
+
+# 027 pools the run's season across every release year; pass season=ALL for
+# the single January release. With 1 particle per cell, drop the
+# min-trajectory gate.
 echo
 echo "==== 027 HexDistanceQuantiles (surface_stokes) ===="
 pixi run papermill notebooks/027_HexDistanceQuantiles.ipynb \
     "${OUTPUT_ROOT}/027_smoke.ipynb" \
     -p output_root "${OUTPUT_ROOT}" \
     -p regime "surface_stokes" \
-    -p release_months_csv "" \
+    -r season ALL \
     -p min_traj_per_hex 1 \
-    --cwd notebooks/
-
-# 028 pools every release_year for the regime; the smoke run has only a
-# January release, so its aug_sep scope is empty and the notebook skips it
-# (the all_year scope carries the single release). One regime, like 023–027.
-echo
-echo "==== 028 SubbasinConnectivityMatrix (surface_stokes) ===="
-pixi run papermill notebooks/028_SubbasinConnectivityMatrix.ipynb \
-    "${OUTPUT_ROOT}/028_smoke.ipynb" \
-    -p output_root "${OUTPUT_ROOT}" \
-    -p regime "surface_stokes" \
     --cwd notebooks/
 
 # The beaching chain (024d sidecar -> 024e/024f reducers -> 029/030/031).
@@ -242,9 +272,52 @@ pixi run papermill notebooks/024f_BuildSurvivalOccupancy.ipynb \
     -p age_bin_days 1 \
     --cwd notebooks/
 
-# 029/030 pool the monthly partitions of one member, at the reducers'
-# age_bin_days of 1 d. Only age bin 0 exists in a 4 h run, so 029 maps the
-# cumulative "1 d" horizon and 030 the snapshot "0 d" one. 031 sweeps a
+echo
+echo "==== 024g BuildSurvivalConnectivity (surface_stokes) ===="
+pixi run papermill notebooks/024g_BuildSurvivalConnectivity.ipynb \
+    "${OUTPUT_ROOT}/024g_smoke.ipynb" \
+    -p output_root "${OUTPUT_ROOT}" \
+    -p regime surface_stokes \
+    -p release_year 2020 \
+    -p release_month 1 \
+    -p connectivity_max_days 1 \
+    -p age_bin_days 1 \
+    --cwd notebooks/
+
+# 028 reads either connectivity store, selected by `member`: "" the
+# unweighted 024c store (built at the 024c default age_bin_days of 10), a
+# rate-model tag the 024g survconn store (built at 1 d here). Horizons are
+# cumulative, so the smallest one that carries data is one age_bin_days.
+# `member` goes in with -r: "" is a meaningful value that -p would parse
+# away. The smoke run has only a January release, so only season ALL (and
+# DJF) carries data.
+echo
+echo "==== 028 SubbasinConnectivityMatrix (surface_stokes, unweighted) ===="
+pixi run papermill notebooks/028_SubbasinConnectivityMatrix.ipynb \
+    "${OUTPUT_ROOT}/028_smoke.ipynb" \
+    -p output_root "${OUTPUT_ROOT}" \
+    -p regime "surface_stokes" \
+    -r season ALL \
+    -r time_horizons_days_csv "10" \
+    -r member "" \
+    --cwd notebooks/
+
+echo
+echo "==== 028 SubbasinConnectivityMatrix (surface_stokes, survival-weighted) ===="
+pixi run papermill notebooks/028_SubbasinConnectivityMatrix.ipynb \
+    "${OUTPUT_ROOT}/028_survconn_smoke.ipynb" \
+    -p output_root "${OUTPUT_ROOT}" \
+    -p regime "surface_stokes" \
+    -r season ALL \
+    -p age_bin_days 1 \
+    -r time_horizons_days_csv "1" \
+    -r member "${SMOKE_MEMBER}" \
+    --cwd notebooks/
+
+# 029/030 pool the monthly partitions of one member for one season, at the
+# reducers' age_bin_days of 1 d. Only age bin 0 exists in a 4 h run, so both
+# take the "1 d" horizon: 029 cumulatively (strandings in bins before 1 d) and
+# 030 as the snapshot bin ending at 1 d (ages in [0, 1) d). 031 sweeps a
 # one-member list.
 echo
 echo "==== 029 BeachingMaps (surface_stokes) ===="
@@ -252,6 +325,7 @@ pixi run papermill notebooks/029_BeachingMaps.ipynb \
     "${OUTPUT_ROOT}/029_smoke.ipynb" \
     -p output_root "${OUTPUT_ROOT}" \
     -p regime surface_stokes \
+    -r season ALL \
     -p member "${SMOKE_MEMBER}" \
     -p age_bin_days 1 \
     -r time_horizons_days_csv "1" \
@@ -263,9 +337,10 @@ pixi run papermill notebooks/030_SurvivalHeatmaps.ipynb \
     "${OUTPUT_ROOT}/030_smoke.ipynb" \
     -p output_root "${OUTPUT_ROOT}" \
     -p regime surface_stokes \
+    -r season ALL \
     -p member "${SMOKE_MEMBER}" \
     -p age_bin_days 1 \
-    -r time_horizons_days_csv "0" \
+    -r time_horizons_days_csv "1" \
     --cwd notebooks/
 
 echo
@@ -274,6 +349,7 @@ pixi run papermill notebooks/031_BeachingSweep.ipynb \
     "${OUTPUT_ROOT}/031_smoke.ipynb" \
     -p output_root "${OUTPUT_ROOT}" \
     -p regime surface_stokes \
+    -r season ALL \
     -p members_csv "${SMOKE_MEMBER}" \
     -p age_bin_days 1 \
     -p labels_csv "" \

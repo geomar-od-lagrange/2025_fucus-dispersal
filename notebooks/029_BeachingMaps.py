@@ -19,7 +19,8 @@
 #
 # Lightweight parquet-only consumer of the beaching store built by
 # `024e_BuildBeaching` (+ the `024a` key) — no trajectory zarrs, no Dask.
-# One regime per run; release years pooled by globbing the store partitions.
+# One regime and one release `season` per run; the season's monthly
+# partitions are pooled across every available release year.
 #
 # The rate model is a two-state hazard — a background rate in the near-shore
 # band plus a strong-wave rate switched on where the onshore Stokes forcing
@@ -33,11 +34,17 @@
 #    hex, what fraction strands within the viability window (linear 0–1).
 # 3. **Beaching age horizons** — cumulative where-stranded density for
 #    strandings at age ≤ T (the beaching analogue of `026`'s horizons).
-# 4. **Cumulative beached fraction vs. age** — the stranding time course.
+# 4. **Cumulative beached fraction vs. age** — the stranding time course,
+#    with the 2016–2019 interannual min–max as a band around the pooled
+#    curve. Maps stay pooled; only the scalar-per-horizon curve carries the
+#    spread.
 # 5. **Travel distance at stranding** — stranded weight over `disp_bin`, the
 #    crow-flies displacement from release at the deposit step. Short-travel
 #    strandings are a real outcome under a threshold rate model, never a
 #    mask.
+#
+# Figures are print-ready (full page width, 300 dpi) and the per-horizon
+# where-stranded field is exported as GeoJSON.
 
 # %%
 import re
@@ -46,7 +53,6 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from shapely.geometry import box
@@ -65,10 +71,9 @@ hex_radius = 6000
 # Age-bin granularity of the beaching store (must match 024e). Horizons must
 # be whole multiples of this.
 age_bin_days = 10
-# Release month to analyse: 0 = pool all months (every `_mMM` partition,
-# across years); 1..12 = keep just that month. Selects which monthly
-# partitions 024e wrote are read.
-release_month = 0
+# Release season: DJF / MAM / JJA / SON, or ALL for the pooled year. Selects
+# which of the monthly `_mMM` partitions 024e wrote are read and pooled.
+season = "ALL"
 
 # Rate-model member: the opaque tag the reducer put in the store filename
 # (e.g. "step_wc0p1_ts3_tcinf"). Selects the partitions and tags the figures.
@@ -90,20 +95,26 @@ extent_lon_max = 30.7
 extent_lat_min = 53.0
 extent_lat_max = 66.0
 
-# Colormap: log where-stranded density spans several decades, so a
-# perceptually uniform map is load-bearing (as 025/026; docs/visualisations.md).
-cmap = "viridis"
-# Per-panel height in inches (panel widths are aspect-derived).
-panel_height_in = 6
-# Figure DPI as a multiple of the matplotlib default (sharpens raster panels;
-# the one plotting default overridden here, as 026 — docs/visualisations.md).
-fig_dpi_scale = 3
-
 # %% [markdown]
 # # Parse parameters
+#
+# The season → month mapping lives here rather than in the parameters cell:
+# papermill only injects primitives, and the mapping is a fixed convention,
+# not a knob.
 
 # %%
+SEASON_MONTHS = {
+    "DJF": [12, 1, 2],
+    "MAM": [3, 4, 5],
+    "JJA": [6, 7, 8],
+    "SON": [9, 10, 11],
+    "ALL": list(range(1, 13)),
+}
+
 output_root = Path(output_root)
+if season not in SEASON_MONTHS:
+    raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
+season_months = SEASON_MONTHS[season]
 time_horizons_days = [int(x) for x in time_horizons_days_csv.split(",") if x]
 for h in time_horizons_days:
     assert h % age_bin_days == 0, (
@@ -118,64 +129,89 @@ for h in time_horizons_days:
         f"stranding bin falls within it — raise the horizon or lower "
         f"age_bin_days in 024e and here"
     )
-mpl.rcParams["figure.dpi"] = fig_dpi_scale * mpl.rcParamsDefault["figure.dpi"]
+
+# Print-ready output: every saved figure is one full text-width (180 mm)
+# figure at 300 dpi, so panels land in the manuscript at their final size
+# (rationale in docs/visualisations.md).
+FIGURE_WIDTH_IN = 180 / 25.4
+FIGURE_DPI = 300
 # Hex seam stroke. edgecolor="face" means this is not a visible outline -- it
 # closes the ~1 px anti-aliasing seam between adjacent polygons so the grid
-# reads as a continuous field. The seam is a fixed PIXEL artifact, so a fixed
-# point width makes the resulting hex dilation DPI-invariant (17.5% of hex
-# width at every dpi). Pinning it to ~1 px instead lets dilation fall as
-# resolution rises: ~8.6% at fig_dpi_scale=3 on the Baltic crop.
-hex_seam_lw = 1.1 * 72 / (100 * fig_dpi_scale)
+# reads as a continuous field. The seam is a fixed PIXEL artifact, so pinning
+# the stroke to ~1 px at the output dpi keeps the seam closed while letting
+# the resulting hex dilation shrink as resolution rises.
+hex_seam_lw = 1.1 * 72 / FIGURE_DPI
 
 figure_dir = output_root / "Figures" / "029"
 figure_dir.mkdir(parents=True, exist_ok=True)
+export_dir = output_root / "Exports" / "029"
+export_dir.mkdir(parents=True, exist_ok=True)
 
 # %% [markdown]
-# # Read key + pool beaching partitions across years
+# # Read key + pool the season's partitions across years
 #
 # Layout: flat files under ``output_root/HexAggregates/`` —
 # ``HexAgg_key_r<radius>m.parquet`` and the per-(year, month) partitions
 # ``HexAgg_beaching_r<radius>m_<regime>_<year>_mMM_<member>.parquet`` written
-# by 024e. `release_month = 0` pools every month across every year, and also
-# picks up a whole-year partition (no `_mMM` suffix at all, written when 024e
-# itself ran with `release_month = 0`); a nonzero month keeps just that
-# month's `_mMM` partitions (across years).
+# by 024e. Every partition whose month is in the season is read and pooled;
+# the release year is parsed from the filename and kept as a column, because
+# the interannual spread below groups by it.
+#
+# A whole-year partition (no `_mMM` suffix at all, written when 024e itself
+# ran with `release_month = 0`) carries every month, so it is only read for
+# `season = "ALL"`.
 
 # %%
 store_root = output_root / "HexAggregates"
 key = gpd.read_parquet(store_root / f"HexAgg_key_r{hex_radius}m.parquet")
 
-# Figure-filename tag: a specific month, or "" when pooling all months.
-month_suffix = f"_m{release_month:02d}" if release_month else ""
-month_re = rf"_m{release_month:02d}" if release_month else r"(?:_m\d{2})?"
 _PART_RE = re.compile(
-    rf"HexAgg_beaching_r{hex_radius}m_{regime}_(\d{{4}}){month_re}"
+    rf"HexAgg_beaching_r{hex_radius}m_{regime}_(\d{{4}})(?:_m(\d{{2}}))?"
     rf"_{re.escape(member)}\.parquet$"
 )
-beaching_files = [
-    f for f in sorted(store_root.glob(f"HexAgg_beaching_r{hex_radius}m_{regime}_*.parquet"))
-    if _PART_RE.search(f.name)
-]
+
+
+beaching_files = []
+for f in sorted(store_root.glob(f"HexAgg_beaching_r{hex_radius}m_{regime}_*.parquet")):
+    m = _PART_RE.search(f.name)
+    if m is None:
+        continue
+    month = m.group(2)
+    if month is None:
+        # whole-year partition: carries every month, so only for season ALL
+        if season != "ALL":
+            continue
+    elif int(month) not in season_months:
+        continue
+    beaching_files.append((f, int(m.group(1))))
 if not beaching_files:
     raise FileNotFoundError(
-        f"no beaching partitions for regime {regime!r}"
-        + (f", month {release_month}" if release_month else "")
-        + f", member {member!r} at {store_root} — run 024e."
+        f"no beaching partitions for regime {regime!r}, season {season}, "
+        f"member {member!r} at {store_root} — run 024e."
     )
 
 beaching = pd.concat(
-    [pd.read_parquet(f).reset_index(drop=True) for f in beaching_files],
+    [
+        pd.read_parquet(f).reset_index(drop=True).assign(release_year=year)
+        for f, year in beaching_files
+    ],
     ignore_index=True,
 )
+release_years = sorted(int(y) for y in beaching["release_year"].unique())
 print(f"key: {len(key):,} hexes; pooled {len(beaching_files)} (year, month) partition(s)")
+print(f"season {season} (months {season_months}); release years {release_years}")
 print(f"beaching rows: {len(beaching):,}")
+
 
 # %% [markdown]
 # # Rendering helpers
 #
 # `hex_gdf` sums a value column over a hex column and joins to the key
 # geometry (dropping the `-1` sentinel); `hex_map` draws hex polygons +
-# coastline on a plain EPSG:4326 axis (as 025/026).
+# coastline on a plain EPSG:4326 axis (as 025/026), with the colorbar as an
+# inset axes at axes-fraction height 1.0 so it is exactly the map height —
+# a fixed-aspect map never fills its gridspec cell, and a cell-sized
+# colorbar overshoots it.
 
 # %%
 def hex_gdf(df, hex_col, value_col="weight"):
@@ -196,12 +232,14 @@ def log_norm(values):
     return LogNorm(vmin=vmin, vmax=vmax)
 
 
-def hex_map(gdf, ax, norm=None, title=None):
+def hex_map(gdf, ax, norm=None, title=None, label=None):
     """Hex choropleth + coastline on a lon/lat axis. `norm=None` → linear
     default scale; a `LogNorm` → shared log scale across panels."""
     if not gdf.empty:
+        cax = ax.inset_axes([1.02, 0.0, 0.035, 1.0])
         gdf.plot(
-            ax=ax, column="value", cmap=cmap, norm=norm, legend=True,
+            ax=ax, column="value", norm=norm, legend=True, cax=cax,
+            legend_kwds={"label": label} if label else None,
             edgecolor="face", linewidth=hex_seam_lw, zorder=1,
         )
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
@@ -212,6 +250,15 @@ def hex_map(gdf, ax, norm=None, title=None):
     ax.set_yticks([])
     if title is not None:
         ax.set_title(title)
+
+
+def grid_height_in(nrows, ncols, aspect, width_in):
+    """Height seed for a grid of fixed-aspect map panels at a fixed figure
+    width. The figure width is set by the page, so only the height is free:
+    each column gives its map ~72 % of its width (the rest is the inset
+    colorbar and its tick labels), and ~10 % is added for titles and padding.
+    constrained_layout does the packing; there is no measure-rescale loop."""
+    return 1.10 * nrows * (0.72 * width_in / ncols) / aspect
 
 
 # %%
@@ -247,13 +294,13 @@ beached = beaching[beaching["beach_hex"] >= 0]
 gdf_stranded = hex_gdf(beached, "beach_hex")
 strand_norm = log_norm(gdf_stranded["value"])
 
-fig, ax = plt.subplots(
-    figsize=(panel_height_in * domain_aspect, panel_height_in),
-    layout="constrained",
-)
-hex_map(gdf_stranded, ax, norm=strand_norm, title="stranded weight")
-fig_path = figure_dir / f"WhereStranded_{regime}_r{hex_radius}m{month_suffix}_{member}.png"
-fig.savefig(fig_path)
+fig, ax = plt.subplots(layout="constrained")
+fig.set_size_inches(FIGURE_WIDTH_IN, grid_height_in(1, 1, domain_aspect, FIGURE_WIDTH_IN))
+hex_map(gdf_stranded, ax, norm=strand_norm, title="stranded weight",
+        label="stranded weight (particles)")
+fig_path = figure_dir / f"WhereStranded_{regime}_r{hex_radius}m_{season}_{member}.png"
+# Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
+fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
 plt.show()
 
@@ -276,13 +323,14 @@ frac = frac[frac["release_hex"] >= 0].merge(
     key[["hex_id", "geometry"]], left_on="release_hex", right_on="hex_id"
 ).pipe(gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326")
 
-fig, ax = plt.subplots(
-    figsize=(panel_height_in * domain_aspect, panel_height_in), layout="constrained"
-)
+fig, ax = plt.subplots(layout="constrained")
+fig.set_size_inches(FIGURE_WIDTH_IN, grid_height_in(1, 1, domain_aspect, FIGURE_WIDTH_IN))
 # Linear default scale (fraction in [0, 1]); no norm override needed.
-hex_map(frac, ax, norm=None, title="beached fraction per source hex")
-fig_path = figure_dir / f"BeachedFraction_{regime}_r{hex_radius}m{month_suffix}_{member}.png"
-fig.savefig(fig_path)
+hex_map(frac, ax, norm=None, title="beached fraction per source hex",
+        label="beached fraction")
+fig_path = figure_dir / f"BeachedFraction_{regime}_r{hex_radius}m_{season}_{member}.png"
+# Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
+fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
 plt.show()
 
@@ -304,35 +352,83 @@ all_h = pd.concat([g["value"] for g in gdfs.values() if not g.empty])
 horizon_norm = log_norm(all_h)
 
 ncols = len(time_horizons_days)
-fig, axes = plt.subplots(
-    1, ncols, figsize=(panel_height_in * domain_aspect * ncols, panel_height_in),
-    layout="constrained", squeeze=False,
+fig, axes = plt.subplots(1, ncols, layout="constrained", squeeze=False)
+fig.set_size_inches(
+    FIGURE_WIDTH_IN, grid_height_in(1, ncols, domain_aspect, FIGURE_WIDTH_IN)
 )
 for ax, h in zip(axes.flat, time_horizons_days):
-    hex_map(gdfs[h], ax, norm=horizon_norm, title=f"stranded by {h} d")
-fig_path = figure_dir / f"BeachingHorizons_{regime}_r{hex_radius}m{month_suffix}_{member}.png"
-fig.savefig(fig_path)
+    hex_map(gdfs[h], ax, norm=horizon_norm, title=f"stranded by {h} d",
+            label="stranded weight (particles)")
+fig_path = figure_dir / f"BeachingHorizons_{regime}_r{hex_radius}m_{season}_{member}.png"
+# Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
+fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
 plt.show()
+
+# %% [markdown]
+# # GeoJSON export of the per-horizon deposit
+#
+# One file per age horizon: the cumulative stranded weight per hex with the
+# 024a geometry, EPSG:4326 — the horizon panels above in a form
+# collaborators can open in R or QGIS.
+
+# %%
+for h in time_horizons_days:
+    g = gdfs[h].rename(columns={"value": "stranded_weight"}).drop(columns="hex_id")
+    export_path = export_dir / f"029_{regime}_{season}_{member}_T{h}d.geojson"
+    g.to_file(export_path, driver="GeoJSON")
+    print(f"wrote {export_path} ({len(g):,} hexes)")
+
 
 # %% [markdown]
 # # Cumulative beached fraction vs. age
 #
 # Share of all released drifters stranded by each elapsed-time horizon — the
-# stranding time course, summed over the store's other axes.
+# stranding time course, summed over the store's other axes. The pooled curve
+# is drawn with the 2016–2019 **interannual min–max** as a shaded band: the
+# per-year curves are the same reduction restricted to one `release_year`, so
+# the band is the honest spread behind the single pooled number.
 
 # %%
-total_released = float(beaching["weight"].sum())
-age_bins_present = sorted(beached["beach_age_bin"].unique())
-curve = pd.Series(
-    [
-        beached[beached["beach_age_bin"] <= b]["weight"].sum() / total_released
-        for b in age_bins_present
-    ],
-    index=pd.Index([(b + 1) * age_bin_days for b in age_bins_present], name="age_days"),
+def beached_fraction_curve(df):
+    """Cumulative stranded / released weight at each age-bin right edge."""
+    b = df[df["beach_hex"] >= 0]
+    total = float(df["weight"].sum())
+    per_bin = b.groupby("beach_age_bin")["weight"].sum().sort_index()
+    return pd.Series(
+        per_bin.cumsum().to_numpy() / max(total, 1.0),
+        index=pd.Index(
+            (per_bin.index.to_numpy() + 1) * age_bin_days, name="age (days)"
+        ),
+        name="cumulative beached fraction",
+    )
+
+
+curve = beached_fraction_curve(beaching)
+# Reindexing onto the pooled age axis leaves a gap wherever a year stranded
+# nothing in that bin. The curve is cumulative, so the value there is the
+# previous bin's, not "missing": forward-fill it, and read the bins before a
+# year's first stranding as the 0 they are. Without this the band's min is the
+# nanmin over whichever years happen to carry a bin.
+per_year = pd.DataFrame(
+    {y: beached_fraction_curve(g) for y, g in beaching.groupby("release_year")}
+).reindex(curve.index).ffill().fillna(0.0)
+
+fig, ax = plt.subplots(layout="constrained")
+# Print-ready width; a line panel needs no map aspect, so half the page width
+# in height reads as a normal wide chart.
+fig.set_size_inches(FIGURE_WIDTH_IN, 0.45 * FIGURE_WIDTH_IN)
+curve.plot(ax=ax)
+ax.fill_between(
+    curve.index, per_year.min(axis=1), per_year.max(axis=1), alpha=0.3,
+    label=f"interannual range ({release_years[0]}–{release_years[-1]})",
 )
-ax = curve.plot()
 ax.set_ylabel("cumulative beached fraction")
+ax.legend()
+fig_path = figure_dir / f"BeachedFractionCurve_{regime}_r{hex_radius}m_{season}_{member}.png"
+# Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
+fig.savefig(fig_path, dpi=FIGURE_DPI)
+print(f"wrote {fig_path}")
 plt.show()
 
 # %% [markdown]
@@ -354,13 +450,15 @@ median_disp = float(
 )
 
 fig, ax = plt.subplots(layout="constrained")
+fig.set_size_inches(FIGURE_WIDTH_IN, 0.45 * FIGURE_WIDTH_IN)
 # drawstyle="steps-mid": the x axis is a binned quantity, so a step reads as
 # the histogram it is; a categorical bar plot would label every bin and the
 # axis runs to hundreds of bins (docs/visualisations.md).
 disp_weight.plot(ax=ax, drawstyle="steps-mid")
 ax.set_ylabel("stranded weight")
-fig_path = figure_dir / f"StrandingTravelDistance_{regime}_r{hex_radius}m{month_suffix}_{member}.png"
-fig.savefig(fig_path)
+fig_path = figure_dir / f"StrandingTravelDistance_{regime}_r{hex_radius}m_{season}_{member}.png"
+# Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
+fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
 print(f"weight-weighted median travel distance at stranding: {median_disp:.1f} km")
 plt.show()
@@ -369,10 +467,10 @@ plt.show()
 # # Validation / summary
 
 # %%
+total_released = float(beaching["weight"].sum())
 n_beached = float(beached["weight"].sum())
-print(f"regime={regime}, hex_radius={hex_radius} m, "
-      + (f"month={release_month}, " if release_month else "")
-      + f"age_bin_days={age_bin_days}")
+print(f"regime={regime}, hex_radius={hex_radius} m, season={season} "
+      f"(months {season_months}), age_bin_days={age_bin_days}")
 print(f"  drifters (Σweight): {total_released:,.0f}")
 print(f"  beached:           {n_beached:,.0f} "
       f"({100 * n_beached / max(total_released, 1):.1f}%)")
@@ -380,3 +478,7 @@ print(f"  stranding hexes:   {beached['beach_hex'].nunique():,}")
 print(f"  source hexes:      {frac['release_hex'].nunique():,}")
 print(f"  median travel distance at stranding: {median_disp:,.1f} km")
 print(f"  member:            {member}")
+print("  cumulative beached fraction by age horizon (pooled, interannual min–max):")
+for t in curve.index:
+    print(f"    {t:>5} d: {100 * curve[t]:6.2f} %  "
+          f"[{100 * per_year.loc[t].min():6.2f} .. {100 * per_year.loc[t].max():6.2f}]")

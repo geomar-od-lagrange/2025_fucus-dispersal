@@ -1,5 +1,11 @@
 # Pre-prod wrapup
 
+> **Implemented.** The durable record is `docs/`: start at
+> [../../docs/job_scripts.md](../../docs/job_scripts.md) for the pipeline
+> layout and [../../docs/visualisations.md](../../docs/visualisations.md)
+> for the plotting conventions this plan settled. Retained as the
+> historical punch-list.
+
 Final pass before the repo and study go public. This plan is a living
 punch-list: as more remarks land in `remarks.md` and inline TODOs across
 the tree, fold them into the appropriate section below. Once everything
@@ -626,14 +632,23 @@ here as a final cross-notebook audit so nothing slips through.
 
 ## 9. Final verification before flipping to prod
 
-- [ ] Re-execute all `notebooks/0??_*.md` end-to-end via
-      `pixi run jupytext --sync --execute …` (papermill where
-      parameters need injecting). Commit the freshly-rendered
-      `.ipynb` alongside the `.md` so GitHub renders figures.
-- [ ] Smoke-test from a fresh clone:
-      `git clone --recurse-submodules` → `pixi install` →
-      `scripts/fetch_data.sh` no-op → run stages 000 through 025
-      against the BSH demo subset.
+- [x] Re-execute all `notebooks/0??_*.md` end-to-end. Covered by the
+      production sweep on NESH (010 for surface / bottom /
+      surface_stokes × 2016–2019, then 020–031 via the
+      `scripts/0NN_*_job.sh` wrappers, rendered under
+      `notebooks_executed/Visualisations/`) plus the single-host
+      `scripts/0-31-smoke-test.sh` below, which executes every stage
+      000–031 in one pass. Executed notebooks stay artifacts under
+      `notebooks_executed/` / the outputs tree, not committed into
+      `notebooks/` — the standalone PNGs under `output_root/Figures/`
+      are the deliverable (see
+      [../docs/job_scripts.md](../docs/job_scripts.md)).
+- [x] Smoke-test from a fresh clone. `scripts/0-31-smoke-test.sh` is
+      that test, extended to stages 000–031 (024g and both 028 store
+      paths included): one host, no SLURM, 4 h Parcels window, all
+      three regimes against the BSH demo subset in `data/`. Last run
+      green end-to-end with every stage writing its figures and
+      exports.
 - [x] `ATTRIBUTION.md` walkthrough: every dataset currently shipped
       in the twin still listed; no licence-incompatible additions
       since the last audit (cross-check against
@@ -647,13 +662,16 @@ here as a final cross-notebook audit so nothing slips through.
       redistribution-attribution file. Consequence: the fresh-clone
       demo smoke-test won't exercise 003's German-Bight WAVERYS
       fallback — flagged below.)
-- [ ] Review `AGENTS.md` shape after F + G have landed. Look for
-      content trimmable to pointers (rules-vs-reference split),
-      `Conventions › Notebooks` bullets that duplicate the jupytext
-      skill, and stale references after the rename + docs extraction.
-      Decide whether a structural pass earns its keep or the file
-      reads fine post-trim. No new sub-plan unless the answer is yes.
-- [ ] Once green: move this file to `plans/done/wrapup.md` with a
+- [x] Review `AGENTS.md` shape. Done: the rules-vs-reference split
+      holds (every long topic is a pointer into `docs/`), and the
+      `Conventions › Notebooks` bullets do not duplicate the jupytext
+      skill beyond the one `--cwd notebooks/` bullet that restated the
+      paragraph above it, now dropped. Two stale claims fixed: the
+      md-only notebook set is listed explicitly instead of "legacy
+      `02x`", and the pipeline-stage bullets carry 024g and the
+      current 025/026/028 descriptions. No structural pass earns its
+      keep — no sub-plan.
+- [x] Once green: move this file to `plans/done/wrapup.md` with a
       one-liner pointing at the new method docs as the durable
       record.
 
@@ -689,7 +707,7 @@ here as a final cross-notebook audit so nothing slips through.
   Stokes across barriers like the Curonian Spit (~1–3 km) into the
   sheltered Curonian Lagoon — unphysical (real fetch resets at the
   spit). Three candidate mitigations laid out in
-  [docs/stokes_drift.md](../docs/stokes_drift.md) §"Open concern".
+  [docs/stokes_drift.md](../../docs/stokes_drift.md) §"Open concern".
   Kept at N=5 + per-timestep face mask for now; needs further thought
   before settling on a fix.
 

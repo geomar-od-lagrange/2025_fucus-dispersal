@@ -38,8 +38,15 @@ draws three panels:
    one age bin, every particle in it has the same elapsed time, so the
    variation is route, not age.
 
-One regime per run; `release_month = 0` pools every monthly partition
-across years. No Dask, no zarrs — in the `025`/`026`/`029` lineage.
+A fourth figure reduces the same store to the domain-wide **drifting
+fraction vs. age**, with the 2016–2019 interannual min–max as a band around
+the pooled curve. Maps stay pooled; only the scalar-per-horizon curve
+carries the spread.
+
+One regime and one release `season` per run; the season's monthly
+partitions are pooled across every available release year. No Dask, no
+zarrs — in the `025`/`026`/`029` lineage. Figures are print-ready (full page
+width, 300 dpi).
 
 ```python
 import re
@@ -48,7 +55,6 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from shapely.geometry import box
@@ -62,8 +68,9 @@ output_root = "../output"
 regime = "surface_stokes"
 hex_radius = 6000
 age_bin_days = 10
-# 0 = pool all monthly partitions across years; 1..12 = that month only.
-release_month = 0
+# Release season: DJF / MAM / JJA / SON, or ALL for the pooled year. Selects
+# which of the monthly `_mMM` partitions 024f wrote are read and pooled.
+season = "ALL"
 
 # Rate-model member: the opaque tag the reducer put in the store filename
 # (e.g. "step_wc0p1_ts3_tcinf"). Selects the partitions and tags the figures.
@@ -81,69 +88,121 @@ extent_lon_min = 9.0
 extent_lon_max = 30.7
 extent_lat_min = 53.0
 extent_lat_max = 66.0
-
-cmap = "viridis"
-panel_height_in = 6
-fig_dpi_scale = 3
 ```
 
 # Parse parameters
 
+The season → month mapping lives here rather than in the parameters cell:
+papermill only injects primitives, and the mapping is a fixed convention,
+not a knob.
+
 ```python
+SEASON_MONTHS = {
+    "DJF": [12, 1, 2],
+    "MAM": [3, 4, 5],
+    "JJA": [6, 7, 8],
+    "SON": [9, 10, 11],
+    "ALL": list(range(1, 13)),
+}
+
 output_root = Path(output_root)
+if season not in SEASON_MONTHS:
+    raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
+season_months = SEASON_MONTHS[season]
 time_horizons_days = [int(x) for x in time_horizons_days_csv.split(",") if x]
+# A horizon T names the snapshot bin that *ends* at T — ages in
+# [T − age_bin_days, T) — so its index is T/age_bin_days − 1. T must therefore
+# land on a bin edge and be at least one bin long; the upper bound is checked
+# against the store's own age axis once it is read.
 for h in time_horizons_days:
     assert h % age_bin_days == 0, (
-        f"horizon {h} d is not a multiple of age_bin_days {age_bin_days} d"
+        f"horizon {h} d is not a multiple of age_bin_days {age_bin_days} d, so "
+        f"it does not land on an age-bin edge"
     )
-mpl.rcParams["figure.dpi"] = fig_dpi_scale * mpl.rcParamsDefault["figure.dpi"]
+    assert h >= age_bin_days, (
+        f"horizon {h} d is shorter than one age bin ({age_bin_days} d), so no "
+        f"snapshot bin ends at it"
+    )
+
+# Print-ready output: every saved figure is one full text-width (180 mm)
+# figure at 300 dpi, so panels land in the manuscript at their final size
+# (rationale in docs/visualisations.md).
+FIGURE_WIDTH_IN = 180 / 25.4
+FIGURE_DPI = 300
 # Hex seam stroke. edgecolor="face" means this is not a visible outline -- it
 # closes the ~1 px anti-aliasing seam between adjacent polygons so the grid
-# reads as a continuous field. The seam is a fixed PIXEL artifact, so a fixed
-# point width makes the resulting hex dilation DPI-invariant (17.5% of hex
-# width at every dpi). Pinning it to ~1 px instead lets dilation fall as
-# resolution rises: ~8.6% at fig_dpi_scale=3 on the Baltic crop.
-hex_seam_lw = 1.1 * 72 / (100 * fig_dpi_scale)
+# reads as a continuous field. The seam is a fixed PIXEL artifact, so pinning
+# the stroke to ~1 px at the output dpi keeps the seam closed while letting
+# the resulting hex dilation shrink as resolution rises.
+hex_seam_lw = 1.1 * 72 / FIGURE_DPI
 
 figure_dir = output_root / "Figures" / "030"
 figure_dir.mkdir(parents=True, exist_ok=True)
 ```
 
-# Read key + pool survival-occupancy partitions
+# Read key + pool the season's survival-occupancy partitions
+
+Every `_mMM` partition whose month is in the season, across every release
+year; the year is parsed from the filename and kept as a column, because
+the interannual spread below groups by it. A whole-year partition (no
+`_mMM` suffix, written when 024f itself ran with `release_month = 0`)
+carries every month, so it is only read for `season = "ALL"`.
 
 ```python
 store_root = output_root / "HexAggregates"
 key = gpd.read_parquet(store_root / f"HexAgg_key_r{hex_radius}m.parquet")
 
-month_suffix = f"_m{release_month:02d}" if release_month else ""
-# `release_month = 0` pools every `_mMM` partition across years, and also
-# picks up a whole-year partition (no `_mMM` suffix, written when 024f itself
-# ran with `release_month = 0`); a nonzero month matches only that month's
-# `_mMM` partitions.
-month_re = rf"_m{release_month:02d}" if release_month else r"(?:_m\d{2})?"
 _PART_RE = re.compile(
-    rf"HexAgg_survocc_r{hex_radius}m_{regime}_(\d{{4}}){month_re}"
+    rf"HexAgg_survocc_r{hex_radius}m_{regime}_(\d{{4}})(?:_m(\d{{2}}))?"
     rf"_{re.escape(member)}\.parquet$"
 )
-survocc_files = [
-    f for f in sorted(store_root.glob(f"HexAgg_survocc_r{hex_radius}m_{regime}_*.parquet"))
-    if _PART_RE.search(f.name)
-]
+survocc_files = []
+for f in sorted(store_root.glob(f"HexAgg_survocc_r{hex_radius}m_{regime}_*.parquet")):
+    m = _PART_RE.search(f.name)
+    if m is None:
+        continue
+    month = m.group(2)
+    if month is None:
+        if season != "ALL":
+            continue
+    elif int(month) not in season_months:
+        continue
+    survocc_files.append((f, int(m.group(1))))
+
 if not survocc_files:
     raise FileNotFoundError(
-        f"no survocc partitions for regime {regime!r}"
-        + (f", month {release_month}" if release_month else "")
-        + f", member {member!r} at {store_root} — run 024f."
+        f"no survocc partitions for regime {regime!r}, season {season}, "
+        f"member {member!r} at {store_root} — run 024f."
     )
 survocc = pd.concat(
-    [pd.read_parquet(f).reset_index(drop=True) for f in survocc_files],
+    [
+        pd.read_parquet(f).reset_index(drop=True).assign(release_year=year)
+        for f, year in survocc_files
+    ],
     ignore_index=True,
 )
+release_years = sorted(int(y) for y in survocc["release_year"].unique())
 print(f"key: {len(key):,} hexes; pooled {len(survocc_files)} (year, month) partition(s)")
+print(f"season {season} (months {season_months}); release years {release_years}")
 print(f"survocc rows: {len(survocc):,}")
+
+# The store's age axis is the upper bound on the horizons: 024f wrote bins
+# 0..occupancy_max_days/age_bin_days − 1, and a horizon past the last bin
+# selects nothing at all.
+occupancy_max_days = (int(survocc["age_bin"].max()) + 1) * age_bin_days
+for h in time_horizons_days:
+    assert h <= occupancy_max_days, (
+        f"horizon {h} d is past the store's occupancy window "
+        f"({occupancy_max_days} d) — rebuild 024f or lower the horizon"
+    )
+print(f"store occupancy window: {occupancy_max_days} d")
 ```
 
 # Rendering helpers
+
+The colorbar is an inset axes at axes-fraction height 1.0, so it is exactly
+the map height at any figure size — a fixed-aspect map never fills its
+gridspec cell, and a cell-sized colorbar overshoots it.
 
 ```python
 def hex_gdf(df, value_col):
@@ -174,11 +233,14 @@ def log_norm(values):
     return LogNorm(vmin=vmin, vmax=vmax)
 
 
-def hex_map(gdf, ax, norm=None, vmin=None, vmax=None, title=None):
+def hex_map(gdf, ax, norm=None, vmin=None, vmax=None, title=None, label=None):
     if not gdf.empty:
+        cax = ax.inset_axes([1.02, 0.0, 0.035, 1.0])
         gdf.plot(
-            ax=ax, column="value", cmap=cmap, norm=norm, vmin=vmin, vmax=vmax,
-            legend=True, edgecolor="face", linewidth=hex_seam_lw, zorder=1,
+            ax=ax, column="value", norm=norm, vmin=vmin, vmax=vmax,
+            legend=True, cax=cax,
+            legend_kwds={"label": label} if label else None,
+            edgecolor="face", linewidth=hex_seam_lw, zorder=1,
         )
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
     ax.set_xlim(extent[0], extent[1])
@@ -188,6 +250,15 @@ def hex_map(gdf, ax, norm=None, vmin=None, vmax=None, title=None):
     ax.set_yticks([])
     if title is not None:
         ax.set_title(title)
+
+
+def grid_height_in(nrows, ncols, aspect, width_in):
+    """Height seed for a grid of fixed-aspect map panels at a fixed figure
+    width. The figure width is set by the page, so only the height is free:
+    each column gives its map ~72 % of its width (the rest is the inset
+    colorbar and its tick labels), and ~10 % is added for titles and padding.
+    constrained_layout does the packing; there is no measure-rescale loop."""
+    return 1.10 * nrows * (0.72 * width_in / ncols) / aspect
 ```
 
 ```python
@@ -218,7 +289,9 @@ share a row with two log-density panels and invites reading it as a third
 density map.
 
 ```python
-horizon_bins = {h: h // age_bin_days for h in time_horizons_days}
+# Snapshot bin ending at the horizon: ages in [h − age_bin_days, h).
+horizon_bins = {h: h // age_bin_days - 1 for h in time_horizons_days}
+bin_labels = {h: f"{h - age_bin_days}–{h} d" for h in time_horizons_days}
 occ_gdfs = {h: hex_gdf(survocc[survocc["age_bin"] == b], "occ") for h, b in horizon_bins.items()}
 surv_gdfs = {h: hex_gdf(survocc[survocc["age_bin"] == b], "surv") for h, b in horizon_bins.items()}
 frac_gdfs = {h: frac_gdf(survocc[survocc["age_bin"] == b]) for h, b in horizon_bins.items()}
@@ -229,16 +302,19 @@ shared = pd.concat(
 dens_norm = log_norm(shared)
 
 nrows = len(time_horizons_days)
-fig, axes = plt.subplots(
-    nrows=nrows, ncols=2,
-    figsize=(panel_height_in * domain_aspect * 2, panel_height_in * nrows),
-    layout="constrained", squeeze=False,
+fig, axes = plt.subplots(nrows=nrows, ncols=2, layout="constrained", squeeze=False)
+fig.set_size_inches(
+    FIGURE_WIDTH_IN, grid_height_in(nrows, 2, domain_aspect, FIGURE_WIDTH_IN)
 )
 for i, h in enumerate(time_horizons_days):
-    hex_map(occ_gdfs[h], axes[i, 0], norm=dens_norm, title=f"occupancy — {h} d")
-    hex_map(surv_gdfs[h], axes[i, 1], norm=dens_norm, title=f"survival-weighted — {h} d")
-fig_path = figure_dir / f"SurvivalHeatmaps_{regime}_r{hex_radius}m{month_suffix}_{member}.png"
-fig.savefig(fig_path)
+    hex_map(occ_gdfs[h], axes[i, 0], norm=dens_norm,
+            title=f"occupancy — age {bin_labels[h]}", label="particle-hours")
+    hex_map(surv_gdfs[h], axes[i, 1], norm=dens_norm,
+            title=f"survival-weighted — age {bin_labels[h]}",
+            label="particle-hours")
+fig_path = figure_dir / f"SurvivalHeatmaps_{regime}_r{hex_radius}m_{season}_{member}.png"
+# Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
+fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
 plt.show()
 ```
@@ -253,23 +329,67 @@ rare-event member sits well above 0 and makes the fixed scale look flat.
 
 ```python
 ncols = len(time_horizons_days)
-fig, axes = plt.subplots(
-    nrows=1, ncols=ncols,
-    figsize=(panel_height_in * domain_aspect * ncols, panel_height_in),
-    layout="constrained", squeeze=False,
+fig, axes = plt.subplots(nrows=1, ncols=ncols, layout="constrained", squeeze=False)
+fig.set_size_inches(
+    FIGURE_WIDTH_IN, grid_height_in(1, ncols, domain_aspect, FIGURE_WIDTH_IN)
 )
 for j, h in enumerate(time_horizons_days):
+    # Panel titles carry the age span alone: the quantity is on every
+    # colorbar, and "surviving fraction — age 10–20 d" is wider than a panel
+    # in a three-column row, so the titles collide.
     hex_map(frac_gdfs[h], axes[0, j], vmin=0.0, vmax=1.0,
-            title=f"surviving fraction — {h} d")
-fig_path = figure_dir / f"SurvivalFraction_{regime}_r{hex_radius}m{month_suffix}_{member}.png"
-fig.savefig(fig_path)
+            title=f"age {bin_labels[h]}", label="surviving fraction")
+fig_path = figure_dir / f"SurvivalFraction_{regime}_r{hex_radius}m_{season}_{member}.png"
+# Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
+fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
 for h in time_horizons_days:
     g = frac_gdfs[h]
     if not g.empty:
-        print(f"  {h:>4} d: surviving fraction per hex "
+        print(f"  age {bin_labels[h]}: surviving fraction per hex "
               f"min {g['value'].min():.3f}, median {g['value'].median():.3f}, "
               f"max {g['value'].max():.3f}")
+plt.show()
+```
+
+# Drifting fraction vs. age
+
+The domain-wide reduction of the same store: `Σ surv / Σ occ` per age bin —
+the share of particle-time still afloat. The pooled curve carries the
+2016–2019 **interannual min–max** as a shaded band, the same reduction
+restricted to one `release_year` at a time.
+
+```python
+def drifting_fraction_curve(df):
+    g = df.groupby("age_bin")[["occ", "surv"]].sum().sort_index()
+    return pd.Series(
+        (g["surv"] / g["occ"]).to_numpy(),
+        index=pd.Index(g.index.to_numpy() * age_bin_days, name="age (days)"),
+        name="drifting fraction",
+    )
+
+
+drift_curve = drifting_fraction_curve(survocc)
+drift_per_year = pd.DataFrame(
+    {y: drifting_fraction_curve(g) for y, g in survocc.groupby("release_year")}
+).reindex(drift_curve.index)
+
+fig, ax = plt.subplots(layout="constrained")
+# Print-ready width; a line panel needs no map aspect, so half the page width
+# in height reads as a normal wide chart.
+fig.set_size_inches(FIGURE_WIDTH_IN, 0.45 * FIGURE_WIDTH_IN)
+drift_curve.plot(ax=ax)
+ax.fill_between(
+    drift_curve.index, drift_per_year.min(axis=1), drift_per_year.max(axis=1),
+    alpha=0.3,
+    label=f"interannual range ({release_years[0]}–{release_years[-1]})",
+)
+ax.set_ylabel("drifting fraction")
+ax.legend()
+fig_path = figure_dir / f"DriftingFractionCurve_{regime}_r{hex_radius}m_{season}_{member}.png"
+# Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
+fig.savefig(fig_path, dpi=FIGURE_DPI)
+print(f"wrote {fig_path}")
 plt.show()
 ```
 
@@ -278,14 +398,17 @@ plt.show()
 ```python
 per_bin = survocc.groupby("age_bin")[["occ", "surv"]].sum()
 per_bin["drifting_fraction"] = per_bin["surv"] / per_bin["occ"]
-print(f"regime={regime}, hex_radius={hex_radius} m, "
-      + (f"month={release_month}, " if release_month else "all months, ")
-      + f"age_bin_days={age_bin_days}")
+print(f"regime={regime}, hex_radius={hex_radius} m, season={season} "
+      f"(months {season_months}), age_bin_days={age_bin_days}")
 print(per_bin.to_string(float_format=lambda v: f"{v:,.3f}"))
 for h in time_horizons_days:
     b = horizon_bins[h]
     sub = survocc[survocc["age_bin"] == b]
     o, s = sub["occ"].sum(), sub["surv"].sum()
-    print(f"  {h:>4} d (bin {b}): drifting fraction {s / max(o, 1):.3f}, "
+    # The curve is indexed by each bin's start age, so the bin ending at h
+    # reads at h − age_bin_days.
+    per_year_bin = drift_per_year.loc[b * age_bin_days]
+    print(f"  age {bin_labels[h]} (bin {b}): drifting fraction {s / max(o, 1):.3f} "
+          f"[{per_year_bin.min():.3f} .. {per_year_bin.max():.3f}], "
           f"{sub['target_hex'].nunique():,} hexes")
 ```

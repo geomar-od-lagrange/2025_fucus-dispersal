@@ -124,15 +124,25 @@ filename.
   The heavy trajectory + raw-Stokes pass. `notebooks/024e_*` (stranding
   weight) and `notebooks/024f_*` (survival-weighted occupancy) are
   seconds-per-zarr reducers over it, one store per rate-model member.
+- `notebooks/024g_*` — survival-weighted connectivity: the same `exp(−A)`
+  weighting as 024e/024f applied to 024c's origin→target subbasin axis,
+  reduced from the 024d sidecar. One store per rate-model member; emits
+  both `w_obs` and `n_obs` so 028 compares weighted and unweighted on one
+  population (real drifters only — unlike 024c, which keeps land seeds).
 - `notebooks/025_*`, `notebooks/026_*`, `notebooks/026a_*`,
   `notebooks/026b_*`, `notebooks/027_*`, `notebooks/028_*`,
   `notebooks/029_*`, `notebooks/030_*`, `notebooks/031_*` — lightweight
-  parquet-only consumers (no Dask cluster): hex density (025),
-  elapsed-time-horizon density via the counts `age_bin` axis (026), the
-  same horizon maps split per origin subbasin (026a) and per origin
-  subbasin × release year (026b), per-source-hex crow-flies distance
-  quantiles via the 024b store (027), the subbasin connectivity matrix
-  from the 024c store (028), beaching maps (029) and survival occupancy
+  parquet-only consumers (no Dask cluster): hex relative-density maps —
+  share of particle-time and dilution per km² of hex water area, one
+  release season per run with all four years pooled (025), the same at
+  cumulative elapsed-time horizons via the counts `age_bin` axis (026),
+  split per origin subbasin (026a) and per origin subbasin × release year
+  (026b), per-source-hex crow-flies distance
+  quantiles via the 024b store (027), the subbasin connectivity views from
+  the 024c (unweighted) or 024g (survival-weighted, via the `member`
+  parameter) stores — raw matrix, row-normalised emission fraction per age
+  horizon, and interannual range, with CSV exports (028), beaching maps
+  (029) and survival occupancy
   heatmaps (030) for one 024e/024f member, and the rate-model sweep
   across members (031).
 
@@ -232,14 +242,13 @@ parameters cell, not the filename.
 `../output/...`) resolve against the notebook's directory.
 
 **Format.** New notebooks use `py:percent,md,ipynb` with the `.py` as the
-source of truth (edit the `.py`, then `jupytext --sync`); legacy `02x`
-notebooks predate this and stay `md,ipynb` (no `.py`) until otherwise
-touched. Commit **every** paired form — for new notebooks that's `.py`,
+source of truth (edit the `.py`, then `jupytext --sync`). The notebooks
+that predate this and still have no `.py` twin are `000`, `010`, `020`,
+`021`, `022`, `023`, `024` and `024a`; they stay `md,ipynb` until
+otherwise touched. Commit **every** paired form — for new notebooks that's `.py`,
 `.md`, and the code-only `.ipynb`; never commit executed notebooks into
 `notebooks/` (full sync/strip/execute workflow in the jupytext skill
 linked above).
-- Run papermill with `--cwd notebooks/` so in-notebook relative paths
-  (`../data/…`, `../output/…`) resolve against `notebooks/`.
 - Markdown cells for narrative; clean code cells for execution.
 - Well-scoped cells — don't mix imports, parameters, and calculations.
 - Every notebook must have one early parameters cell tagged `"parameters"`
@@ -282,6 +291,10 @@ kwargs that override defaults until a real need shows up.** Concretely:
   Natural Earth or OSM tiles when a basemap is needed.
 - Prefer xarray's built-in plotting (`.plot`, `.plot.line`, `.plot.scatter`,
   faceting via `col=` / `row=` / `hue=`) over raw matplotlib.
+
+One standing exception: the `025`–`031` map notebooks save print-ready
+figures at a fixed 180 mm page width and 300 dpi, because those PNGs *are*
+the manuscript figures — see [docs/visualisations.md](docs/visualisations.md).
 
 When a default genuinely doesn't read, prefer reshaping the data
 (faceting, hue) before reaching for explicit styling. If you do override

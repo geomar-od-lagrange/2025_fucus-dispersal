@@ -35,7 +35,7 @@ contiguous hex index (occupancy is *dense* — every obs, every hex — unlike
 024e's sparse in-band deposits) and runs to `occupancy_max_days` (default
 120 d, ≥ the largest 030 horizon and ≤ the sidecar's `window_days`), **not**
 024e's `max_float_days` viability cutoff. Partitioned per
-`(regime, year, month)`; `030` pools the monthly partitions.
+`(regime, year, month)`; `030` pools the monthly partitions selected by its `season` parameter.
 
 ## Store schema
 
@@ -66,7 +66,8 @@ near-shore water. The sink field is [beaching.md](beaching.md)'s `beach_hex`.
 Conditioning on age bin means every particle shares an elapsed time, so the
 contrast is route, not age.
 
-At each horizon `T`, `030` selects the snapshot bin `age_bin = T/age_bin_days`
+At each horizon `T`, `030` selects the snapshot bin *ending* at `T` —
+`age_bin = T/age_bin_days − 1`, i.e. ages in `[T − age_bin_days, T)` —
 and draws occupancy vs. survival-weighted (shared `LogNorm`) vs. surviving
 fraction (linear 0–1). The drifting fraction falls with age, most steeply where
 near-shore residence coincides with onshore waves — with `trap` degenerate the

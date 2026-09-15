@@ -1,46 +1,47 @@
----
-jupyter:
-  jupytext:
-    cell_metadata_filter: tags,-all
-    formats: py:percent,md,ipynb
-    text_representation:
-      extension: .md
-      format_name: markdown
-      format_version: '1.3'
-      jupytext_version: 1.19.1
-  kernelspec:
-    display_name: Python 3 (ipykernel)
-    language: python
-    name: python3
----
+# ---
+# jupyter:
+#   jupytext:
+#     cell_metadata_filter: tags,-all
+#     formats: py:percent,md,ipynb
+#     text_representation:
+#       extension: .py
+#       format_name: percent
+#       format_version: '1.3'
+#       jupytext_version: 1.19.1
+#   kernelspec:
+#     display_name: Python 3 (ipykernel)
+#     language: python
+#     name: python3
+# ---
 
-# Hex relative-density maps
+# %% [markdown]
+# # Hex relative-density maps
+#
+# Relative particle-density maps on the hex-aggregated dispersal store
+# built by notebooks 024a (key) and 024 (counts). Reads one key file plus
+# every release-year counts partition of one regime; no trajectory zarrs,
+# no Dask cluster.
+#
+# Density is reported in **relative** units, not raw particle counts:
+#
+# - `percentage` — 100 · n_obs(hex) / Σ n_obs over the selected release
+#   set (regime, season, all release years pooled): the share of
+#   particle-time the cloud spends in each hex. Linear colour scale.
+# - `dilution` — `percentage` per km² of hex **water** area
+#   (`water_area_m2` from the 024a key): how far the source concentration
+#   has thinned, independent of how much of a hex is land. Log colour
+#   scale.
+#
+# Figures:
+#
+# - **Baltic** — percentage + dilution over the whole basin
+# - **German waters** — the same two views, viewport-clipped to
+#   `de_extent` (one hex size for the whole basin, so the zoom is purely
+#   visual)
+# - **Per origin subbasin** — percentage, normalised per panel, so each
+#   HELCOM release subbasin shows its own share
 
-Relative particle-density maps on the hex-aggregated dispersal store
-built by notebooks 024a (key) and 024 (counts). Reads one key file plus
-every release-year counts partition of one regime; no trajectory zarrs,
-no Dask cluster.
-
-Density is reported in **relative** units, not raw particle counts:
-
-- `percentage` — 100 · n_obs(hex) / Σ n_obs over the selected release
-  set (regime, season, all release years pooled): the share of
-  particle-time the cloud spends in each hex. Linear colour scale.
-- `dilution` — `percentage` per km² of hex **water** area
-  (`water_area_m2` from the 024a key): how far the source concentration
-  has thinned, independent of how much of a hex is land. Log colour
-  scale.
-
-Figures:
-
-- **Baltic** — percentage + dilution over the whole basin
-- **German waters** — the same two views, viewport-clipped to
-  `de_extent` (one hex size for the whole basin, so the zoom is purely
-  visual)
-- **Per origin subbasin** — percentage, normalised per panel, so each
-  HELCOM release subbasin shows its own share
-
-```python
+# %%
 import json
 import re
 import unicodedata
@@ -54,11 +55,11 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm, Normalize
 from shapely.geometry import box
 from cartopy.io.shapereader import natural_earth
-```
 
-# Parameters
+# %% [markdown]
+# # Parameters
 
-```python tags=["parameters"]
+# %% tags=["parameters"]
 # Read root of the data twin (HELCOM polygons, BSH static H0).
 data_root = "../data"
 # Read root of the hex-aggregate stores built by 024a/024, and write root
@@ -92,14 +93,14 @@ isobath_m = 3.0
 # Most panels a facet grid may carry before it is split across figures —
 # at 180 mm page width more panels shrink each map below readable size.
 max_panels_per_figure = 12
-```
 
-# Parse parameters
+# %% [markdown]
+# # Parse parameters
+#
+# `SEASON_MONTHS` lives here rather than in the parameters cell because
+# papermill only injects primitives; `season` selects one entry.
 
-`SEASON_MONTHS` lives here rather than in the parameters cell because
-papermill only injects primitives; `season` selects one entry.
-
-```python
+# %%
 SEASON_MONTHS = {
     "DJF": [12, 1, 2],
     "MAM": [3, 4, 5],
@@ -137,16 +138,17 @@ def _slug(name):
     run to a single underscore."""
     ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
     return re.sub(r"[^0-9A-Za-z]+", "_", ascii_name).strip("_")
-```
 
-# Read the key
 
-Layout: flat files under ``output_root/HexAggregates/`` —
-``HexAgg_key_r<radius>m.parquet`` (+ a ``.json`` sidecar carrying the
-subbasin id→name map) and
-``HexAgg_counts_r<radius>m_<regime>_<year>.parquet``.
+# %% [markdown]
+# # Read the key
+#
+# Layout: flat files under ``output_root/HexAggregates/`` —
+# ``HexAgg_key_r<radius>m.parquet`` (+ a ``.json`` sidecar carrying the
+# subbasin id→name map) and
+# ``HexAgg_counts_r<radius>m_<regime>_<year>.parquet``.
 
-```python
+# %%
 key_path = store_root / f"HexAgg_key_r{hex_radius}m.parquet"
 key = gpd.read_parquet(key_path)
 subbasin_id_to_name = {
@@ -154,23 +156,23 @@ subbasin_id_to_name = {
     for k, v in json.loads(key_path.with_suffix(".json").read_text())["subbasin_id_to_name"].items()
 }
 print(f"key: {len(key):,} hexes")
-```
 
-# Pool the counts across release years
+# %% [markdown]
+# # Pool the counts across release years
+#
+# Every year partition of the regime is read and reduced immediately to
+# per-`(origin_subbasin, target_hex)` sums — the store is O(10^8) rows per
+# year, the reduction O(10^5). The season month set is pushed into the
+# parquet read as a `release_doy` filter, built per partition year so the
+# month↔doy mapping is leap-correct.
+#
+# Origin subbasin is the `helcom_subbasin` of each `release_hex` (024a
+# attaches it as an integer id). The `-1` sentinel in either hex column
+# marks land-seeded particles and obs that left the BSH domain; those rows
+# carry no geometry and are excluded from the maps — from the numerator
+# *and* from the normalisation denominator — and accounted for below.
 
-Every year partition of the regime is read and reduced immediately to
-per-`(origin_subbasin, target_hex)` sums — the store is O(10^8) rows per
-year, the reduction O(10^5). The season month set is pushed into the
-parquet read as a `release_doy` filter, built per partition year so the
-month↔doy mapping is leap-correct.
-
-Origin subbasin is the `helcom_subbasin` of each `release_hex` (024a
-attaches it as an integer id). The `-1` sentinel in either hex column
-marks land-seeded particles and obs that left the BSH domain; those rows
-carry no geometry and are excluded from the maps — from the numerator
-*and* from the normalisation denominator — and accounted for below.
-
-```python
+# %%
 _COUNTS_RE = re.compile(rf"HexAgg_counts_r{hex_radius}m_{regime}_(\d{{4}})\.parquet$")
 counts_files = sorted(
     store_root.glob(f"HexAgg_counts_r{hex_radius}m_{regime}_[0-9][0-9][0-9][0-9].parquet")
@@ -215,20 +217,21 @@ print(
     f"sentinel (-1) hexes excluded: {n_obs_sentinel:,} of {n_obs_total_raw:,} n_obs "
     f"({100 * n_obs_sentinel / n_obs_total_raw:.4f} %)"
 )
-```
 
-# Relative density
 
-`to_hex_gdf` sums `n_obs` per target hex over a selected release set,
-joins the key geometry, and derives both relative views. The
-normalisation is over whatever subset is passed in, so a per-origin panel
-reads as that origin's own share of particle-time.
+# %% [markdown]
+# # Relative density
+#
+# `to_hex_gdf` sums `n_obs` per target hex over a selected release set,
+# joins the key geometry, and derives both relative views. The
+# normalisation is over whatever subset is passed in, so a per-origin panel
+# reads as that origin's own share of particle-time.
+#
+# Hexes whose wet polygon has no water area (`water_area_m2` 0 — the hex
+# is all land in the BSH coastline, yet a sub-grid trajectory position
+# fell inside it) get no `dilution`; they still carry a `percentage`.
 
-Hexes whose wet polygon has no water area (`water_area_m2` 0 — the hex
-is all land in the BSH coastline, yet a sub-grid trajectory position
-fell inside it) get no `dilution`; they still carry a `percentage`.
-
-```python
+# %%
 def to_hex_gdf(counts_df, key_df):
     """Per-target-hex relative density as a GeoDataFrame. ``percentage``
     is the share of the passed-in release set's particle-time; ``dilution``
@@ -252,22 +255,22 @@ COLUMN_LABEL = {
     "percentage": "share of particle-time (%)",
     "dilution": "dilution (% per km² water)",
 }
-```
 
-# Map backdrop: coastline and the 3 m isobath
+# %% [markdown]
+# # Map backdrop: coastline and the 3 m isobath
+#
+# Coastline is Natural Earth 10 m via cartopy's shapereader (cached
+# locally), clipped once per extent.
+#
+# The isobath comes from the BSH static H0 grids, *not* from the key's
+# `mean_depth_m` — a hex mean over a 6 km cell cannot resolve a 3 m
+# contour. H0 is the floor position (`H0 > 0` is always wet, see
+# docs/h0_semantics.md), NaN over land, so `contour` masks land for free.
+# Fine grid takes precedence where it covers (German Bight / western
+# Baltic); the coarse grid is blanked inside the fine bbox so the two do
+# not draw the same contour twice.
 
-Coastline is Natural Earth 10 m via cartopy's shapereader (cached
-locally), clipped once per extent.
-
-The isobath comes from the BSH static H0 grids, *not* from the key's
-`mean_depth_m` — a hex mean over a 6 km cell cannot resolve a 3 m
-contour. H0 is the floor position (`H0 > 0` is always wet, see
-docs/h0_semantics.md), NaN over land, so `contour` masks land for free.
-Fine grid takes precedence where it covers (German Bight / western
-Baltic); the coarse grid is blanked inside the fine bbox so the two do
-not draw the same contour twice.
-
-```python
+# %%
 h0_fine = xr.open_dataset(
     data_root / "bsh_hbmnoku_static/static_file_fine/H0_file_fine.nc"
 ).H0
@@ -396,11 +399,12 @@ def export_geojson(gdf, name, **extra_columns):
     path = export_dir / f"{name}.geojson"
     out.to_file(path, driver="GeoJSON")
     print(f"wrote {path}")
-```
 
-# Baltic-wide relative density
 
-```python
+# %% [markdown]
+# # Baltic-wide relative density
+
+# %%
 gdf_full = to_hex_gdf(counts, key)
 
 fig, axes = map_grid(1, 2, baltic_extent)
@@ -419,15 +423,15 @@ print(f"wrote {fig_path}")
 plt.show()
 
 export_geojson(gdf_full, f"025_{regime}_{season}")
-```
 
-# German waters
+# %% [markdown]
+# # German waters
+#
+# Same data and same normalisation as the Baltic figure — only the
+# viewport changes, so the percentages still read as shares of the whole
+# basin's particle-time.
 
-Same data and same normalisation as the Baltic figure — only the
-viewport changes, so the percentages still read as shares of the whole
-basin's particle-time.
-
-```python
+# %%
 fig, axes = map_grid(1, 2, de_extent)
 hex_map(
     gdf_full, "percentage", axes[0, 0], de_extent,
@@ -442,17 +446,17 @@ fig_path = figure_dir / f"HexRelativeDensityDE_{regime}_{season}_r{hex_radius}m.
 fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
 plt.show()
-```
 
-# Per origin subbasin
+# %% [markdown]
+# # Per origin subbasin
+#
+# One panel per HELCOM subbasin that seeds releases, each normalised over
+# its own releases — the panel answers "where does *this* source's
+# particle-time go?", not "how big is this source". Grids are split into
+# figures of at most `max_panels_per_figure` panels so each map keeps a
+# readable size at 180 mm page width.
 
-One panel per HELCOM subbasin that seeds releases, each normalised over
-its own releases — the panel answers "where does *this* source's
-particle-time go?", not "how big is this source". Grids are split into
-figures of at most `max_panels_per_figure` panels so each map keeps a
-readable size at 180 mm page width.
-
-```python
+# %%
 origin_codes = sorted(
     int(c) for c in counts["origin_subbasin"].dropna().unique() if c >= 0
 )
@@ -497,11 +501,11 @@ for code in origin_codes:
         f"025_{regime}_{season}_{_slug(subbasin_id_to_name[code])}",
         origin_subbasin=subbasin_id_to_name[code],
     )
-```
 
-# Validation prints
+# %% [markdown]
+# # Validation prints
 
-```python
+# %%
 print(f"regime={regime}, season={season} {season_months}, hex_radius={hex_radius} m")
 print(f"release-year partitions pooled: {len(counts_files)}")
 print(f"  mapped n_obs: {int(gdf_full['n_obs'].sum()):,}")
@@ -521,4 +525,3 @@ print(
 )
 print(f"  max dilution: {gdf_full['dilution'].max():.4g} % per km²")
 print(f"  origin subbasins mapped: {len(origin_codes)}")
-```

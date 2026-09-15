@@ -24,16 +24,27 @@ executed notebook:
 
 ```
 output_root/Figures/
-  026/  TimeHorizonMaps_<regime>_r<radius>m.png
-  026a/ OriginSubbasinTimeHorizonMaps_<regime>_r<radius>m_<subbasin>.png
-  026b/ OriginSubbasinYearTimeHorizonMaps_<regime>_r<radius>m_<subbasin>_<year>.png
+  025/  HexRelativeDensity[DE|ByOrigin]_<regime>_<season>_r<radius>m[_part<n>].png
+  026/  TimeHorizonMaps_<regime>_<season>_r<radius>m_<percentage|dilution>.png
+  026a/ OriginSubbasinTimeHorizonMaps_<regime>_<season>_r<radius>m_<subbasin>_<column>.png
+  026b/ OriginSubbasinYearTimeHorizonMaps_<regime>_<season>_r<radius>m_<subbasin>_<year>_<column>.png
+  027/  DistanceQuantiles_<regime>_r<radius>m_<season>.png
+  028/  connectivity_<regime>_<season>_<member-or-unweighted>_*.png
+  029/  <view>_<regime>_r<radius>m_<season>_<member>.png
+  030/  SurvivalHeatmaps_<regime>_r<radius>m_<season>_<member>.png
+  031/  BeachingSweep{Stats,Maps}_<regime>_r<radius>m_<season>.png
 ```
 
 `figure_dir` is derived from the `output_root` parameter inside each notebook
-(no extra job-script argument); submit once per regime. `savefig` inherits the
-notebook's `figure.dpi` (the `fig_dpi_scale` override), so saved panels match
-the inline ones. `029`/`030`/`031` write the same way under `Figures/029`,
-`Figures/030`, `Figures/031`, tagged with the rate-model member.
+(no extra job-script argument); submit once per (regime, season). Every figure
+is saved print-ready — one full 180 mm text width at 300 dpi — so the PNG is
+the manuscript figure, not a preview (rationale in
+[visualisations.md](visualisations.md)).
+
+`025`–`028` additionally write machine-readable exports under
+`output_root/Exports/<stage>/`: GeoJSON (hex geometry, EPSG:4326) for the map
+products of `025`/`026`/`026a`/`026b`/`027`, long-form CSV for `028`'s
+connectivity matrices.
 
 ## Multi-task dask layout
 
@@ -96,16 +107,19 @@ explicitly: without that the loop ends on `sleep`, `bash -c` exits 0, and
 `JUPYTER_RUNTIME_DIR` on node-local scratch keeps the connection files off GPFS
 but does not fix the race (their names carry UUIDs).
 
-## The sidecar reducers (024e / 024f)
+## The sidecar reducers (024e / 024f / 024g)
 
-`scripts/024e_BuildBeaching_job.sh` and
-`scripts/024f_BuildSurvivalOccupancy_job.sh` fan out the same `(year, month)`
+`scripts/024e_BuildBeaching_job.sh`,
+`scripts/024f_BuildSurvivalOccupancy_job.sh` and
+`scripts/024g_BuildSurvivalConnectivity_job.sh` fan out the same `(year, month)`
 grid, but each cell reads only the compact BeachingForcing sidecar and the key
 parquet — seconds per zarr, ~3 min for a whole month — so they are CPU-bound,
 not GPFS-bound: small `--ntasks` (12), no `--spread-job`, no `--constraint`.
-Both take `[regime] [hex_radius] [stagger_max_s]` positionally and the
+All three take `[regime] [hex_radius] [stagger_max_s]` positionally and the
 rate-model member from the environment (`W_C`, `TAU_STRONG_HOURS`,
-`TAU_CALM_DAYS`, `DELTA`, `BAND_M`, `MAX_FLOAT_DAYS`),
+`TAU_CALM_DAYS`, `DELTA`, `BAND_M`, plus `MAX_FLOAT_DAYS` for 024e,
+`OCCUPANCY_MAX_DAYS` for 024f and `CONNECTIVITY_MAX_DAYS` for 024g — which
+must cover the largest age horizon 028 asks for),
 so a sweep is a loop of submissions differing only in an export; each
 reconstructs the member tag the notebook builds, so an executed notebook and
 the parquet it wrote match by eye. The kernel-race retry and the per-cell
@@ -113,17 +127,30 @@ the parquet it wrote match by eye. The kernel-race retry and the per-cell
 
 ## Parquet-only consumers
 
-Single task, no Dask, one submission per run; each passes `--cwd notebooks/`
-and `-p output_root`:
+Single task, no Dask, one submission per run; each runs under
+`set -euo pipefail` and passes `--cwd notebooks/` and `-p output_root`.
+`season` is one of `DJF`/`MAM`/`JJA`/`SON`/`ALL` and defaults to `ALL`;
+`member` is the opaque rate-model tag a 024e/024f/024g reducer put in the
+store filename. Both are passed with `-r` (raw string): they are tags, not
+Python literals, and `""` is a meaningful `member` that `-p` would parse
+away.
 
 | script | positional args |
 |---|---|
-| `024c_BuildHexConnectivity_job.sh` | `[regime] [year] [hex_radius]` (reads the 024 counts store, writes connectivity; default `regime` is `surface_stokes`) |
-| `025_HexHeatmaps_job.sh` | `[regime] [year] [hex_radius]` |
-| `026*_job.sh`, `027_HexDistanceQuantiles_job.sh` | `[regime] [hex_radius]` |
-| `028_SubbasinConnectivityMatrix_job.sh` | `[regime] [hex_radius]` (default `regime` is `surface_stokes`) |
-| `029_BeachingMaps_job.sh`, `030_SurvivalHeatmaps_job.sh` | `[regime] [hex_radius] [member]` |
-| `031_BeachingSweep_job.sh` | `[regime] [hex_radius] [members_csv] [labels_csv] [baseline_member]` |
+| `024c_BuildHexConnectivity_job.sh` | `[regime] [year] [hex_radius]` (reads the 024 counts store, writes connectivity) |
+| `025_HexHeatmaps_job.sh`, `026*_job.sh` | `[regime] [season] [hex_radius]` (also pass `-p data_root ${repo_root}/data` for the BSH H0 isobath) |
+| `027_HexDistanceQuantiles_job.sh` | `[regime] [hex_radius] [season]` |
+| `028_SubbasinConnectivityMatrix_job.sh` | `[regime] [hex_radius] [season] [member]` — empty `member` reads the unweighted 024c store, a tag reads 024g |
+| `029_BeachingMaps_job.sh`, `030_SurvivalHeatmaps_job.sh` | `[regime] [hex_radius] [member] [season]` |
+| `031_BeachingSweep_job.sh` | `[regime] [hex_radius] [members_csv] [labels_csv] [baseline_member] [season]` |
+
+Every default is `regime=surface_stokes`, `hex_radius=6000`. `age_bin_days`,
+`time_horizons_days_csv`, `disp_bin_km` and the origin/year filters fall back
+to the notebook defaults and must match what the corresponding builder wrote.
+
+`scripts/0-31-smoke-test.sh` runs the whole chain (000–031) on one host
+against the demo subset in `data/`, with no SLURM — the integration check for
+a fresh clone, not a scientific run.
 
 ## Cross-references
 
