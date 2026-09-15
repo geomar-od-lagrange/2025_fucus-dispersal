@@ -28,6 +28,14 @@ compute node via `pixi run`.
   figures (JV); §7 (bottom-velocity sweep) is deferred — it needs a kernel
   change plus fresh runs, not just a plot. Nothing else in this plan is
   outstanding, which is why the file stays in `plans/`.
+- **Trap sweep (2026-09-15):** `ff`-sidecar rebuild (job 23835103) and
+  `024e/f/g` reducer rebuild (job 23835143) are done, readout in
+  [trap_from_shoreclass.md](trap_from_shoreclass.md#status-2026-09-15).
+  Next session: rerun `028` (survconn trap members), `029`/`030`
+  (production + one trap member), `031` sweep with trap members added to
+  `members_csv`; write the sensitivity into `docs/beaching.md`; move
+  `trap_from_shoreclass.md` to `plans/done/`; delete stale `Figures/031/`
+  PNGs with the `sat` member.
 
 ## 0. Decisions (2026-09-14)
 

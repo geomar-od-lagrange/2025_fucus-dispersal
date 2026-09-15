@@ -127,3 +127,70 @@ unattended.
 - **The kernel smooths over one cell face**, so on the 5.5 km coarse grid
   `flat_fraction` is kilometre-scale. Read the coarse-grid substrate signal as
   regional, not local — the same caveat `band_m` carries.
+
+## Status (2026-09-15)
+
+**Sidecars rebuilt** — job 23835103, 292/292 zarrs OK, `ff` from shoreclass
+sha `31c32d39…`.
+
+**Reducers rebuilt** — job 23835143, 1200/1200 tasks OK, across member tags:
+
+- `HexAgg_beaching_*`: `step_wc0p05_ts3_tc365`, `step_wc0p05_ts3_tcinf`,
+  `step_wc0p075_ts3_tc365`, `step_wc0p075_ts3_tcinf`, `step_wc0p15_ts3_tc365`,
+  `step_wc0p15_ts3_tcinf`, `step_wc0p1_ts12_tcinf`, `step_wc0p1_ts1_tcinf`,
+  `step_wc0p1_ts3_tc365`, `step_wc0p1_ts3_tcinf`, `step_wc0p1_ts3_tcinf_d0p02`,
+  `step_wc0p1_ts3_tcinf_tf1_tw0`, `step_wc0p1_ts3_tcinf_tf1_tw0p25`,
+  `step_wc0p1_ts3_tcinf_tf1_tw0p5` (14 members, 48 partitions each).
+- `HexAgg_survocc_*`: `step_wc0p075_ts3_tcinf`, `step_wc0p15_ts3_tcinf`,
+  `step_wc0p1_ts3_tc365`, `step_wc0p1_ts3_tcinf`, `step_wc0p1_ts3_tcinf_tf1_tw0`,
+  `step_wc0p1_ts3_tcinf_tf1_tw0p25`, `step_wc0p1_ts3_tcinf_tf1_tw0p5` (7
+  members, 48 partitions each).
+- `HexAgg_survconn_*`: `step_wc0p1_ts3_tcinf`, `step_wc0p1_ts3_tcinf_tf1_tw0`,
+  `step_wc0p1_ts3_tcinf_tf1_tw0p25`, `step_wc0p1_ts3_tcinf_tf1_tw0p5` (4
+  members, 48 partitions each).
+
+All counts match the expected 48 partitions/member (4 years × 12 months).
+
+**Readout — beached fraction by 60 d, `surface_stokes` 2016–2019:**
+
+| member | ALL | SON |
+|---|---|---|
+| `step_wc0p1_ts3_tcinf` (production) | 0.7593 | 0.8880 |
+| `_tf1_tw0p5` | 0.7151 | 0.8491 |
+| `_tf1_tw0p25` | 0.6593 | 0.7931 |
+| `_tf1_tw0` | 0.4186 | 0.4680 |
+
+Shore-type split of beached weight, production member, ALL: **flat 42.46 %**,
+**wall 57.54 %** — the coastline's own composition, since `trap_flat =
+trap_wall = 1` for production makes shore type inert on the deposition
+itself.
+
+Per-`beach_hex` Spearman correlation of beached weight, production vs. each
+trap member, ALL (n = 1762 hexes with production deposits):
+
+| trap member | rho |
+|---|---|
+| `_tf1_tw0p5` | 0.9953 |
+| `_tf1_tw0p25` | 0.9781 |
+| `_tf1_tw0` | 0.3240 |
+
+Reading: moderately suppressing wall-stranding (`tw0.5`, `tw0.25`) barely
+reshuffles *where* stranding happens — it mostly rescales the same spatial
+pattern down. Zeroing wall-stranding entirely (`tw0`) both drops total
+beaching by ~45 % and substantially redistributes it (rho drops to 0.32) —
+consistent with wall shores being a non-trivial, spatially distinct chunk of
+the baseline stranding field, not a uniform background.
+
+### Next session
+
+- [ ] Verify-report of the `ff` sidecars (292 zarrs) if not yet written up
+      in `docs/beaching.md`.
+- [ ] Rerun `028` for the survconn trap members.
+- [ ] Rerun `029`/`030` for the production member plus one trap member
+      (`_tf1_tw0p25` is the natural middle choice).
+- [ ] Rerun `031` sweep with the trap members added to `members_csv`.
+- [ ] Write the trap sensitivity (table above) into `docs/beaching.md`
+      "Sensitivity".
+- [ ] Move this plan to `plans/done/` with a pointer to the updated
+      `docs/beaching.md`.
+- [ ] Delete stale `Figures/031/` PNGs that still contain the `sat` member.
