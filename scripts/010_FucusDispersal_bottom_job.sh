@@ -22,8 +22,11 @@ module load singularity/3.11.5
 # Positional args: release year, then how many of the year's releases to run.
 # `n_releases` exists because the last forced year is partial -- a release only
 # runs if its whole simulation_days window sits inside the available forcing.
-# Submit via `scripts/submit_010.sh <regime> <year> [n_releases]`, which sets
-# `--ntasks` to the same count so the allocation matches the work.
+# `RELEASE_NS` (env, e.g. "1,19") overrides it with an explicit list of release
+# indices, because a lost release is a hole in the middle of the schedule, not
+# a missing tail, and a prefix count cannot express one.
+# Submit via `scripts/submit_010.sh <regime> <year> [n_releases]`, which sizes
+# `--ntasks` from whichever of the two selects the work.
 year="${1:-2019}"
 n_releases="${2:-73}"
 
@@ -74,12 +77,21 @@ run_experiment() {
 export -f run_experiment
 export repo_root output_root container calc_dt_mins output_dt_mins particles_per_cell
 
-echo "year=${year} n_releases=${n_releases} SLURM_NTASKS=${SLURM_NTASKS}"
+# Either the first `n_releases` of the schedule, or exactly the indices in
+# RELEASE_NS. submit_010.sh sizes --ntasks from the same selection, so the
+# allocation always matches the number of steps the fan-out launches.
+if [ -n "${RELEASE_NS:-}" ]; then
+    release_ns=${RELEASE_NS//,/ }
+else
+    release_ns=$(seq 0 $((n_releases - 1)))
+fi
 
-# Releases at doy = 1 + 5n for n ∈ [0, n_releases-1]; a full year is 73 of
+echo "year=${year} releases=[${release_ns}] SLURM_NTASKS=${SLURM_NTASKS}"
+
+# Releases at doy = 1 + 5n over the selected n; a full year is 73 of
 # them (doys 1..361, leap-year-agnostic). Each start_time runs one bottom regime; the
 # bottom-slowdown physics live in the kernel, not in a per-run scale.
-for n in $(seq 0 $((n_releases - 1))); do
+for n in ${release_ns}; do
     doy=$((1 + 5 * n))
     # Derive both times from year+doy; never feed an ISO datetime back into
     # `date -d` — its parser silently drops "+N days" after a T-time.

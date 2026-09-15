@@ -89,6 +89,7 @@ single-process papermill run per release (`xargs -P ${SLURM_NTASKS}` over `srun
 |---|---|---|
 | `$1` | `2019` | release year |
 | `$2` | `73` | number of releases to run, taken from the front of the schedule |
+| `RELEASE_NS` (env) | unset | run exactly these release indices instead of a prefix |
 
 Releases sit at `doy = 1 + 5n`, `n ∈ [0, n_releases-1]` — 73 per full year, doys
 1…361, the same regardless of leap year. Each run integrates `simulation_days=220`
@@ -105,6 +106,7 @@ scripts/submit_010.sh <regime> <year> [n_releases] [extra sbatch args...]
 
 scripts/submit_010.sh bottom 2022              # full year, --ntasks=73
 scripts/submit_010.sh surface_stokes 2025 29   # partial year, --ntasks=29
+RELEASE_NS=1,19 scripts/submit_010.sh surface_stokes 2022   # 2 holes, --ntasks=2
 ```
 
 `--ntasks` has to equal the release count and an `#SBATCH` directive cannot read
@@ -112,6 +114,39 @@ the job script's own arguments, so the wrapper sets both from one number — a
 29-release job books 29 tasks, not 73. It also expands
 `scripts/node-blacklist.txt` into `--exclude=` (as `submit_024d.sh` does) and
 passes further `sbatch` flags through.
+
+Submission goes through `robust_sbatch` (`scripts/slurm_submit.sh`), so a
+controller timeout that creates the job anyway is adopted rather than queued
+twice. The job name is the idempotency key and names the work —
+`010-<regime>-<year>`, or `010-<regime>-<year>-n<i>_<j>` for a refill — so
+rerunning the same command after a failed submit adopts instead of duplicating.
+
+### Refilling lost releases
+
+`--no-kill` means a release can be lost without failing its job: the job exits
+`COMPLETED` and the hole shows up only as a missing zarr. Two causes seen in
+practice — a node dying under the job, and a jupyter kernel losing the race for
+an ephemeral port when 73 of them start at once on a handful of nodes
+(`zmq.error.ZMQError: Address already in use`, then `Kernel died before replying
+to kernel_info`). Both are transient and per-step, not per-release-date, so the
+fix is to rerun exactly the lost indices.
+
+A hole sits in the middle of the schedule, so `n_releases` — a prefix count —
+cannot select it. `RELEASE_NS` takes the indices instead, and `--ntasks` follows
+the length of the list:
+
+```bash
+RELEASE_NS=1 scripts/submit_010.sh surface_stokes 2021    # doy 6, 2021-01-06
+```
+
+Find the holes by diffing the schedule against the zarrs on disk — the stem is
+`Fucus_BSH_<YYYYMMDD>T001500_<regime>_dt60min_seed<N>.zarr`, and release `n` is
+`doy = 1 + 5n` of the release year. **Check `squeue` first:** a job still
+running has steps still writing, and a missing zarr for a release whose step is
+alive is work in progress, not a hole. `sacct -j <id> -o JobID,State` settles
+it — the step index *is* the release index `n`, so a `FAILED` `<id>.19` is
+release `n=19`, and rerunning a release whose step is `RUNNING` would put two
+papermills on one output path.
 
 `--mem-per-cpu` is sized from `sacct` peaks over completed runs, not guessed:
 11.42 GiB for `bottom`, 10.31 GiB for `surface`, 6.58 GiB for `surface_stokes`,
