@@ -43,7 +43,10 @@
 #
 # Submit through scripts/submit_024d.sh: it expands scripts/node-blacklist.txt
 # into `sbatch --exclude=` (an #SBATCH directive cannot read a file) and passes
-# extra args through. Each srun step re-applies the same exclusion below.
+# extra args through. The exclusion applies to the allocation only: a step-level
+# `srun --exclude` inside the allocation made SLURM serialise the steps
+# ("step creation temporarily disabled ... Requested nodes are busy", job
+# 23834727, 1 of 292 steps running), so it is deliberately not repeated here.
 #
 # Usage: scripts/submit_024d.sh
 #   scripts/submit_024d.sh --ntasks=146                            # throttle
@@ -67,8 +70,7 @@ mkdir -p "${logdir}/executed"
 # allocation". --exact sets each step's own binding.
 unset SLURM_CPU_BIND SLURM_CPU_BIND_LIST SLURM_CPU_BIND_TYPE SLURM_CPU_BIND_VERBOSE
 
-# Blacklisted nodes (see scripts/node-blacklist.txt) are kept out of the
-# allocation by scripts/submit_024d.sh and out of every step here.
+# Blacklisted nodes (see scripts/node-blacklist.txt), for the provenance line.
 exclude=$(sed "s/#.*//" scripts/node-blacklist.txt | tr -d "[:blank:]" \
           | grep -v "^$" | paste -sd,)
 
@@ -87,7 +89,7 @@ run_one() {
     mkdir -p "${rt}"
     rc=1
     for attempt in 1 2 3; do
-        srun -n1 -N1 --exact --no-kill ${exclude:+--exclude="${exclude}"} \
+        srun -n1 -N1 --exact --no-kill \
             --cpus-per-task="${SLURM_CPUS_PER_TASK}" \
             --mem-per-cpu="${SLURM_MEM_PER_CPU}M" \
             --job-name="024d_${stem}" \
