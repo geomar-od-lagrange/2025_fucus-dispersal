@@ -5,7 +5,6 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --mem-per-cpu=9G
 #SBATCH --time=1-00:00:00
-#SBATCH --spread-job
 #SBATCH --distribution=cyclic
 # Do not abort the whole allocation when one node dies: job 23834688 lost
 # nesh-clk542 mid-run and Slurm killed all 292 steps (53 done). With --no-kill
@@ -23,9 +22,13 @@
 # strictly sequentially inside one papermill process, so the month grid caps
 # concurrency at 48 and makes wall time 6x the per-zarr cost. One srun step per
 # zarr is 292 independent single-process numpy runs (no MPI, no Dask) whose
-# bottleneck is streaming trajectory + hourly Stokes off GPFS -- hence
-# --spread-job + --distribution=cyclic for horizontal filesystem reach rather
-# than node locality, and no --constraint (it only shrinks the eligible pool).
+# bottleneck is streaming trajectory + hourly Stokes off GPFS, so they want
+# horizontal filesystem reach rather than node locality -- but --spread-job is
+# the wrong lever at this task count: it asks for one node per task, and a
+# 292-node request against ~94 idle nodes pends on (Resources) indefinitely
+# (job 23834728). --distribution=cyclic alone round-robins the tasks over
+# however many nodes the scheduler grants, which is the spread that matters.
+# No --constraint either: it only shrinks the eligible pool.
 #
 # Memory: 9G x 2 cpu = 18 GB/task. Measured peak at window_days=220 is
 # MaxRSS 11556164K = 11.02 GiB (max over the 292 steps of job 23834688), and
