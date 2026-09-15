@@ -1,6 +1,6 @@
 # Visualisations: per-plot rationale
 
-Why each notebook in `020`–`031` shows what it shows, and where
+Why each notebook in `020`–`032` shows what it shows, and where
 styling overrides earn their deviation from
 [../AGENTS.md](../AGENTS.md)'s plotting rules. AGENTS.md states the
 **rules** (no `cmap=`, no `figsize=`, no `color=` literals); this doc
@@ -24,6 +24,7 @@ listed here should be dropped.
 | 029 | Beaching maps | Per-run (regime + radius + member + season) | Where-stranded · beached fraction per source hex · age horizons (10/20/50 d) · beached-fraction curve with interannual band · travel distance at stranding |
 | 030 | Survival heatmaps | Per-run (regime + radius + member + season) | Per horizon (20/50/100 d): occupancy · survival-weighted; surviving fraction as a separate 1xN figure; drifting-fraction curve with interannual band |
 | 031 | Beaching sweep | Per-run (regime + radius + season) | Five statistics across members with interannual bars · where-stranded maps across members |
+| 032 | None — selects, numbers and downscales other notebooks' PNGs | Selection (primary + comparison regime) | One curated reading order over 025–031 |
 
 ## Cross-cutting choices
 
@@ -348,6 +349,66 @@ The Gini and travel-distance panels are the load-bearing ones: beached
 totals can coincide between members whose stranding patterns differ, so
 concentration and how far the stranded material got are what distinguish a
 wave-selective member from a residence-driven one.
+
+## Notebook 032 — Headline report (special case)
+
+[`032_HeadlineReport`](../notebooks/032_HeadlineReport.py) is the only stage
+here that draws nothing. It regenerates `output_root/Headline/` — a
+`HEADLINE.md` carrying the study's five headline tables plus a numbered,
+downscaled copy of the figures those tables are read against. Submitted by
+[`scripts/headline_report_job.sh`](../scripts/headline_report_job.sh), the
+last stage of the downstream chain, so the report regenerates whenever new
+release years land.
+
+Every number is **recomputed**, never transcribed:
+
+| table | what | read from |
+|---|---|---|
+| A | beached fraction per release season and year, production member | `HexAgg_beaching_*` |
+| B | the same pooled value across every rate-model member on disk | `HexAgg_beaching_*` |
+| C | `Σw_obs/Σn_obs` per season and horizon, plus the top-target comparison | `HexAgg_survconn_*`, `Exports/028/*.csv` |
+| D | median over source hexes of each displacement quantile | `Exports/027/*.geojson` |
+| E | concentration and viable-band share at the long horizon | `Exports/026/*.geojson` + the 024a key |
+
+Tables A–C go to the parquet partitions rather than to `Exports/`, because
+the quantities they need are not exported: a pooled multi-year beached
+fraction is a ratio of summed weights (not a mean of yearly ratios), and
+`Σw/Σn` needs both weights on the same rows, which only the 024g store
+carries — 028 writes one value column per CSV. D and E read `Exports/`
+instead, so the table and the figure beside it are the same reduction; 027's
+`min_traj_per_hex` cut and 026's cumulative horizon would otherwise be
+reimplemented and drift.
+
+**Everything that grows is discovered.** Release years, regimes and
+rate-model member tags are parsed out of the partition filenames, so a store
+growing from four release years to ten, or from one member to a full trap
+sweep, changes the report's content and never this notebook. A coverage
+table states the years each store holds per regime — the regimes are not in
+step (`surface` stops at the aggregates; beaching and survival exist only
+where a 024d sidecar was built), and a headline that pools silently over an
+uneven year set is worse than no headline.
+
+**Figure selection is a rule, not a list.** Each entry names the producing
+notebook and a filename *stem* built from the run's own parameters
+(`{regime}`, `{other_regime}`, `{season}`, `{pooled}`, `{radius}`,
+`{member}`, `{horizon}`); resolution takes the exact `<stem>.png` where it
+exists and otherwise the first `<stem>_*.png` in sorted order, so a consumer
+that later appends a field — a release-year span, say — still resolves. The
+map entries use the `figure_season` parameter and the curve/sweep entries
+the year-pooled season, so the manifest is one reading order rather than
+eleven hardcoded names. An entry that resolves to nothing is recorded in a
+"Gaps" section of `HEADLINE.md` rather than raising: a partially-run
+consumer matrix should still yield a report that says what is missing.
+
+Copies are downscaled to `figure_width_px` (1400) with PIL; the 180 mm /
+300 dpi originals stay under `Figures/` as the manuscript versions, so the
+print-ready rule above is untouched — 032 adds no styling override because
+it opens no figure. Stale `NN_*.png` are deleted before the copy, since the
+numbers are positions in the reading order, not identities.
+
+The narrative lines between the tables are computed from the tables
+themselves (seasonal spread in points, the member range, the regime
+distance ratio), never written as prose that assumes a result.
 
 ## Cross-references
 
