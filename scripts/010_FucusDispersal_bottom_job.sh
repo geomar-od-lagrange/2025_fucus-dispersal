@@ -5,6 +5,9 @@
 #SBATCH --mem-per-cpu=60G
 #SBATCH --time=36:00:00
 #SBATCH --partition=base
+# One dead node must not cancel every other release's step; the failed
+# releases come back as missing zarrs and get resubmitted.
+#SBATCH --no-kill
 
 module load gcc12-env/12.3.0
 module load singularity/3.11.5
@@ -27,6 +30,13 @@ calc_dt_mins=5
 output_dt_mins=60
 particles_per_cell=100
 
+# Drop any CPU-bind mask inherited by the batch step; otherwise every one of
+# the concurrent srun steps below dies at launch with "CPU binding outside of
+# job step allocation, allocated CPUs are: 0x...". --exact plus an explicit
+# -N1 and per-step cpu/mem lets each step pick its own binding. Same fix as
+# scripts/024d_BuildBeachingForcing_job.sh.
+unset SLURM_CPU_BIND SLURM_CPU_BIND_LIST SLURM_CPU_BIND_TYPE SLURM_CPU_BIND_VERBOSE
+
 mkdir -p notebooks_executed/TrajectoryCalc/
 
 run_experiment() {
@@ -36,7 +46,9 @@ run_experiment() {
     local rng_seed="$4"
     local start_stem="${start_time//[-:]/}"
 
-    srun --ntasks=1 --exact \
+    srun -n1 -N1 --exact --no-kill \
+        --cpus-per-task="${SLURM_CPUS_PER_TASK}" \
+        --mem-per-cpu="${SLURM_MEM_PER_CPU}M" \
         singularity run -B /sfs -B /gxfs_work -B $PWD:/work --pwd /work \
         ${container} bash -c \
         ". /opt/conda/etc/profile.d/conda.sh && conda activate base \

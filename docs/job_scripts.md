@@ -88,11 +88,34 @@ run 5–19 h, and the fieldset the notebook builds grows with every year of 2D
 fields on disk, because `010` globs the whole `2d_fields/` directory rather than
 the run window.
 
-**Forcing gaps are silent.** The notebook intersects the fine and coarse file
-stems and drops whatever is missing from either, with a warning; Parcels then
-interpolates straight across the hole instead of raising. Check `2d_fields/` for
-missing 6-hourly stems in every year a run window touches before submitting, and
-record the holes with the results.
+### Forcing gaps are silent
+
+`010` globs `2d_fields/`, intersects the fine and coarse stem sets and drops
+whatever is missing from either, with a warning. The surviving stems are handed
+to `FieldSet.from_netcdf` as an explicit `timestamps` list, so a hole is not a
+missing time -- it is a longer interval between two samples, and Parcels
+interpolates straight across it. Nothing raises, and
+`allow_time_extrapolation=False` does not catch it either, because the hole is
+interior to the time axis. Check `2d_fields/` for missing 6-hourly stems across
+every year a run window touches *before* submitting, and record what you find
+with the results.
+
+Two holes are missing at source (no raw BSH c-file exists, so re-running `003`
+cannot fill them) and are crossed by runs in this study:
+
+| gap (model time) | length | crossed by |
+|---|---|---|
+| 2025-07-24T12:15 - 2025-07-25T06:00 | 18 h | all 2024 releases whose window reaches it, and 2025 releases |
+| 2025-10-22T18:15 - 2025-10-23T00:00 | 6 h | 2025 releases |
+
+A third missing stem, 2025-12-31T18, sits past the end of every window that can
+be run (the last 2025 release closes 2025-12-27), so it costs nothing beyond
+capping the forcing record at 2025-12-31T18:00.
+
+Interpolating over 18 h of a 220-day trajectory is the only option available;
+what matters is that it is a known, bounded, documented smoothing of the
+velocity field on those dates and not a silent truncation. `2025-07-24/25` is
+the one to keep in mind when reading 2024 and 2025 results.
 
 ## Multi-task dask layout
 
