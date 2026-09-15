@@ -69,11 +69,8 @@ unset SLURM_CPU_BIND SLURM_CPU_BIND_LIST SLURM_CPU_BIND_TYPE SLURM_CPU_BIND_VERB
 #
 # 024e: the 11 step members produced so far plus 3 shore-type (trap) members
 # at the production point (step, w_c 0.10, tau_strong 3 h, tau_calm inf).
-# The pre-sidecar `sat_t480_wt0p05` member is NOT here: the saturating rate
-# form was removed from the notebooks (see plans/done/beaching_review_response.md),
-# so it can no longer be produced and papermill would silently write a step
-# member instead.
-# 024f: the 4 producible survocc members so far plus the same 3 trap members.
+# Only the step hazard exists; the retired saturating member is not produced.
+# 024f: the 4 survocc members so far plus the same 3 trap members.
 # 024g: the production member plus the same 3 trap members.
 MEMBERS=$(cat <<'TABLE'
 024e 0.05  3  365 0    1.0 1.0
