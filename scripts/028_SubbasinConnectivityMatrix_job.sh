@@ -48,4 +48,5 @@ pixi run papermill --cwd notebooks/ \
     -r member "${member}" \
     -k python
 
-jobinfo
+# The job status must be papermill's, not the accounting tool's.
+jobinfo || true

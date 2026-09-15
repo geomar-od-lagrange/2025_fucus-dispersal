@@ -41,4 +41,5 @@ pixi run papermill --cwd notebooks/ \
     -r season ${season} \
     -k python
 
-jobinfo
+# The job status must be papermill's, not the accounting tool's.
+jobinfo || true
