@@ -138,25 +138,44 @@ missing time -- it is a longer interval between two samples, and Parcels
 interpolates straight across it. Nothing raises, and
 `allow_time_extrapolation=False` does not catch it either, because the hole is
 interior to the time axis. Check `2d_fields/` for missing 6-hourly stems across
-every year a run window touches *before* submitting, and record what you find
-with the results.
+every year a run window touches *before* submitting.
 
-Two holes are missing at source (no raw BSH c-file exists, so re-running `003`
-cannot fill them) and are crossed by runs in this study:
+**The 2025 holes.** 2016-2024 are hole-free: every 6-hourly stem is present in
+both grids for both regimes. 2025 is not, and the cause is upstream, not the
+extraction: 25 raw BSH c-files in the source archive are corrupt (HDF read
+error; 1-50 MB against 50-96 MB for their neighbours) and 5 timestamps were
+never delivered. Re-running `003` cannot fix either; it needs a BSH
+re-delivery. The result, per regime:
 
-| gap (model time) | length | crossed by |
+| | |
+|---|---|
+| unusable stems in 2025 | 30, on 29 distinct days |
+| distinct holes | 27 |
+| isolated 6 h holes | 25 |
+| longest hole | 18 h, 2025-07-24T12:15 - 2025-07-25T06:00 |
+| second longest | 12 h, 2025-08-24T18:15 - 2025-08-25T06:00 |
+| first hole | 2025-01-12T12:15 |
+| last usable instant | 2025-12-31T18:00 |
+
+So the holes are scattered single 6 h blocks, not a contiguous outage: the
+record is hole-free from 2016-01-01T00:15 to **2025-01-12T12:00**, and from
+there on 27 short punctures spread over the rest of 2025.
+
+**Which releases are affected.** A release is hole-free iff its whole 220-day
+window closes before the first hole:
+
+| release year | hole-free releases | interpolating releases |
 |---|---|---|
-| 2025-07-24T12:15 - 2025-07-25T06:00 | 18 h | all 2024 releases whose window reaches it, and 2025 releases |
-| 2025-10-22T18:15 - 2025-10-23T00:00 | 6 h | 2025 releases |
+| 2016-2023 | all 73 | none |
+| 2024 | 32 (n = 0-31, doys 1-156, last window closing 2025-01-10) | 41 (n = 32-72, doys 161-361), crossing 1-17 holes, median 7 |
+| 2025 | none | all 29, crossing 17-22 holes, median 20 |
 
-A third missing stem, 2025-12-31T18, sits past the end of every window that can
-be run (the last 2025 release closes 2025-12-27), so it costs nothing beyond
-capping the forcing record at 2025-12-31T18:00.
-
-Interpolating over 18 h of a 220-day trajectory is the only option available;
-what matters is that it is a known, bounded, documented smoothing of the
-velocity field on those dates and not a silent truncation. `2025-07-24/25` is
-the one to keep in mind when reading 2024 and 2025 results.
+The 2025 runs therefore carry a velocity field that is linearly smoothed across
+~20 short windows spread over their 220 days, and the second half of 2024 a
+handful. Nothing is truncated -- every submitted release has forcing at both
+ends of its window -- but 2024 and 2025 are not forced at the same fidelity as
+2016-2023, and the 18 h gap at 2025-07-24/25 is the one worth naming when
+reading those two years.
 
 ## Multi-task dask layout
 
