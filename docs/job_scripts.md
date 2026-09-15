@@ -46,6 +46,38 @@ the manuscript figure, not a preview (rationale in
 products of `025`/`026`/`026a`/`026b`/`027`, long-form CSV for `028`'s
 connectivity matrices.
 
+## The 2D-field preprocessor (003)
+
+`scripts/003_prepare_2d_fields_job.sh` fans out one `srun` step per BSH
+c-file (`xargs -P ${SLURM_NTASKS}`), each running
+`notebooks/003_prepare_2d_fields.py` inside the parcels container to write
+the three variants of that timestamp. Three optional environment variables
+pick the work, so a rerun does not mean redoing the decade:
+
+| variable | effect |
+|---|---|
+| `YEARS="2021 2025"` | restrict the year loop (default 2016 … 2025) |
+| `CFILE_LIST=<path>` | process exactly the c-file paths listed there, one per line |
+| `MISSING_ONLY=1` | drop every c-file whose three outputs all exist |
+
+```bash
+YEARS="2021 2025" MISSING_ONLY=1 sbatch --ntasks=33 --time=02:00:00 \
+    scripts/003_prepare_2d_fields_job.sh
+```
+
+003 itself already skips a c-file whose outputs are all present, but only
+after an `srun` step and a container start-up; `MISSING_ONLY` makes the same
+decision up front from a single `ls` of `2d_fields/` (one directory listing
+beats three `stat()` calls per candidate on a shared parallel filesystem).
+Steps run as `srun -n1 -N1 --exact --no-kill` — without `-N1` a step inherits
+the job's node count and dies with "can't run 1 processes on N nodes" the
+moment the allocation spans more than one node.
+
+Counting the holes is the same set arithmetic the filter does: a complete
+year has `4 timestamps/day x 2 resolutions x 3 variants` files, 8760 in a
+common year and 8784 in a leap year, minus whatever the BSH archive is
+itself missing.
+
 ## The Parcels runs (010)
 
 `scripts/010_FucusDispersal_{surface,bottom,surface_stokes}_job.sh` fan out one
@@ -81,12 +113,21 @@ the job script's own arguments, so the wrapper sets both from one number — a
 `scripts/node-blacklist.txt` into `--exclude=` (as `submit_024d.sh` does) and
 passes further `sbatch` flags through.
 
-At `--mem-per-cpu=60G` a 73-task job needs ~19–25 nodes, so these are the
-largest allocations in the pipeline; submit a couple at a time and let SLURM
-queue the rest. `--time=36:00:00` (the `base` cap is 48 h): observed wall times
-run 5–19 h, and the fieldset the notebook builds grows with every year of 2D
-fields on disk, because `010` globs the whole `2d_fields/` directory rather than
-the run window.
+`--mem-per-cpu` is sized from `sacct` peaks over completed runs, not guessed:
+11.42 GiB for `bottom`, 10.31 GiB for `surface`, 6.58 GiB for `surface_stokes`,
+hence 20G / 20G / 12G at roughly peak x 1.7. This is the single biggest lever on
+how fast the set of runs gets through the queue -- at the old 60G a 73-task job
+was memory-bound to ~2.4 tasks per node and booked 30 nodes, so a handful of
+years saturated the account's share and the rest sat in `(Priority)`.
+`--time=36:00:00` (the `base` cap is 48 h): observed wall times run 5-19 h, and
+the fieldset the notebook builds grows with every year of 2D fields on disk,
+because `010` globs the whole `2d_fields/` directory rather than the run window.
+
+`--no-kill` plus, in the fan-out, `unset SLURM_CPU_BIND*` and `srun -n1 -N1
+--exact` with explicit per-step `--cpus-per-task` / `--mem-per-cpu`: without the
+unset and the `-N1`, every concurrent step dies at launch with "CPU binding
+outside of job step allocation" (the same failure
+`024d_BuildBeachingForcing_job.sh` documents).
 
 ### Forcing gaps are silent
 

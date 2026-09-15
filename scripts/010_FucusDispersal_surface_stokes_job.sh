@@ -2,7 +2,11 @@
 #SBATCH --job-name=010_FucusSurfaceStokes
 #SBATCH --ntasks=73
 #SBATCH --cpus-per-task=1
-#SBATCH --mem-per-cpu=60G
+# Sized from measured peaks, not guessed: the largest MaxRSS over every
+# completed surface_stokes run is 6.58 GiB (sacct across jobs 21986734, 22024769-74,
+# 22026149-57), so this is peak x ~1.7. At 60G a 73-task job needed 30 nodes
+# and spent its life pending; at 12G it fits on a handful.
+#SBATCH --mem-per-cpu=12G
 #SBATCH --time=36:00:00
 #SBATCH --partition=base
 # One dead node must not cancel every other release's step; the failed
