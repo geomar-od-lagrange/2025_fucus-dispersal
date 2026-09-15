@@ -131,6 +131,15 @@ list_work() {
 }
 
 njobs=$(list_work | wc -l)
+# Provenance header: the sidecar zarrs carry git_sha + slurm_job_id as attrs,
+# and this pins what that job was, in the .out next to the OK/FAIL tally.
+echo "024d provenance: git $(git rev-parse HEAD)"
+if [ -n "$(git status --porcelain)" ]; then
+    echo "024d WARNING: dirty working tree, this run maps to no commit"
+fi
+echo "024d slurm: job ${SLURM_JOB_ID}, ntasks ${SLURM_NTASKS}, cpus-per-task"\
+     "${SLURM_CPUS_PER_TASK}, mem-per-cpu ${SLURM_MEM_PER_CPU}M, exclude ${exclude:-<none>}"
+
 echo "024d: ${njobs} zarrs, ${SLURM_NTASKS} concurrent, regime=${regime}," \
      "hex_radius=${hex_radius}, logs -> ${logdir}"
 

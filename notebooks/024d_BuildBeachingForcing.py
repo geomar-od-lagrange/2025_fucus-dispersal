@@ -68,6 +68,7 @@
 
 # %%
 import json
+import os
 import re
 import subprocess
 import time
@@ -190,7 +191,12 @@ try:
     ).stdout.strip()
 except Exception:
     git_sha = "unknown"
-print(f"nobs={nobs} (hourly), git_sha={git_sha}")
+# Which allocation and which step wrote this sidecar. Empty outside SLURM, so
+# a laptop rebuild is distinguishable from a cluster one without a lookup.
+slurm_job_id = os.environ.get("SLURM_JOB_ID", "")
+slurm_step_id = os.environ.get("SLURM_STEP_ID", "")
+print(f"nobs={nobs} (hourly), git_sha={git_sha}, "
+      f"slurm={slurm_job_id or '-'}.{slurm_step_id or '-'}")
 
 # %% [markdown]
 # # Beaching geometry raster
@@ -672,6 +678,8 @@ def build_one_zarr(path, release_time, rast, stokes):
             "n_obs_source": int(n_obs_source),
             "builder": "024d_BuildBeachingForcing",
             "git_sha": git_sha,
+            "slurm_job_id": slurm_job_id,
+            "slurm_step_id": slurm_step_id,
         },
     )
     # Every array gets Zstd explicitly — xarray would otherwise fall back to
