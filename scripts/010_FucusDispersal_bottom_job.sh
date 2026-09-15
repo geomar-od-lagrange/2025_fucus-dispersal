@@ -12,6 +12,7 @@
 # One dead node must not cancel every other release's step; the failed
 # releases come back as missing zarrs and get resubmitted.
 #SBATCH --no-kill
+#SBATCH --output=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs/logs/010/%x_%j.out
 
 module load gcc12-env/12.3.0
 module load singularity/3.11.5
@@ -41,7 +42,7 @@ particles_per_cell=100
 # scripts/024d_BuildBeachingForcing_job.sh.
 unset SLURM_CPU_BIND SLURM_CPU_BIND_LIST SLURM_CPU_BIND_TYPE SLURM_CPU_BIND_VERBOSE
 
-mkdir -p notebooks_executed/TrajectoryCalc/
+mkdir -p "${output_root}/logs/010" notebooks_executed/TrajectoryCalc/
 
 run_experiment() {
     local start_time="$1"

@@ -129,6 +129,11 @@ unset and the `-N1`, every concurrent step dies at launch with "CPU binding
 outside of job step allocation" (the same failure
 `024d_BuildBeachingForcing_job.sh` documents).
 
+The batch step's own log (the fan-out's per-release papermill output stays
+inline in it, there being no separate step-level `--output`) lands at
+`output_root/logs/010/%x_%j.out`, created by `submit_010.sh` before `sbatch`
+since `#SBATCH --output` opens its target at job start.
+
 ### Forcing gaps are silent
 
 `010` globs `2d_fields/`, intersects the fine and coarse stem sets and drops

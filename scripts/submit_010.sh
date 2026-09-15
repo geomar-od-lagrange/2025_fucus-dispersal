@@ -28,6 +28,12 @@ job=scripts/010_FucusDispersal_${regime}_job.sh
 
 exclude=$(sed 's/#.*//' scripts/node-blacklist.txt | tr -d '[:blank:]' \
           | grep -v '^$' | paste -sd,)
+
+# #SBATCH --output opens its target when the job starts, before the job
+# script's own commands run -- the directory has to exist ahead of
+# submission, same as scripts/submit_downstream_chain.sh's logroot mkdir.
+mkdir -p /gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs/logs/010
+
 echo "regime=${regime} year=${year} n_releases=${n_releases} excluding: ${exclude:-<none>}"
 exec sbatch --ntasks="${n_releases}" ${exclude:+--exclude="${exclude}"} "$@" \
     "${job}" "${year}" "${n_releases}"
