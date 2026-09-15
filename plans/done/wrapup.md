@@ -642,7 +642,7 @@ here as a final cross-notebook audit so nothing slips through.
       `notebooks_executed/` / the outputs tree, not committed into
       `notebooks/` — the standalone PNGs under `output_root/Figures/`
       are the deliverable (see
-      [../docs/job_scripts.md](../docs/job_scripts.md)).
+      [../docs/job_scripts.md](../../docs/job_scripts.md)).
 - [x] Smoke-test from a fresh clone. `scripts/0-31-smoke-test.sh` is
       that test, extended to stages 000–031 (024g and both 028 store
       paths included): one host, no SLURM, 4 h Parcels window, all
