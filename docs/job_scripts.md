@@ -145,28 +145,64 @@ env variable. `http_proxy`/`https_proxy` are set for HTTP traffic from the env
 (e.g. CMEMS in 002); `no_proxy` excludes intra-cluster TCP so dask node
 addresses don't dial the proxy.
 
+## The per-(regime, year) aggregations (024 / 024b / 024c)
+
+`scripts/submit_aggregates.sh <regime> <year> [hex_radius] [sbatch args...]` is
+the one call to make per regime-year as the 010 runs land:
+
+```bash
+scripts/submit_aggregates.sh bottom 2020
+scripts/submit_aggregates.sh surface_stokes 2025 6000 --time=12:00:00
+```
+
+It submits `024_BuildHexAggregates` (counts) and `024b_BuildHexDistance`
+together — independent Dask jobs over the same trajectory zarrs — and chains
+`024c_BuildHexConnectivity` behind the counts job with
+`--dependency=afterok:<024 job id>`, because 024c reduces what 024 wrote. It
+refuses a (regime, year) with no trajectory zarrs, expands the node blacklist
+into `--exclude=` and prints the three job ids. All three job scripts also take
+`[regime] [year] [hex_radius]` directly, for a single rerun.
+
+The beaching branch (024d and its reducers) is not part of this: it is one
+whole-regime pass over every year at once, submitted separately.
+
 ## Horizontal scaling for the GPFS-bound builder (024d)
 
 `scripts/024d_BuildBeachingForcing_job.sh` fans out one independent
-single-process papermill run per trajectory zarr, 292 of them (`xargs -P
-${SLURM_NTASKS}`, so `njobs ≠ ntasks`: throttle concurrency without editing the
-job). No MPI, no Dask; the bottleneck is streaming trajectory zarrs and hourly
-Stokes files off GPFS. Three consequences, all defaults in the script:
+single-process papermill run per trajectory zarr (`xargs -P ${SLURM_NTASKS}`, so
+`njobs ≠ ntasks`: throttle concurrency without editing the job). No MPI, no
+Dask; the bottleneck is streaming trajectory zarrs and hourly Stokes files off
+GPFS. Three consequences, all defaults in the script:
 
-- **`--spread-job`.** Maximise horizontal reach into the filesystem rather than
-  node locality. Packing is a tail-latency disaster: the same 48 cells ran
-  steps min/med/max `11:54 / 17:55 / 54:51` on 8 nodes against
-  `10:51 / 16:43 / 20:54` on 22 — identical median, 2.6x worse tail, and wall
-  time is set by the slowest cell. The flag disables the topology/tree plugin,
-  which costs nothing without MPI.
+- **`--distribution=cyclic`, not `--spread-job`.** Horizontal reach into the
+  filesystem beats node locality: packing is a tail-latency disaster, with a
+  48-cell month grid running steps min/med/max `11:54 / 17:55 / 54:51` on 8
+  nodes against `10:51 / 16:43 / 20:54` on 22 — identical median, 2.6x worse
+  tail, and wall time is set by the slowest cell. But `--spread-job` asks for
+  one node *per task*, and a few-hundred-node request against ~94 idle nodes
+  pends on `(Resources)` forever; `cyclic` round-robins the tasks over however
+  many nodes the scheduler grants, which is the spread that matters.
 - **No `--constraint`.** Pinning to sapphire (srp) nodes was inherited from
   Dask-backed jobs where IB reliability mattered; here it only shrinks the
   eligible pool and leaves jobs pending indefinitely.
-- **`--ntasks` matched to the unit count** (292 trajectory zarrs) and memory
-  sized from measured `sacct MaxRSS` (11.02 GiB peak at `window_days=220`,
-  plus 55% headroom: 9G/cpu x 2 = 18 GB).
+- **`--ntasks` sized from the work list** by `scripts/submit_024d.sh` (one task
+  per trajectory zarr, capped at `MAX_TASKS`, default 292), and memory sized
+  from measured `sacct MaxRSS` (11.02 GiB peak at `window_days=220`, plus 55%
+  headroom: 9G/cpu x 2 = 18 GB).
   Over-requesting either forces the job onto more nodes than it needs and
   pushes it into `(Resources)`.
+
+**Which years run.** No job script names a release year. 024d's work list is
+every trajectory zarr under `output_root/Trajectories/<regime>/`; the work list
+of 024e/024f/024g and of `024efg_ReduceAll` is every distinct `(release year,
+release month)` that has a sidecar under
+`output_root/BeachingForcing/<regime>/`. A year therefore joins the grid as
+soon as its upstream stage lands, and a partial release year — one whose 010
+runs stop short of 73 releases — contributes only the months it has instead of
+failing on the empty ones. `YEARS="2020 2021"` in the environment restricts the
+set; unset takes everything on disk. `LIST_ONLY=1 bash <job script>` prints the
+work list and exits, which is both how the submit wrappers size `--ntasks` and
+how to check a selection before submitting.
 
 **Node failures.** A single dying node aborts the whole allocation unless
 `--no-kill` is set (job 23834688 lost `nesh-clk542`, "Node unexpectedly
@@ -174,8 +210,9 @@ rebooted", at 53/292 done), and the resulting per-step "CANCELLED ... DUE TO
 NODE FAILURE" lines name almost every allocated node, so the culprit has to be
 read off `sinfo -t down,drain` instead. Culprits go in
 `scripts/node-blacklist.txt`, which `scripts/submit_024d.sh` expands into
-`sbatch --exclude=` (an `#SBATCH` directive cannot read a file) and the job
-re-applies per `srun` step. Rebuild the missing stems by listing them
+`sbatch --exclude=` (an `#SBATCH` directive cannot read a file). The exclusion
+stays on the allocation: repeating it as a step-level `srun --exclude` made
+SLURM serialise the steps. Rebuild the missing stems by listing them
 "<year> <stem>" per line and pointing `ONLY_STEMS_FILE` at that file.
 
 **Kernel start-up race.** At high concurrency `jupyter_client` reserves five ZMQ
@@ -211,7 +248,8 @@ When *every* member has to be rebuilt at once — after a sidecar rebuild
 invalidates all of them — `scripts/024efg_ReduceAll_job.sh` replaces that loop
 of one-member submissions with a single 024d-shaped job whose unit of work is
 one `(reducer, member, year, month)` cell: 25 members (14 for 024e, 7 for 024f,
-4 for 024g) x 4 years x 12 months = 1200 cells, driven by
+4 for 024g) x the `(year, month)` grid — 1200 cells over four release years,
+1.2k more per further year — driven by
 `xargs -P ${SLURM_NTASKS}` over `srun -n1 -N1 --exact --no-kill` steps with the
 same 3-attempt kernel-race retry and `OK`/`FAIL` tally. The members are a plain
 table in the script rather than an environment sweep, so the exact set is read
@@ -219,9 +257,10 @@ off the source, and the tag each cell produces is rebuilt there exactly as the
 notebooks build it (including the `_tf{}_tw{}` suffix a shore-type-sensitive
 member carries). `tau_calm_days = 0` is how the notebooks spell an infinite
 calm timescale; it tags as `tcinf`. `scripts/submit_024efg.sh` mirrors
-`submit_024d.sh` — it expands the node blacklist into `--exclude` and passes
+`submit_024d.sh` — it expands the node blacklist into `--exclude`, sizes
+`--ntasks` from the cell count (capped at `MAX_TASKS`, default 292) and passes
 extra `sbatch` args through, so chaining it behind the sidecar build is
-`scripts/submit_024efg.sh --ntasks=292 --dependency=afterok:<024d job id>`.
+`scripts/submit_024efg.sh --dependency=afterok:<024d job id>`.
 Reducers are light (`--mem-per-cpu=6G`, `--cpus-per-task=2`), so the 12 h limit
 is slack, not an estimate.
 
