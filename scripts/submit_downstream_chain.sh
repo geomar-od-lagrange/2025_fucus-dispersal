@@ -55,6 +55,13 @@
 #   MAX_CONSUMER_TASKS    concurrency cap for stage D (default 12)
 #   HEADLINE_JOB          stage E job script (default scripts/headline_report_job.sh)
 #   CHAIN_TAG             job-name prefix (default: hash of the 010 id set)
+#   ADOPT_A ADOPT_B ADOPT_C
+#                         ids of stages already queued under names this chain
+#                         cannot reconstruct -- an earlier chain, or a hand
+#                         submission. Such a stage is not submitted at all and
+#                         the later stages depend on these ids. Check them
+#                         yourself (scontrol show job <id>): they are taken on
+#                         trust.
 #   SBATCH_RETRY_DELAYS   submission backoff, see scripts/slurm_submit.sh
 #
 # A dry run prints the whole graph without touching the queue: put a fake
@@ -163,7 +170,13 @@ trap summary EXIT
 
 # --- stage A: per-(regime, year) aggregates -------------------------------
 a_ids=()
-while read -r regime year dep; do
+if [ -n "${ADOPT_A:-}" ]; then
+    read -ra a_ids <<< "$(tr ',' ' ' <<< "${ADOPT_A}")"
+    for j in "${a_ids[@]}"; do
+        graph+="A|${j}|adopted|024/024b/024c (\$ADOPT_A)|as queued"$'\n'
+    done
+fi
+while [ -z "${ADOPT_A:-}" ] && read -r regime year dep; do
     [ -n "${regime}" ] || continue
     # `|| true`: a triple that the controller cut off half-way still prints the
     # ids it did queue, and those go into the table below before this run
@@ -185,18 +198,28 @@ while read -r regime year dep; do
 done <<< "${pairs}"
 
 # --- stage B: beaching sidecars (surface_stokes only) ---------------------
-read -r b_id b_how <<< "$(scripts/submit_024d.sh --parsable \
-    --job-name="${tag}-024d" \
-    --dependency=afterany:"${stokes_dep}" | tail -n1)"
-[ -n "${b_id}" ] || { echo "submit_024d.sh returned no job id" >&2; exit 1; }
-graph+="B|${b_id}|${b_how}|024d beaching sidecars surface_stokes|afterany:${stokes_dep}"$'\n'
+if [ -n "${ADOPT_B:-}" ]; then
+    b_id=${ADOPT_B}
+    graph+="B|${b_id}|adopted|024d beaching sidecars (\$ADOPT_B)|as queued"$'\n'
+else
+    read -r b_id b_how <<< "$(scripts/submit_024d.sh --parsable \
+        --job-name="${tag}-024d" \
+        --dependency=afterany:"${stokes_dep}" | tail -n1)"
+    [ -n "${b_id}" ] || { echo "submit_024d.sh returned no job id" >&2; exit 1; }
+    graph+="B|${b_id}|${b_how}|024d beaching sidecars surface_stokes|afterany:${stokes_dep}"$'\n'
+fi
 
 # --- stage C: the 024e/024f/024g reducers ---------------------------------
-read -r c_id c_how <<< "$(scripts/submit_024efg.sh --parsable \
-    --job-name="${tag}-024efg" --dependency=afterok:"${b_id}" \
-    --kill-on-invalid-dep=yes | tail -n1)"
-[ -n "${c_id}" ] || { echo "submit_024efg.sh returned no job id" >&2; exit 1; }
-graph+="C|${c_id}|${c_how}|024efg reducers, every member|afterok:${b_id}"$'\n'
+if [ -n "${ADOPT_C:-}" ]; then
+    c_id=${ADOPT_C}
+    graph+="C|${c_id}|adopted|024efg reducers (\$ADOPT_C)|as queued"$'\n'
+else
+    read -r c_id c_how <<< "$(scripts/submit_024efg.sh --parsable \
+        --job-name="${tag}-024efg" --dependency=afterok:"${b_id}" \
+        --kill-on-invalid-dep=yes | tail -n1)"
+    [ -n "${c_id}" ] || { echo "submit_024efg.sh returned no job id" >&2; exit 1; }
+    graph+="C|${c_id}|${c_how}|024efg reducers, every member|afterok:${b_id}"$'\n'
+fi
 
 # --- stage D: the parquet-only consumers ----------------------------------
 # The work list is static (the 031 member set is resolved inside the job, at

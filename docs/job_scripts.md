@@ -433,7 +433,11 @@ status decides what still needs submitting:
 
 The chain is therefore idempotent: rerun the identical command after a partial
 failure and it adopts what is queued, submits only the rest, and prints an
-`adopted`/`submitted` column saying which was which. An aborted run still
+`adopted`/`submitted` column saying which was which. Stages queued under names
+this chain cannot reconstruct — an earlier chain, or a hand submission — are
+adopted by id instead: `ADOPT_A="<024/024b/024c ids>" ADOPT_B=<024d id>
+ADOPT_C=<024efg id>` skips those stages entirely and hangs D and E off the ids
+given, which the chain takes on trust. An aborted run still
 prints the stages it did queue plus the command to resume. A stage that has
 already *finished* has left the queue and would be submitted again, so resume
 while the chain is still pending.
