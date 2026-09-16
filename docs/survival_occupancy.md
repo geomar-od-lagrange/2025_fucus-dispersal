@@ -11,10 +11,12 @@ S(t) = exp(−A(t)),   A(t) = cumsum(Δt/τ) over in-band steps
 
 with the same two-state near-shore rate `τ` as the
 [beaching diagnostic](beaching.md) — including its `trap` shore-type factor,
-inert at the production 1.0/1.0 weights, so onshore wave forcing is the only
-term that modulates the rate there. `A` grows only
-inside the near-shore band, so open-water residence is undiluted while weight
-lingering in a wave-exposed band decays fast. This is the occupancy analogue of
+which at the production weights (`trap_flat = 1`, `trap_wall = 0`) is
+`ff/100`, so the rate is modulated by onshore wave forcing **and** by how flat
+the local shoreline is; weight sitting in a wave-exposed band off a rock coast
+loses nothing. `A` grows only inside the near-shore band, so open-water
+residence is undiluted while weight lingering in a wave-exposed band off flat
+shore decays fast. This is the occupancy analogue of
 024e's fractional stranding: **024e records where the weight leaves
 (`beach_hex`); 024f records where the still-drifting weight is
 (`target_hex`)**. It composes with a future Fucus lifetime `L(t)` — survival
@@ -42,8 +44,10 @@ contiguous hex index (occupancy is *dense* — every obs, every hex — unlike
 
 `HexAgg_survocc_r<radius>m_<regime>_<year>_mMM_<member>.parquet`, additive
 across `release_doy`/month/year. The `_<member>` tag is the same rate-model
-string `024e` builds (e.g. `step_wc0p1_ts3_tcinf`), and `030` takes it as an
-opaque `member` parameter.
+string `024e` builds (production: `step_wc0p1_ts3_tcinf_tf1_tw0`), and `030`
+takes it as an opaque `member` parameter. `024f` must be run at the same rate
+parameters as `024e` and `024g`, or the survival and stranding stores describe
+different models.
 
 | column | meaning |
 |--------|---------|
@@ -71,10 +75,11 @@ At each horizon `T`, `030` selects the snapshot bin *ending* at `T` —
 `age_bin = T/age_bin_days − 1`, i.e. ages in `[T − age_bin_days, T)` —
 and draws occupancy vs. survival-weighted (shared `LogNorm`) vs. surviving
 fraction (linear 0–1). The drifting fraction falls with age, most steeply where
-near-shore residence coincides with onshore waves — at the production
-`trap_flat = trap_wall = 1` the depletion pattern is a *wave-exposure* field,
-not a substrate one. Absolute
-rates are parameter-sensitive ([beaching.md](beaching.md)); read the *pattern*.
+near-shore residence coincides with onshore waves **over flat shore** — at the
+production `trap_flat = 1`, `trap_wall = 0` the depletion pattern is a
+wave-exposure field multiplied by the substrate's flat fraction, so material
+routed past exposed rock coast survives where the substrate-inert member
+(`step_wc0p1_ts3_tcinf`) removes it. Absolute rates are parameter-sensitive ([beaching.md](beaching.md)); read the *pattern*.
 
 ## Cross-references
 

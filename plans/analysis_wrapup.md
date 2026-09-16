@@ -22,8 +22,10 @@ compute node via `pixi run`.
   [../docs/beaching.md](../docs/beaching.md),
   [../docs/survival_occupancy.md](../docs/survival_occupancy.md),
   [../docs/job_scripts.md](../docs/job_scripts.md) (how each is submitted).
-  Production beaching member `step_wc0p1_ts3_tcinf`; `w_c` is a working
-  choice, results are reported as a range.
+  Production beaching member `step_wc0p1_ts3_tcinf_tf1_tw0` — `trap_flat =
+  1`, `trap_wall = 0`, so the shoreline classification drives the trapping
+  term. Neither `w_c` nor the trap weights are calibrated; both are reported
+  as ranges.
 - **Open:** §4 (biomass maps) is blocked on the Estonian production
   figures (JV); §7 (bottom-velocity sweep) is deferred — it needs a kernel
   change plus fresh runs, not just a plot. Nothing else in this plan is
@@ -33,11 +35,57 @@ compute node via `pixi run`.
   dependency chain. Job graph, per-stage landing checks, resume procedure and
   quota stop line in
   [run_extension_2020_2025.md](run_extension_2020_2025.md).
-- **Trap sweep: done.** The `ff` sidecar and the `trap_flat`/`trap_wall`
-  reducer knobs are in, swept, and written up under "Trap sensitivity" in
-  [../docs/beaching.md](../docs/beaching.md); the plan is in
-  [done/trap_from_shoreclass.md](done/trap_from_shoreclass.md). The numbers
-  are 2016-2019 and get refreshed once the extended reducers land.
+- **Trap: promoted to production (2026-09-16).** The `ff` sidecar and the
+  `trap_flat`/`trap_wall` reducer knobs are in, swept over 2016-2025, and
+  written up in [../docs/beaching.md](../docs/beaching.md); the plan is in
+  [done/trap_from_shoreclass.md](done/trap_from_shoreclass.md). `trap_flat =
+  1`, `trap_wall = 0` is now the production point, which drops the beached
+  fraction from 77 % to 42 % and leaves 1 207 of 1 824 stranding hexes
+  receiving weight. Consequence for §5a: the seasonal spread of the beached
+  fraction shrinks from ~20 points to ~7 and no longer exceeds the
+  interannual spread within a season, so *season as the primary axis* is now
+  a claim about the maps, not about the scalar total.
+
+- **Pending cluster work for the production-member switch.** The stores for
+  `step_wc0p1_ts3_tcinf_tf1_tw0` exist for 2016-2025 (beaching, survocc,
+  survconn, 113 monthly partitions each), so nothing has to be rebuilt — but
+  the figures, exports and `Headline/` under `output_root` were produced for
+  the old member and still name it. SLURM was not accepting submissions when
+  the switch landed; fire these two, in order, when it is:
+
+  ```bash
+  # 20 units: 028/029/030 at the production member + 031 (baseline highlight),
+  # surface_stokes x 5 seasons. 025/026/026a/026b/027 do not depend on the
+  # member and must NOT be rerun.
+  source scripts/slurm_submit.sh
+  robust_sbatch --job-name=025-031-prod-tf1-tw0 \
+      --export=ALL,WORK_LIST=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs/logs/025-031/worklist_prod_tf1_tw0.txt \
+      scripts/025-031_ConsumersAll_job.sh
+
+  # then, afterok on that id:
+  robust_sbatch --job-name=032-headline-prod-tf1-tw0 \
+      --dependency=afterok:<consumer job id> --kill-on-invalid-dep=yes \
+      scripts/headline_report_job.sh
+  ```
+
+  The work list already sits at
+  `output_root/logs/025-031/worklist_prod_tf1_tw0.txt` (outside the repo, like
+  every other output); rebuild it with
+
+  ```bash
+  for s in ALL DJF MAM JJA SON; do
+      for st in 028 029 030; do
+          echo "${st} surface_stokes ${s} step_wc0p1_ts3_tcinf_tf1_tw0"
+      done
+      echo "031 surface_stokes ${s} -"
+  done > "${output_root}/logs/025-031/worklist_prod_tf1_tw0.txt"
+  ```
+
+  Both job scripts default to the new member, so the headline line takes no
+  arguments. Verify afterwards that
+  `Headline/HEADLINE.md` names `step_wc0p1_ts3_tcinf_tf1_tw0`, that its
+  coverage table still spans 2016-2025, and that `Figures/029` and
+  `Figures/030` carry `_step_wc0p1_ts3_tcinf_tf1_tw0` filenames.
 
 ## 0. Decisions (2026-09-14)
 
@@ -156,16 +204,17 @@ deposits fractional stranding weight along its coastal path; deterministic,
 noise-free at the high-age tail, composes with a Fucus lifetime `L(t)`) — the
 retired stochastic first-stranding draw agreed to <0.2 % on totals. The rate is
 a two-state hazard, `1/τ = 1/τ_calm + trap·r(w_on)/τ_strong` in band, with
-`trap` wired but degenerate (`trap_flat = trap_wall = 1.0`), so onshore wave
-forcing is the only term modulating it — see
-[beaching.md](../docs/beaching.md).
+`trap = trap_wall + (trap_flat − trap_wall)·ff/100` driven by the shoreline
+flat fraction; production runs it at `1.0/0.0`, so onshore wave forcing and
+substrate both modulate the rate — see [beaching.md](../docs/beaching.md).
 
 Remaining follow-ups (not blocking): a **Fucus lifetime `L(t)`** replacing the
 step-function viability cutoff; **survival-weighted connectivity** — the
 occupancy side is done in `024f`, and the connectivity side is now done in
 `024g` (§3). `w_c = 0.10` is a working choice with no observational
-constraint; revisit if the paper needs a defended threshold.
-`trap(flat, wall)` is *not* a sweep axis while degenerate.
+constraint; revisit if the paper needs a defended threshold. `trap_wall = 0`
+is likewise an end-member assumption — the `…_tf1_tw0p25` / `…_tf1_tw0p5`
+members are built for every release year and bracket the intermediate cases.
 
 ## 5a. Seasonal view as the default product — ✅ implemented, see [../docs/visualisations.md](../docs/visualisations.md)
 

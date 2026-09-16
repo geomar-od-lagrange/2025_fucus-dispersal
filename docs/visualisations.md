@@ -282,10 +282,13 @@ resulting hex dilation shrink as resolution rises.
   where the reducer emits it) axes, on a `LogNorm` floored four decades
   below the peak (weighted deposition's sparse tail carries fractional
   weight). `shore_type` is deliberately **not shown at all** — neither
-  faceted nor broken out in the summary. `shore_type` is a threshold label
-  on the HELCOM BRISK + CLMS flat fraction `ff` at the stranding hour
-  (`flat` if `ff >= 50%` else `wall`); `trap_flat`/`trap_wall` are reducer
-  parameters, named in the member tag only when they differ from 1 — see
+  faceted nor broken out in the summary. It is a threshold label on the
+  HELCOM BRISK + CLMS flat fraction `ff` at the stranding hour (`flat` if
+  `ff >= 50%` else `wall`), a coarser cut than the rate, which scales
+  continuously with `ff` through `trap_wall + (trap_flat − trap_wall)·ff/100`
+  — at the production member (`trap_flat = 1`, `trap_wall = 0`) the substrate
+  signal is already inside the plotted weight, so a flat/wall split of it
+  would re-report the rate model as if it were a result. See
   [beaching.md](beaching.md).
 - **Beached fraction per source hex** — a ratio in [0, 1], so the default
   linear norm, no colour override to defend.

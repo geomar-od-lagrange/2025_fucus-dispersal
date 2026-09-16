@@ -1,8 +1,22 @@
 # Activate `trap` from the shoreclass sub-segment classification
 
-**Implemented.** Current state in [../../docs/beaching.md](../../docs/beaching.md) — the `ff` sidecar
-variable, the `trap = trap_wall + (trap_flat − trap_wall)·ff/100` rate
-factor, the member-tag suffix, and the "Trap sensitivity" readout.
+**Implemented, and since superseded on one point.** Current state in
+[../../docs/beaching.md](../../docs/beaching.md) — the `ff` sidecar variable,
+the `trap = trap_wall + (trap_flat − trap_wall)·ff/100` rate factor, the
+member-tag suffix, and the sensitivity readout.
+
+> **Superseded (2026-09-16).** This plan shipped `trap_flat = trap_wall = 1.0`
+> as the production point and argued against hard-zeroing `trap_wall`; the
+> production member is now `step_wc0p1_ts3_tcinf_tf1_tw0` (`trap_flat = 1`,
+> `trap_wall = 0`), so the substrate classification drives the trapping term
+> rather than multiplying it by one. Every claim below that the term is inert,
+> degenerate, or reproduces the earlier sweep bit-for-bit describes the
+> *shipped default at the time*, not the production physics. The numbers in
+> "Status (2026-09-15)" are 2016-2019; the 2016-2025 readout is in
+> [../../docs/beaching.md](../../docs/beaching.md). The first open question
+> below is answered there too: `ff` and `w_on` correlate weakly and positively
+> (Pearson 0.14 over 1.25 G in-band particle-hours), so the two terms are not
+> one gradient counted twice.
 
 Re-establish `trap` in the beaching rate as a **continuous substrate factor**,
 driven by the `flat_fraction` table produced by the sidecar repository
