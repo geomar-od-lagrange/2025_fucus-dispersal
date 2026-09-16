@@ -21,7 +21,7 @@ listed here should be dropped.
 | 026b | 026a per origin subbasin and year | Per-run (regime + season + radius) | One percentage and one dilution figure per (origin subbasin, release year) |
 | 027 | Hex distance-quantile maps | Per-run (regime + radius + season) | One 1xN panel row, one panel per quantile (0.1/0.5/0.9), the season's releases pooled across years |
 | 028 | Subbasin connectivity matrices | Per-run (regime + radius + season + member) | Raw residence · emission fraction per age horizon · interannual range |
-| 029 | Beaching maps | Per-run (regime + radius + member + season) | Where-stranded · beached fraction per source hex · age horizons (10/20/50 d) · beached-fraction curve with interannual band · travel distance at stranding |
+| 029 | Beaching maps | Per-run (regime + radius + member + season) | Where-stranded with the release sites overlaid · source/sink substrate contrast · beached fraction per source hex · age horizons (10/20/50 d) · beached-fraction curve with interannual band · travel distance at stranding |
 | 030 | Survival heatmaps | Per-run (regime + radius + member + season) | Per horizon (20/50/100 d): occupancy · survival-weighted; surviving fraction as a separate 1xN figure; drifting-fraction curve with interannual band |
 | 031 | Beaching sweep | Per-run (regime + radius + season) | Five statistics across members with interannual bars · where-stranded maps across members |
 | 032 | None — selects, numbers and downscales other notebooks' PNGs | Selection (primary + comparison regime) | One curated reading order over 025–031 |
@@ -270,8 +270,10 @@ weight`) plus the 024a key. The `member` parameter is the opaque
 rate-model tag in the store filename
 (`HexAgg_beaching_r<radius>m_<regime>_<year>_mMM_<member>.parquet`); it
 selects the partitions, tags every figure filename, and is never parsed.
-`season` selects which monthly partitions are pooled. Views on one plain
-EPSG:4326 axis, reusing 025's hex registration but computing
+`season` selects which monthly partitions are pooled. Two files come from the
+data twin rather than the store: the release-site geojson behind the overlay
+and the shoreline-class table behind the substrate readout, both below. Views
+on one plain EPSG:4326 axis, reusing 025's hex registration but computing
 `hex_seam_lw` from the figure DPI rather than pinning a point value: the
 seam is a fixed-pixel anti-aliasing artefact, not a fraction of hex width,
 so pinning the stroke to ~1 px keeps the seam closed while letting the
@@ -290,6 +292,51 @@ resulting hex dilation shrink as resolution rises.
   signal is already inside the plotted weight, so a flat/wall split of it
   would re-report the rate model as if it were a result. See
   [beaching.md](beaching.md).
+- **Release-site overlay** (this panel only, `show_release_points`) — the 872
+  REDLIST cells with `F_vesiculo != 0`
+  (`data/helcom_fucus_redlist/fucus_release_points.geojson`, baked by `000`),
+  one hollow marker per cell at its representative point. This is the file
+  `010` opens and seeds particles inside, so the overlay is the seeding set,
+  not a proxy. Without it the panel is a deposition field and the reader has
+  to supply the sources from memory; with it the figure is the source→sink
+  statement the study is about. **Overrides: `markerfacecolor="none"`,
+  `markeredgecolor="magenta"`, `markersize=2.5`, `markeredgewidth=0.4`.**
+  Hollow because sources and sinks overlap across the western Baltic and a
+  filled marker would hide the hex value the reader is comparing against;
+  magenta because the field underneath is a four-decade `LogNorm` of the
+  default map and the marker has to read against both a near-black low end
+  and a yellow high end (the same anti-viridis argument as the 3 m isobath in
+  025/026); 2.5 pt because that is roughly the 10 km REDLIST cell's own size
+  at 180 mm page width, so the marker stands for the cell rather than
+  inventing a point source. Considered and rejected: the cell polygons drawn
+  as outlines (faithful, but 10 km squares are larger than the 6 km hexes and
+  mesh together in the Danish straits and the Åland archipelago); the key's
+  `fucus_area_m2 > 0` hexes drawn as outlines (1 827 hexes against 872 cells —
+  a 10 km cell touches several 6 km hexes, so the footprint is overstated, and
+  a continuous magenta band along the whole Swedish and Finnish coast
+  outweighs the field it annotates); filled dots (clean, but they read as
+  scattered noise rather than as sites, and they occlude). The overlay is
+  deliberately **not** repeated on the beached-fraction or age-horizon panels:
+  the beached-fraction panel's coloured hexes already *are* the release set,
+  and the horizon row is about time, not about where the material came from.
+- **Source and sink substrate** — printed, not plotted: the shoreline flat
+  fraction `ff` at the release sites against the flat fraction where the
+  weight lands, aggregated per hex the way 033 does it (nest seam dropped,
+  unattributed coast counted 0.5) and reported for `member` and for a
+  substrate-inert `contrast_member`, plus a release-cells-against-stranded-
+  weight table per HELCOM subbasin. What it shows: *Fucus* sits on coast that
+  is **wall-like relative to the domain** (`fucus_area_m2`-weighted mean `ff`
+  0.427 against a domain mean of 0.527; 57 % of release cells on hexes with
+  `ff < 0.5`), while under the production member the deposit sits on flat
+  coast (`ff` 0.824, 84 % of weight on flat hexes) — and the substrate-inert
+  member deposits at `ff` 0.413, i.e. **the flat bias is the rate model's trap
+  term, not the drift**, which is exactly why both members are printed. The
+  two share the same transport signal, visible in the subbasin table: the
+  Swedish east coast and Bothnian/Åland basins hold ~33 % of the release cells
+  and receive ~2.5 % of the production stranded weight, the Danish straits and
+  the German/Polish coast the reverse. Reading the per-hex correlation behind
+  this is 033's job; 029 states the two means so the overlaid map has numbers
+  attached.
 - **Beached fraction per source hex** — a ratio in [0, 1], so the default
   linear norm, no colour override to defend.
 - **Age-horizon where-stranded maps** — the same log-density map at

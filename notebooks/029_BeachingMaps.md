@@ -28,7 +28,8 @@ reducer's opaque `member` tag, which selects the partitions read here and
 labels every figure; this notebook never parses the tag. Draws:
 
 1. **Where-stranded density** — beached weight (expected particles) per
-   `beach_hex` (log scale).
+   `beach_hex` (log scale), with the *Fucus* release sites overlaid so the
+   map reads as a source→sink picture rather than a deposition field alone.
 2. **Beached fraction per source hex** — of the drifters released in each
    hex, what fraction strands within the viability window (linear 0–1).
 3. **Beaching age horizons** — cumulative where-stranded density for
@@ -42,10 +43,16 @@ labels every figure; this notebook never parses the tag. Draws:
    strandings are a real outcome under a threshold rate model, never a
    mask.
 
+Between 1. and 2. sits the number the overlay exists for: the **substrate
+contrast between source and sink**, the shoreline flat fraction where the
+release sites are against the flat fraction where the weight lands, under
+this member and under a substrate-inert `contrast_member`.
+
 Figures are print-ready (full page width, 300 dpi) and the per-horizon
 where-stranded field is exported as GeoJSON.
 
 ```python
+import json
 import re
 from pathlib import Path
 
@@ -54,8 +61,11 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
+from pyproj import Transformer
 from shapely.geometry import box
 from cartopy.io.shapereader import natural_earth
+
+from hextraj import HexProj
 ```
 
 # Parameters
@@ -63,6 +73,9 @@ from cartopy.io.shapereader import natural_earth
 ```python tags=["parameters"]
 # Read root of the hex-aggregate store.
 output_root = "../output"
+# Read root of the data twin: the Fucus release sites 010 seeds from and the
+# shoreline-class table the substrate contrast reads.
+data_root = "../data"
 # Which regime's beaching partitions to read; one regime per run.
 regime = "surface_stokes"
 # Hex radius of the store (built by 024a/024e). Must match the files on disk.
@@ -78,9 +91,17 @@ season = "ALL"
 # (e.g. "step_wc0p1_ts3_tcinf_tf1_tw0"). Selects the partitions and tags
 # the figures.
 member = "step_wc0p1_ts3_tcinf_tf1_tw0"
+# Second member, read only by the source/sink substrate block: a member whose
+# trap term is degenerate (trap_flat = trap_wall = 1), so substrate does not
+# enter its rate at all and its deposit is where the drift alone puts the
+# material. "" skips the comparison.
+contrast_member = "step_wc0p1_ts3_tcinf"
 # Travel-distance bin width (km) of the store's `disp_bin` axis (must match
 # the reducer).
 disp_bin_km = 10.0
+
+# Overlay the Fucus release sites on the where-stranded map.
+show_release_points = True
 
 # Beaching age horizons to map, in days. Each must be a multiple of
 # age_bin_days.
@@ -112,6 +133,12 @@ SEASON_MONTHS = {
 }
 
 output_root = Path(output_root)
+data_root = Path(data_root)
+# The file 010 seeds from: the REDLIST cells baked by 000 (F_vesiculo != 0).
+release_points_path = data_root / "helcom_fucus_redlist" / "fucus_release_points.geojson"
+shoreclass_path = (
+    data_root / "shoreclass_bsh_coastline" / "bsh_coastline_k2_flatfraction.parquet"
+)
 if season not in SEASON_MONTHS:
     raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
 season_months = SEASON_MONTHS[season]
@@ -141,6 +168,17 @@ FIGURE_DPI = 300
 # the stroke to ~1 px at the output dpi keeps the seam closed while letting
 # the resulting hex dilation shrink as resolution rises.
 hex_seam_lw = 1.1 * 72 / FIGURE_DPI
+# Release-site overlay style. AGENTS.md forbids colour/marker overrides; this
+# one is defended in docs/visualisations.md. Short version: the field under it
+# is a four-decade LogNorm of the default (viridis) map, so the marker has to
+# read against both a near-black low end and a near-white/yellow high end —
+# magenta is the anti-viridis hue already used for the 3 m isobath in 025/026.
+# Hollow, because sources and sinks overlap in the western Baltic and a filled
+# marker would hide the very hex value the reader is comparing against. Sized
+# to roughly the 10 km REDLIST cell it stands for at 180 mm page width.
+release_marker_color = "magenta"
+release_marker_size = 2.5
+release_marker_lw = 0.4
 
 figure_dir = output_root / "Figures" / "029"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -163,7 +201,14 @@ ran with `release_month = 0`) carries every month, so it is only read for
 
 ```python
 store_root = output_root / "HexAggregates"
-key = gpd.read_parquet(store_root / f"HexAgg_key_r{hex_radius}m.parquet")
+key_path = store_root / f"HexAgg_key_r{hex_radius}m.parquet"
+key = gpd.read_parquet(key_path)
+# The key's sidecar carries the HexProj every 024x stage labels with (used to
+# put the release cells and the shoreline sub-segments into hex space) and the
+# subbasin id → name map the per-subbasin readout below prints.
+meta = json.loads(key_path.with_suffix(".json").read_text())
+hp = HexProj(**meta["hex_proj"])
+subbasin_name = {int(k): v for k, v in meta["subbasin_id_to_name"].items()}
 
 _PART_RE = re.compile(
     rf"HexAgg_beaching_r{hex_radius}m_{regime}_(\d{{4}})(?:_m(\d{{2}}))?"
@@ -280,6 +325,32 @@ domain_aspect = (
 beached = beaching[beaching["beach_hex"] >= 0]
 ```
 
+# Release sites
+
+The overlay geometry: `helcom_fucus_redlist/fucus_release_points.geojson`,
+the REDLIST cells with `F_vesiculo != 0` baked by `000`. This is the same
+file `010` opens — it distributes `particles_per_cell` particles uniformly
+inside each cell polygon — so the overlay is the seeding set itself, not a
+proxy for it. The cells are ~10 km squares, so one marker per cell at their
+representative point stands for the cell footprint at page width; the marker
+is drawn, not the polygon, for the reasons in
+[docs/visualisations.md](../docs/visualisations.md).
+
+The key's `fucus_area_m2` is the same source seen through the hex grid (the
+per-hex intersection area with those cells); it carries the source weighting
+for the substrate contrast below, while the overlay stays on the cells.
+
+```python
+release_cells = gpd.read_file(release_points_path)
+release_pt = release_cells.representative_point()
+release_hex_of_cell = hp.label(
+    release_pt.x.to_numpy(), release_pt.y.to_numpy()
+).astype("int32")
+print(f"release cells: {len(release_cells):,} from {release_points_path}")
+print(f"  in {pd.unique(release_hex_of_cell).size:,} hexes; key hexes with "
+      f"fucus_area_m2 > 0: {int((key['fucus_area_m2'] > 0).sum()):,}")
+```
+
 # Where-stranded density
 
 Log-scale beached weight (expected particles) per stranding hex, summed over
@@ -298,8 +369,19 @@ strand_norm = log_norm(gdf_stranded["value"])
 
 fig, ax = plt.subplots(layout="constrained")
 fig.set_size_inches(FIGURE_WIDTH_IN, grid_height_in(1, 1, domain_aspect, FIGURE_WIDTH_IN))
-hex_map(gdf_stranded, ax, norm=strand_norm, title="stranded weight",
+hex_map(gdf_stranded, ax, norm=strand_norm,
+        title="stranded weight, Fucus release sites overlaid"
+        if show_release_points else "stranded weight",
         label="stranded weight (particles)")
+if show_release_points:
+    # Hollow magenta rings, one per REDLIST release cell; style constants and
+    # their rationale are at the top of the notebook.
+    ax.plot(
+        release_pt.x, release_pt.y, linestyle="none", marker="o",
+        markersize=release_marker_size, markerfacecolor="none",
+        markeredgecolor=release_marker_color, markeredgewidth=release_marker_lw,
+        zorder=3,
+    )
 fig_path = figure_dir / f"WhereStranded_{regime}_r{hex_radius}m_{season}_{member}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
 fig.savefig(fig_path, dpi=FIGURE_DPI)
@@ -307,11 +389,179 @@ print(f"wrote {fig_path}")
 plt.show()
 ```
 
+# Source and sink substrate
+
+The number the overlay exists for. The shoreline-class table from the data
+twin gives every BSH coastline sub-segment a **flat fraction** `ff` — the
+share of classified shore that is low and unconsolidated rather than a hard
+wall ([docs/beaching.md](../docs/beaching.md)). Aggregated per hex by
+`seg_len_m`-weighted mean, exactly as `033` does it: the nest seam dropped
+first (the outline of the BSH wet cells closes along the fine nest's edge as
+well as along real land, and a shore type in open water is a map artefact),
+and an unattributed sub-segment counted 0.5, the convention `024d` applies.
+
+Then three comparisons, all against the domain's own length-weighted mean:
+
+- **Source substrate** — over the hexes carrying release sites, unweighted
+  and weighted by the key's `fucus_area_m2`, plus the share of release cells
+  whose hex is wall-like (`ff < 0.5`, the threshold the store's `shore_type`
+  label uses).
+- **Sink substrate** — over the stranding hexes, weighted by stranded
+  weight, for `member` and for `contrast_member`.
+- **Per subbasin** — release cells against stranded weight, so the transport
+  direction is a table and not an impression of the map.
+
+Reading the two members together is what separates the two possible stories:
+under `member` the trap factor is `ff/100`, so a flat-coast bias in its
+deposit is partly the rate model by construction; `contrast_member`'s trap
+is 1 everywhere, so **its** deposit substrate is purely where the drift goes.
+
+```python
+FLAT_THRESHOLD = 0.5
+
+sc = pd.read_parquet(shoreclass_path)
+sc = sc[~sc["on_seam"]]
+sc = sc[np.isfinite(sc["seg_len_m"]) & (sc["seg_len_m"] > 0)]
+lon_sc, lat_sc = Transformer.from_crs(3035, 4326, always_xy=True).transform(
+    sc["x_3035"].to_numpy("float64"), sc["y_3035"].to_numpy("float64")
+)
+sc = sc.assign(
+    hex_id=hp.label(lon_sc, lat_sc).astype("int32"),
+    ff=sc["flat_fraction"].fillna(0.5),
+)
+grp = sc.assign(_ff_len=sc["ff"] * sc["seg_len_m"]).groupby("hex_id")
+shore = pd.DataFrame(
+    {
+        "coast_len_m": grp["seg_len_m"].sum(),
+        "flat_fraction": grp["_ff_len"].sum() / grp["seg_len_m"].sum(),
+    }
+)
+domain_ff = float(np.average(shore["flat_fraction"], weights=shore["coast_len_m"]))
+print(f"hexes carrying coastline: {len(shore):,}; "
+      f"domain length-weighted mean flat fraction: {domain_ff:.3f}")
+```
+
+The contrast member's deposit is the only extra read this block needs: one
+pass over its partitions reduced straight to `beach_hex → weight`, the
+production member's coming from the rows already in memory.
+
+```python
+strand_by_hex = {member: beached.groupby("beach_hex")["weight"].sum()}
+if contrast_member:
+    contrast_re = re.compile(
+        rf"HexAgg_beaching_r{hex_radius}m_{regime}_(\d{{4}})(?:_m(\d{{2}}))?"
+        rf"_{re.escape(contrast_member)}\.parquet$"
+    )
+    parts = []
+    for f in sorted(
+        store_root.glob(f"HexAgg_beaching_r{hex_radius}m_{regime}_*.parquet")
+    ):
+        m = contrast_re.search(f.name)
+        if m is None:
+            continue
+        month = m.group(2)
+        if month is None:
+            if season != "ALL":
+                continue
+        elif int(month) not in season_months:
+            continue
+        d = pd.read_parquet(f, columns=["beach_hex", "weight"])
+        parts.append(d[d["beach_hex"] >= 0].groupby("beach_hex")["weight"].sum())
+    if not parts:
+        raise FileNotFoundError(
+            f"no beaching partitions for contrast_member {contrast_member!r} "
+            f"(regime {regime!r}, season {season}) at {store_root} — run 024e, "
+            f'or set contrast_member = "" to skip the comparison.'
+        )
+    strand_by_hex[contrast_member] = pd.concat(parts).groupby(level=0).sum()
+for tag, w in strand_by_hex.items():
+    print(f"{tag}: {len(w):,} stranding hexes, Σweight {w.sum():,.0f}")
+```
+
+```python
+source = (
+    key.loc[key["fucus_area_m2"] > 0, ["hex_id", "fucus_area_m2"]]
+    .join(shore, on="hex_id")
+)
+source_coastal = source[source["flat_fraction"].notna()]
+cell_ff = pd.Series(release_hex_of_cell, name="hex_id").to_frame().join(
+    shore["flat_fraction"], on="hex_id"
+)["flat_fraction"]
+
+print(f"domain reference: length-weighted mean flat fraction {domain_ff:.3f}")
+print(f"\nSOURCE — {len(source):,} hexes with Fucus area, of which "
+      f"{len(source_coastal):,} carry coastline "
+      f"({100 * source_coastal['fucus_area_m2'].sum() / source['fucus_area_m2'].sum():.1f} %"
+      f" of the Fucus area)")
+print(f"  mean flat fraction, unweighted:        "
+      f"{source_coastal['flat_fraction'].mean():.3f}")
+print(f"  mean flat fraction, fucus_area_m2-wtd: "
+      f"{np.average(source_coastal['flat_fraction'], weights=source_coastal['fucus_area_m2']):.3f}")
+print(f"  mean flat fraction, coast-length-wtd:  "
+      f"{np.average(source_coastal['flat_fraction'], weights=source_coastal['coast_len_m']):.3f}"
+      f"  (the form the domain reference takes)")
+print(f"  release cells on a coastline-carrying hex: {int(cell_ff.notna().sum()):,} "
+      f"of {len(cell_ff):,}")
+print(f"  of those, on wall-like coast (ff < {FLAT_THRESHOLD}): "
+      f"{100 * (cell_ff < FLAT_THRESHOLD).sum() / cell_ff.notna().sum():.1f} %")
+
+for tag, w in strand_by_hex.items():
+    d = w.rename("weight").to_frame().join(shore)
+    on_coast = d[d["flat_fraction"].notna()]
+    print(f"\nSINK — member {tag}")
+    print(f"  stranded weight on coastline-carrying hexes: "
+          f"{100 * on_coast['weight'].sum() / d['weight'].sum():.1f} % of "
+          f"{d['weight'].sum():,.0f}")
+    print(f"  mean flat fraction, stranded-weight-wtd: "
+          f"{np.average(on_coast['flat_fraction'], weights=on_coast['weight']):.3f}")
+    print(f"  weight landing on flat coast (ff >= {FLAT_THRESHOLD}): "
+          f"{100 * on_coast.loc[on_coast['flat_fraction'] >= FLAT_THRESHOLD, 'weight'].sum() / on_coast['weight'].sum():.1f} %")
+```
+
+# Source and sink per subbasin
+
+Release cells against stranded weight, both labelled by the HELCOM subbasin
+of their hex. The HELCOM polygons leave a coastal hex centred on land or
+inside an archipelago unassigned, which is a large share of both columns
+here, so the percentages are shares **of the assigned rows** and the
+unassigned share is printed beside them rather than folded in.
+
+```python
+subbasin_of_hex = key.set_index("hex_id")["helcom_subbasin"]
+cell_subbasin = pd.Series(release_hex_of_cell).map(subbasin_of_hex)
+per_sub = pd.DataFrame(
+    {"cells": cell_subbasin[cell_subbasin >= 0].map(subbasin_name).value_counts()}
+)
+for tag, w in strand_by_hex.items():
+    sub = w.index.map(subbasin_of_hex)
+    # float64: the store's weight is float32, and a float32 share prints as
+    # 49.290001 however it is rounded.
+    per_sub[tag] = w[sub >= 0].astype("float64").groupby(
+        sub[sub >= 0].map(subbasin_name)
+    ).sum()
+per_sub = per_sub.fillna(0.0).sort_values("cells", ascending=False)
+table = pd.DataFrame({"source cells": per_sub["cells"].astype(int)})
+table["source %"] = 100 * per_sub["cells"] / per_sub["cells"].sum()
+for tag in strand_by_hex:
+    table[f"sink % ({tag})"] = 100 * per_sub[tag] / per_sub[tag].sum()
+print(table.round(2).to_string())
+
+unassigned_src = float((cell_subbasin < 0).sum() / len(release_hex_of_cell))
+print(f"\nrelease cells HELCOM leaves unassigned: {100 * unassigned_src:.1f} %")
+for tag, w in strand_by_hex.items():
+    u = w[w.index.map(subbasin_of_hex) < 0].sum() / w.sum()
+    print(f"stranded weight HELCOM leaves unassigned ({tag}): {100 * u:.1f} %")
+```
+
 # Beached fraction per source hex
 
 Of the drifters released in each source hex, the fraction that strands
 within the viability window (linear 0–1). Highlights which source regions
 lose most of their propagules to the coast.
+
+No release-site overlay here: this panel's coloured hexes *are* the release
+set, so the markers would fall on the values they are meant to locate and
+add nothing but ink.
 
 ```python
 released = beaching.groupby("release_hex")["weight"].sum().rename("released")
