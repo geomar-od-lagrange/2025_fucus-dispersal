@@ -294,7 +294,7 @@ kwargs that override defaults until a real need shows up.** Concretely:
 - Prefer xarray's built-in plotting (`.plot`, `.plot.line`, `.plot.scatter`,
   faceting via `col=` / `row=` / `hue=`) over raw matplotlib.
 
-One standing exception: the `025`–`031` map notebooks save print-ready
+One standing exception: the `025`–`033` map notebooks save print-ready
 figures at a fixed 180 mm page width and 300 dpi, because those PNGs *are*
 the manuscript figures — see [docs/visualisations.md](docs/visualisations.md).
 

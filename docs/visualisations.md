@@ -1,6 +1,6 @@
 # Visualisations: per-plot rationale
 
-Why each notebook in `020`–`032` shows what it shows, and where
+Why each notebook in `020`–`033` shows what it shows, and where
 styling overrides earn their deviation from
 [../AGENTS.md](../AGENTS.md)'s plotting rules. AGENTS.md states the
 **rules** (no `cmap=`, no `figsize=`, no `color=` literals); this doc
@@ -25,6 +25,7 @@ listed here should be dropped.
 | 030 | Survival heatmaps | Per-run (regime + radius + member + season) | Per horizon (20/50/100 d): occupancy · survival-weighted; surviving fraction as a separate 1xN figure; drifting-fraction curve with interannual band |
 | 031 | Beaching sweep | Per-run (regime + radius + season) | Five statistics across members with interannual bars · where-stranded maps across members |
 | 032 | None — selects, numbers and downscales other notebooks' PNGs | Selection (primary + comparison regime) | One curated reading order over 025–031 |
+| 033 | Hex shoreline-type map + stranding-vs-substrate panels | Per-run (regime + radius + season + member pair) | Flat fraction per hex · coastline length per hex · stranded weight vs. flat fraction for the production and the substrate-inert member |
 
 ## Cross-cutting choices
 
@@ -96,7 +97,7 @@ where it covers; the coarse grid is blanked inside the fine bbox.
 Override: magenta at `linewidths=0.3` — anti-viridis, hairline so it does
 not read as a second coastline.
 
-**Print-ready figures (025–031).** Every saved figure is one full
+**Print-ready figures (025–031, 033).** Every saved figure is one full
 text-width (180 mm) figure at 300 dpi: `fig.set_size_inches(180/25.4, h)`
 + `savefig(dpi=300)` ⇒ 2125 px wide. Deliberate break from the AGENTS.md
 "no figsize/dpi" rule: these panels are the manuscript figures.
@@ -120,14 +121,14 @@ reason read on different axes:
   bar *under* the map at width 1.0. These grids are up to four columns
   wide, and a side colorbar plus its tick labels would take a quarter of
   the page width per column.
-- **027/029/030/031** — `ax.inset_axes([1.02, 0, 0.035, 1.0])`, a vertical
+- **027/029/030/031/033** — `ax.inset_axes([1.02, 0, 0.035, 1.0])`, a vertical
   bar *right* of the map at height 1.0. These rows are short and their
   extent is cropped to the Baltic proper (9–30.7 °E), so the maps are tall
   and narrow: a bar under the map would be far wider than the values need
   and would eat the row height the tall maps want.
 
 Facet grids split across figures past ~12 panels rather than shrinking the
-maps; 027/029/030/031 set `hex_seam_lw = 1.1 * 72 / FIGURE_DPI`, and 031's
+maps; 027/029/030/031/033 set `hex_seam_lw = 1.1 * 72 / FIGURE_DPI`, and 031's
 sweep panels put member tags on the y axis so the long tags read
 horizontally.
 
@@ -410,9 +411,95 @@ The narrative lines between the tables are computed from the tables
 themselves (seasonal spread in points, the member range, the regime
 distance ratio), never written as prose that assumes a result.
 
+## Notebook 033 — Shoreline type map (special case)
+
+The substrate axis of the beaching rate model, drawn once as a map and then
+tested against the stranding it drives. Reads the data twin's
+`shoreclass_bsh_coastline/bsh_coastline_k2_flatfraction.parquet` (65 876
+BSH-coastline sub-segment midpoints in EPSG:3035, one `flat_fraction` and one
+`seg_len_m` each), the 024a key, and the 024e beaching store — parquet only, no
+Dask.
+
+**Per hex: the `seg_len_m`-weighted mean flat fraction**, plus the total
+coastline length. The midpoints are reprojected 3035 → 4326 (the same `pyproj`
+transform 024d uses for the reverse direction) and labelled through the key's
+`HexProj`, so hex assignment is the one every `024x` stage uses. A sub-segment
+with no class attribution counts **0.5**, the convention 024d applies
+([beaching.md](beaching.md)); the length share that is unattributed is carried
+as its own column, annotated in the map title and printed. **A hex with no
+coastline at all gets no row** — it renders absent rather than as a mid-scale
+"mixed" value, which a fill would be indistinguishable from.
+
+Two members are reported, one relationship figure each, and every figure and
+printed block names which is which: the
+production `step_wc0p1_ts3_tcinf_tf1_tw0` (`trap_flat = 1`, `trap_wall = 0`, so
+the realised factor is `trap = ff/100` and **substrate drives the trapping
+term**) against `contrast_member = step_wc0p1_ts3_tcinf` (`trap_flat =
+trap_wall = 1`, **substrate inert**). Read together they separate "stranding is
+on flat coast because the model puts it there" from "stranding is on flat coast
+because that is where the drift goes" — the latter is the only thing the inert
+member can show.
+
+- **Flat fraction per hex** — the headline map, 029's hex registration and
+  Baltic extent verbatim. **One styling override: `cmap="coolwarm"` with a
+  fixed `Normalize(0, 1)`.** Justified because this is not a magnitude but a
+  bounded two-ended axis (0 = fully walled, 1 = fully flat) with a
+  *distinguished midpoint*: 0.5 is exactly what the pipeline assigns coastline
+  it has no class for. The default sequential map has no distinguished
+  midpoint, so "half flat" and "unattributed" would land in an arbitrary
+  mid-ramp colour and the two ends would not read as opposites. The norm is
+  pinned rather than auto-ranged so the white stays at 0.5 across runs.
+- **Coastline length per hex** — the denominator of the normalised stranded
+  weight, and the map that says how much of the flat-fraction map rests on a
+  sliver of coast. Default colormap, default linear norm.
+- **Stranded weight vs. shore type**, one figure per member, laid out as a
+  `subplot_mosaic` — two half-width panels over one full-width panel, because
+  the subbasin panel carries 17 long HELCOM names on its y axis and is
+  illegible at a third of the page (028's reasoning), while the other two read
+  fine at half width. Top left: the scatter of stranded weight per km of coast
+  against hex flat fraction with its Spearman ρ (log y; the per-km value is the
+  fair comparison, since a hex with 40 km of coast catches more than one with
+  4 km whatever it is made of, and the raw-weight ρ is printed beside it; the
+  count of zero-weight hexes that a log axis cannot show goes in the panel
+  title). Top right: the share of stranded weight and the share of coastline
+  length over flat-fraction bins, as grouped bars — **if stranding merely
+  followed the coastline's own composition the two series would coincide**, so
+  the gap between them is the whole answer. Bottom: the per-subbasin ρ, names
+  on the y axis (031's reasoning: long labels read horizontally off one shared
+  column).
+
+  The fit set is the coastal hexes holding at least `min_coast_len_m` (1 km)
+  of coastline whose coastline is at least `min_baltic_fraction` (half) inside
+  the Baltic. The length cut is because a length-weighted mean over a sliver of
+  coast is noise and its per-km weight divides by almost nothing. The Baltic
+  cut is the sentinel rule adapted: the key tiles the whole BSH domain, so
+  North Sea and Skagerrak coast the Baltic releases never reach would let "no
+  Fucus released within reach" masquerade as a substrate signal. It uses the
+  shoreline table's own `in_baltic` flag rather than the key's
+  `helcom_subbasin >= 0`, because the HELCOM polygons leave 859 genuine Baltic
+  coastal hexes unassigned — a coastal hex centred on land or inside an
+  archipelago falls outside every polygon — and dropping those would discard
+  about half the stranded weight. The per-subbasin panel can only show named
+  subbasins, so the share of fit-set weight it leaves out is printed alongside
+  the share the fit set itself drops. The maps are **not** cut: they show every
+  hex that carries coastline.
+
+The `shore_type` flat/wall split of stranded weight is printed, not plotted,
+per subbasin and pooled over the Swedish-coast subbasins
+(`swedish_subbasins_csv`: Western Gotland Basin, Eastern Gotland Basin,
+Northern Baltic Proper, Bothnian Sea). `shore_type` is a *threshold* on `ff`
+while the trap factor is *linear* in it, so under the production member
+wall-labelled sites still strand at `ff/100` of the flat rate and only `ff = 0`
+is fully non-trapping; under the contrast member the label moves no weight at
+all and the split is the coastline's own composition as the drift samples it.
+
+Export: `Exports/033/033_<regime>_<season>_<member>.geojson`, columns `hex_id,
+flat_fraction, coast_len_m, stranded_weight` plus the 024a hex geometry
+(EPSG:4326), matching the 025–029 export convention.
+
 ## Cross-references
 
-- [beaching.md](beaching.md) — 029/031's store, model, and limitations.
+- [beaching.md](beaching.md) — 029/031/033's store, model, and limitations.
 - [survival_occupancy.md](survival_occupancy.md) — 030's store and the
   survival-weighting behind it.
 - [seeding.md](seeding.md) — release-set semantics every viz reads.
