@@ -31,6 +31,10 @@ member="${2:-step_wc0p1_ts3_tcinf}"
 hex_radius="${3:-6000}"
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
 
+# logs/032 is this job's own --output dir; SLURM opens that file before the
+# script runs, so it must already exist (scripts/submit_downstream_chain.sh
+# pre-creates it). Repeat it here so a direct `sbatch` on a fresh output_root
+# fails only once, not silently with exit 53 and no log.
 mkdir -p "${output_root}/logs/032" notebooks_executed/Visualisations/
 
 # Blacklisted nodes (see scripts/node-blacklist.txt), for the provenance line.

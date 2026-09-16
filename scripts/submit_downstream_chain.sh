@@ -82,8 +82,10 @@ headline_job=${HEADLINE_JOB:-scripts/headline_report_job.sh}
 consumers_job=scripts/025-031_ConsumersAll_job.sh
 
 logroot=${output_root}/logs
+# SLURM opens a job's --output before the job runs, so a stage whose #SBATCH
+# directive names a log dir cannot create it itself: pre-create every one here.
 mkdir -p "${logroot}/aggregates" "${logroot}/024d" "${logroot}/024efg" \
-         "${logroot}/025-031" "${logroot}/headline" "${logroot}/chain"
+         "${logroot}/025-031" "${logroot}/032" "${logroot}/chain"
 chainlog=${logroot}/chain/chain_$(date +%Y%m%dT%H%M%S).log
 exec > >(tee -a "${chainlog}") 2>&1
 
@@ -239,10 +241,12 @@ graph+="D|${d_id}|${d_how}|025-031 consumers, ${nunits} units, ${ntasks} tasks|a
 # exists under this name; until then the chain simply has no stage E and says
 # so, rather than queueing a job that cannot run.
 if [ -f "${headline_job}" ]; then
+    # No --output override: the stage's own #SBATCH directive names its log
+    # dir, as every other stage's does, and two names for one stage's logs is
+    # how a failed job ends up with no log at all.
     read -r e_id e_how <<< "$(robust_sbatch ${exclude:+--exclude="${exclude}"} \
             --job-name="${tag}-headline" \
             --dependency=afterok:"${d_id}" --kill-on-invalid-dep=yes \
-            --output="${logroot}/headline/%x_%j.out" \
             "${headline_job}")"
     graph+="E|${e_id}|${e_how}|headline (${headline_job})|afterok:${d_id}"$'\n'
 else
