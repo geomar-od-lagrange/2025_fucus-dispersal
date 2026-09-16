@@ -77,7 +77,7 @@ repo_root=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
 hex_radius=${HEX_RADIUS:-6000}
 # The rate-model member the study reports (plans/analysis_wrapup.md §0); the
 # other members only appear in the 031 sweep.
-production_member=${PRODUCTION_MEMBER:-step_wc0p1_ts3_tcinf}
+production_member=${PRODUCTION_MEMBER:-step_wc0p1_ts3_tcinf_tf1_tw0}
 stages=${STAGES:-025 026 026a 026b 027 028 029 030 031}
 regimes=${REGIMES:-surface_stokes bottom}
 seasons=${SEASONS:-ALL DJF MAM JJA SON}

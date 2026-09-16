@@ -65,7 +65,7 @@ hex_radius = 6000
 regimes_csv = "surface_stokes,bottom"
 # The production rate-model member: tables A, C and the beaching/survival
 # figures report this one, table B sweeps every member on disk.
-member = "step_wc0p1_ts3_tcinf"
+member = "step_wc0p1_ts3_tcinf_tf1_tw0"
 # Release seasons, in reading order. Contract in docs/visualisations.md.
 seasons_csv = "DJF,MAM,JJA,SON,ALL"
 # Elapsed-time horizon (d) for the concentration table E.

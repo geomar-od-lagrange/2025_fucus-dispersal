@@ -76,8 +76,9 @@ age_bin_days = 10
 season = "ALL"
 
 # Rate-model member: the opaque tag the reducer put in the store filename
-# (e.g. "step_wc0p1_ts3_tcinf"). Selects the partitions and tags the figures.
-member = "step_wc0p1_ts3_tcinf"
+# (e.g. "step_wc0p1_ts3_tcinf_tf1_tw0"). Selects the partitions and tags
+# the figures.
+member = "step_wc0p1_ts3_tcinf_tf1_tw0"
 # Travel-distance bin width (km) of the store's `disp_bin` axis (must match
 # the reducer).
 disp_bin_km = 10.0
@@ -287,9 +288,11 @@ beached = beaching[beaching["beach_hex"] >= 0]
 # the store's remaining axes (`disp_bin`, and `shore_type` where the reducer
 # emits it). Neither is shown on the maps: `shore_type` is a threshold label
 # on the HELCOM BRISK + CLMS flat fraction `ff` at the stranding hour (`flat`
-# if `ff >= 50%` else `wall`), while `trap_flat`/`trap_wall` are reducer
-# parameters that only surface in the member tag when they differ from 1;
-# travel distance gets its own figure below.
+# if `ff >= 50%` else `wall`), a coarser cut than the rate itself, which
+# scales continuously with `ff` through `trap_wall + (trap_flat -
+# trap_wall)*ff/100` (production: `trap_flat = 1`, `trap_wall = 0`, so the
+# substrate signal is already inside the plotted weight); travel distance
+# gets its own figure below.
 
 # %%
 gdf_stranded = hex_gdf(beached, "beach_hex")

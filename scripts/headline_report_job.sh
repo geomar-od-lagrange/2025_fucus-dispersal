@@ -18,7 +18,7 @@ set -euo pipefail
 # discovered at run time, so this takes no year and no member list:
 #
 #   sbatch scripts/headline_report_job.sh
-#   sbatch scripts/headline_report_job.sh surface_stokes,bottom step_wc0p1_ts3_tcinf
+#   sbatch scripts/headline_report_job.sh surface_stokes,bottom step_wc0p1_ts3_tcinf_tf1_tw0
 #
 # Last stage of scripts/submit_downstream_chain.sh, which submits it
 # afterok on the 025-031 consumer job -- every Exports/ product the tables and
@@ -27,7 +27,7 @@ set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 
 regimes_csv="${1:-surface_stokes,bottom}"
-member="${2:-step_wc0p1_ts3_tcinf}"
+member="${2:-step_wc0p1_ts3_tcinf_tf1_tw0}"
 hex_radius="${3:-6000}"
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
 

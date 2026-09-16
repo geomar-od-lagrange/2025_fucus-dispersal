@@ -18,11 +18,11 @@ set -euo pipefail
 #            [regime] [hex_radius] [season] [member]
 #   season: DJF | MAM | JJA | SON | ALL   (default ALL)
 #   member: "" -> unweighted 024c store (default); a 024g rate-model tag such
-#           as step_wc0p1_ts3_tcinf -> survival-weighted w_obs. Only
+#           as step_wc0p1_ts3_tcinf_tf1_tw0 -> survival-weighted w_obs. Only
 #           surface_stokes has 024d sidecars, hence 024g members.
 # e.g.:
 #   sbatch scripts/028_SubbasinConnectivityMatrix_job.sh surface_stokes 6000 SON ""
-#   sbatch scripts/028_SubbasinConnectivityMatrix_job.sh surface_stokes 6000 ALL step_wc0p1_ts3_tcinf
+#   sbatch scripts/028_SubbasinConnectivityMatrix_job.sh surface_stokes 6000 ALL step_wc0p1_ts3_tcinf_tf1_tw0
 #   sbatch scripts/028_SubbasinConnectivityMatrix_job.sh bottom 6000 JJA ""
 # age_bin_days and time_horizons_days_csv fall back to the notebook defaults;
 # age_bin_days must match the value 024c/024g built the store with.

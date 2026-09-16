@@ -231,8 +231,8 @@ pixi run papermill notebooks/027_HexDistanceQuantiles.ipynb \
 #     (beach_age_bin < h // age_bin_days) and so must be >= 1 d, while 030's
 #     are snapshots (age_bin == h // age_bin_days) and 0 d is the only bin a
 #     1 d window populates.
-# Rate-model member: the notebook defaults, whose tag is step_wc0p1_ts3_tcinf.
-SMOKE_MEMBER="step_wc0p1_ts3_tcinf"
+# Rate-model member: the notebook defaults, whose tag is step_wc0p1_ts3_tcinf_tf1_tw0.
+SMOKE_MEMBER="step_wc0p1_ts3_tcinf_tf1_tw0"
 
 echo
 echo "==== 024d BuildBeachingForcing (surface_stokes, 1 zarr, 1 d window) ===="

@@ -74,8 +74,9 @@ age_bin_days = 10
 season = "ALL"
 
 # Rate-model member: the opaque tag the reducer put in the store filename
-# (e.g. "step_wc0p1_ts3_tcinf"). Selects the partitions and tags the figures.
-member = "step_wc0p1_ts3_tcinf"
+# (e.g. "step_wc0p1_ts3_tcinf_tf1_tw0"). Selects the partitions and tags
+# the figures.
+member = "step_wc0p1_ts3_tcinf_tf1_tw0"
 
 # Elapsed-time horizons to map (days); each a multiple of age_bin_days and
 # within the store's occupancy_max_days.
