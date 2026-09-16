@@ -33,6 +33,9 @@ set -euo pipefail
 #   TAU_STRONG_HOURS  e-folding time above W_C
 #   TAU_CALM_DAYS    background in-band timescale, d; 0 = off
 #   DELTA       linear edge width around W_C, m/s; 0 = hard step
+#   TRAP_FLAT, TRAP_WALL  strong-wave rate factor on fully flat /
+#               fully walled shore; the realised factor is
+#               TRAP_WALL + (TRAP_FLAT - TRAP_WALL)*ff/100
 #   BAND_M, CONNECTIVITY_MAX_DAYS  the connectivity horizon must cover the
 #                                  largest matrix horizon 028 asks for
 #
@@ -77,6 +80,8 @@ TAU_STRONG_HOURS="${TAU_STRONG_HOURS:-3.0}"
 TAU_CALM_DAYS="${TAU_CALM_DAYS:-0.0}"
 DELTA="${DELTA:-0.0}"
 BAND_M="${BAND_M:-2000.0}"
+TRAP_FLAT="${TRAP_FLAT:-1.0}"
+TRAP_WALL="${TRAP_WALL:-0.0}"
 CONNECTIVITY_MAX_DAYS="${CONNECTIVITY_MAX_DAYS:-120}"
 
 # Executed-notebook names carry the same member tag the notebook builds for the
@@ -88,6 +93,9 @@ member="step_wc$(fmt_g "${W_C}")_ts$(fmt_g "${TAU_STRONG_HOURS}")_tc${tc}"
 if awk -v x="${DELTA}" 'BEGIN { exit !(x > 0) }'; then
     member="${member}_d$(fmt_g "${DELTA}")"
 fi
+if awk -v a="${TRAP_FLAT}" -v b="${TRAP_WALL}" 'BEGIN { exit !(a != 1 || b != 1) }'; then
+    member="${member}_tf$(fmt_g "${TRAP_FLAT}")_tw$(fmt_g "${TRAP_WALL}")"
+fi
 member="${member//./p}"
 echo "member: ${member}"
 
@@ -97,6 +105,7 @@ stagger_max_s="${3:-15}"
 
 export output_root regime hex_radius stagger_max_s member
 export W_C TAU_STRONG_HOURS TAU_CALM_DAYS DELTA
+export TRAP_FLAT TRAP_WALL
 export BAND_M CONNECTIVITY_MAX_DAYS
 
 mkdir -p notebooks_executed/Visualisations/
@@ -134,6 +143,8 @@ list_cells | tr '\n' '\0' | xargs -0 -P "${SLURM_NTASKS}" -n 1 bash -c '
             -p tau_calm_days ${TAU_CALM_DAYS} \
             -p delta ${DELTA} \
             -p band_m ${BAND_M} \
+            -p trap_flat ${TRAP_FLAT} \
+            -p trap_wall ${TRAP_WALL} \
             -p connectivity_max_days ${CONNECTIVITY_MAX_DAYS} \
             -k python
         rc=$?

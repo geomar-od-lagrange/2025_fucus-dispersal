@@ -126,9 +126,11 @@ band_m = 2000.0
 # Shore-type retention weights: the strong-wave rate is scaled by
 # `trap = trap_wall + (trap_flat - trap_wall) * ff/100`, interpolating between
 # a fully hard-walled and a fully flat cell along the sidecar's flat fraction
-# `ff`. Equal values (the default 1.0/1.0) make the shore type inert.
+# `ff`. The production point is 1.0/0.0 — retention proportional to the flat
+# fraction, nothing retained on pure-wall shore. Equal values make the shore
+# type inert.
 trap_flat = 1.0
-trap_wall = 1.0
+trap_wall = 0.0
 ```
 
 # Derived layout / key + member tag
