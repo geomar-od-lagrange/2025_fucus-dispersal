@@ -11,6 +11,14 @@ compute node via `pixi run`.
 
 ## Status and sequencing
 
+- **Blocking everything keyed on subbasin:** `024a`'s subbasin assignment
+  changed from centroid-within to largest-overlap + shoreward snap, which
+  moves ~49 % of the stranded weight out of the `-1` sentinel and into
+  named basins. The key, the 024c/024g stores and the 026a/026b/028/029/033
+  figures on NESH are all stale until the rebuild in
+  [subbasin_rebuild.md](subbasin_rebuild.md) runs, and §3's connectivity
+  conclusions must be re-read afterwards rather than assumed to hold.
+
 - **Implemented:** beaching (§5), the relative-density rescaling and 3 m
   isobath overlay (§1), the per-origin-subbasin split (§2), connectivity
   including survival-weighted `024g` (§3), the `season` roll-out across
