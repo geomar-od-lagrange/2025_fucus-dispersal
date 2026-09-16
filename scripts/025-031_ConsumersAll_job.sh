@@ -56,6 +56,13 @@
 #   LIST_ONLY=1 bash scripts/025-031_ConsumersAll_job.sh    # print the units
 #   STAGES="028 031" sbatch scripts/025-031_ConsumersAll_job.sh  # subset
 #   SEASONS="ALL SON" sbatch scripts/025-031_ConsumersAll_job.sh
+#   WORK_LIST=units.txt sbatch scripts/025-031_ConsumersAll_job.sh
+#
+# $STAGES/$REGIMES/$SEASONS restrict the matrix to a rectangle of it. $WORK_LIST
+# names a file of work-list lines instead, for the arbitrary subset a rerun
+# needs -- the FAIL lines of a previous run's .tally are that subset:
+#
+#   grep "^FAIL " <tally> | sed "s/^FAIL //; s/ unweighted$/ -/" > units.txt
 #
 # The 024/024b/024c stores, the 024a key and (for 029/030/031 and the weighted
 # 028) the 024e/024f/024g stores must exist for the matching hex_radius --
@@ -156,7 +163,12 @@ run_one() {
             bash "${job}" "${args[@]}" && { rc=0; break; }
         rc=$?
         echo "attempt ${attempt} failed (rc=${rc}) ${unit}" >&2
-        sleep $(( RANDOM % 10 + 1 ))
+        # Minutes, not seconds: the two failure modes the retry covers have
+        # very different timescales. A stolen ZMQ port is gone the instant the
+        # kernel dies, but a SLURM controller blip ("Unable to confirm
+        # allocation") lasts minutes, and a 1-10 s backoff burns all three
+        # attempts inside one outage.
+        sleep $(( attempt * 60 + RANDOM % 30 ))
     done
     if [ ${rc} -eq 0 ]; then
         echo "OK ${stage} ${regime} ${season} ${member:-unweighted} $(( SECONDS - t0 ))"
@@ -168,9 +180,14 @@ run_one() {
 export -f run_one
 
 # "<stage> <regime> <season> <member>" per line, "-" where a stage takes no
-# member. $STAGES / $REGIMES / $SEASONS restrict the matrix.
+# member. $STAGES / $REGIMES / $SEASONS restrict the matrix; $WORK_LIST
+# replaces it wholesale.
 list_work() {
     local stage regime season
+    if [ -n "${WORK_LIST:-}" ]; then
+        grep -v "^[[:blank:]]*\(#\|$\)" "${WORK_LIST}"
+        return
+    fi
     for stage in ${stages}; do
         case "${stage}" in
             025|026|026a|026b|027)

@@ -190,20 +190,24 @@ conn = pd.concat(parts, ignore_index=True)
 print(f"read {len(files)} partition(s), years {sorted(set(partition_years))}; "
       f"{len(conn):,} rows")
 
+# Release-doy coverage per year, taken before the season filter: it is what
+# tells a partial release year from a hole in the build.
+doy_span = conn.groupby("release_year")["release_doy"].agg(["min", "max"])
+
 conn = conn[conn["release_month"].isin(season_months)]
 if conn.empty:
     raise ValueError(f"no rows left after the {season} season filter")
 # Years are taken after the season filter — a year whose partitions hold no
-# release in this season must not appear on the interannual axis. Every year
-# on disk is expected to contribute, though: a gap means an incomplete build,
-# not a seasonal absence (the same check 026b prints for its year filter).
+# release in this season must not appear on the interannual axis. A year can
+# legitimately miss a season: the last release year is partial (releases stop
+# in May, so it has no JJA and no SON). Report every absent year with the
+# release-doy range its partitions do hold, so an unexpected gap is visible in
+# the log rather than silent, and 032 reads the same coverage off the stores.
 years = sorted(int(y) for y in conn["release_year"].unique())
-missing_years = sorted(set(partition_years) - set(years))
-assert not missing_years, (
-    f"{len(years)} year(s) with {season} releases but "
-    f"{len(set(partition_years))} year partition(s) on disk for regime "
-    f"{regime!r}; no {season} rows from {missing_years}"
-)
+for y in sorted(set(partition_years) - set(years)):
+    print(f"no {season} releases in {y} (partitions cover release_doy "
+          f"{doy_span.loc[y, 'min']}–{doy_span.loc[y, 'max']}); dropped from "
+          f"the interannual axis")
 print(f"season {season}: {len(conn):,} rows, years {years}, "
       f"months {sorted(conn['release_month'].unique())}")
 ```
