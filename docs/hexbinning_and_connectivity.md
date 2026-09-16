@@ -87,15 +87,15 @@ output_root/HexAggregates/
 
 | column            | meaning                                                 |
 |-------------------|----------------------------------------------------------|
-| `origin_subbasin` | HELCOM subbasin id of `release_hex`'s centroid; `-1` = unnamed |
-| `target_subbasin` | HELCOM subbasin id of `target_hex`'s centroid; `-1` = unnamed |
+| `origin_subbasin` | HELCOM subbasin id of `release_hex`; `-1` = unnamed |
+| `target_subbasin` | HELCOM subbasin id of `target_hex`; `-1` = unnamed |
 | `release_doy`     | release day-of-year of the originating zarr (kept axis)   |
 | `age_bin`         | `age_bin` carried over unchanged from counts (kept axis)  |
 | `n_obs`           | summed `(trajectory, obs)` particle-timesteps             |
 
 `origin_subbasin`/`target_subbasin` come from the key's `helcom_subbasin`
 column via `release_hex`/`target_hex` — each hex maps to exactly **one**
-centroid subbasin, so the `groupby` is a pure re-partition of `n_obs`, not a
+subbasin, so the `groupby` is a pure re-partition of `n_obs`, not a
 re-aggregation: no counts row is dropped or duplicated, so the sum is
 conserved and checked as the build's validation gate
 (`conn["n_obs"].sum() == counts["n_obs"].sum()`). Two distinct unnamed
@@ -180,10 +180,42 @@ Exports land under `output_root/Exports/028/` as long-form CSV,
 | `mean_depth_m`    | float32          | mean over `H0 > 0` cells inside the hex        |
 | `dist_to_coast_m` | float32          | centroid → always-wet coast (m, EPSG:3035)    |
 | `fucus_area_m2`   | float32          | intersection with REDLIST `F_vesiculo != 0`    |
-| `helcom_subbasin` | int8 (nullable)  | HELCOM level-2 ID by centroid; -1 = outside    |
+| `helcom_subbasin` | int8 (nullable)  | HELCOM level-2 ID, largest overlap + shoreward snap; -1 = outside |
 
 Schema is additive — new attributes mean rebuilding the key with a
 bumped version field; counts files don't move.
+
+### Subbasin assignment: largest overlap, extended shoreward
+
+The HELCOM level-2 polygons are a **marine** delineation, digitised
+against the coastline, so they stop short of the shore and do not tile
+the land. A `centroid within polygon` test therefore fails for exactly
+the hexes the study is about: a hex that fronts a basin has its water in
+that basin but its centroid on land or in an archipelago gap. The rule
+`024a` applies instead, in EPSG:3035 so the areas and the cap are metric:
+
+1. **Largest overlap** — the basin holding the most of the hex polygon.
+2. **Shoreward snap** — a hex overlapping no basin takes the nearest
+   basin within `subbasin_snap_m` (`subbasin_snap_hex_radii × hex_radius`,
+   default one radius), **only if it carries land**
+   (`water_area_m2 < area_m2`).
+
+The land test is how the extension is kept landward-only. The HELCOM
+outer boundary — Kattegat → Skagerrak, and the whole North Sea side of
+the BSH domain — runs through open water, so a hex seaward of it is all
+water, fails the test and stays `-1`; a shoreward hex the polygons missed
+always holds some of the coast that stopped them. A correct result still
+has an `_outside` class: the North Sea and Skagerrak, plus inland hexes.
+Considered a plain nearest-polygon snap with no land test; rejected
+because it absorbs Skagerrak water that is legitimately not Baltic.
+
+Centroid-within left 39,145 of 43,601 hexes at `-1`, including 1,855 of
+the 2,604 hexes that carry BSH coastline (71 % of the domain's coast
+length) and 614 of the 1,207 hexes that ever receive stranded weight —
+49.2 % of the stranded weight of `step_wc0p1_ts3_tcinf_tf1_tw0` and
+52.0 % of the inert `step_wc0p1_ts3_tcinf`. That is not an outside class,
+it is a processing error, and it made every subbasin-level product a
+subset of its own population.
 
 ## Sidecar metadata
 
@@ -195,6 +227,8 @@ bumped version field; counts files don't move.
 - `area_crs` — `"EPSG:3035"`, the projection used for all area columns.
 - `subbasin_id_to_name` — int → name lookup for the `helcom_subbasin`
   column. Keys are JSON strings (cast to int on load).
+- `subbasin_rule` — `"largest_overlap+shoreward_snap"`, and
+  `subbasin_snap_m`, the realised snap cap in metres.
 
 Sidecar instead of parquet schema metadata so the layer that writes
 the parquet (`GeoDataFrame.to_parquet`, `dask.dataframe.to_parquet`)

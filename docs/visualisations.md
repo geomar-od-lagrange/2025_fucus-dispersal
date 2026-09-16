@@ -238,7 +238,12 @@ A connectivity-store consumer reading **either** store, selected by the
 plots `n_obs`; a rate-model tag reads the 024g survconn partitions and
 plots the survival-weighted `w_obs`. It pools the release years, restricts
 to one release `season`, drops `-1` (unnamed/outside) rows and reports the
-dropped fraction. No hex geometry, no cartopy — every panel is `imshow` on
+dropped fraction. With the shoreward subbasin rule
+([hexbinning_and_connectivity.md](hexbinning_and_connectivity.md)) that
+fraction is the genuinely un-Baltic part of the domain plus, for the
+unweighted store only, the land-seeded particles counts keeps as
+`release_hex == -1`; 024g's population excludes those by construction, so
+the weighted matrix drops less than the unweighted one. No hex geometry, no cartopy — every panel is `imshow` on
 a plain subbasin × subbasin grid with names as tick labels set at plot
 time.
 
