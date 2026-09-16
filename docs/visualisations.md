@@ -419,9 +419,23 @@ distance ratio), never written as prose that assumes a result.
 The substrate axis of the beaching rate model, drawn once as a map and then
 tested against the stranding it drives. Reads the data twin's
 `shoreclass_bsh_coastline/bsh_coastline_k2_flatfraction.parquet` (65 876
-BSH-coastline sub-segment midpoints in EPSG:3035, one `flat_fraction` and one
-`seg_len_m` each), the 024a key, and the 024e beaching store — parquet only, no
-Dask.
+BSH-coastline sub-segment midpoints in EPSG:3035, each with a `flat_fraction`,
+a `seg_len_m` and an `on_seam` flag), the 024a key, and the 024e beaching
+store — parquet only, no Dask.
+
+**The nest seam is dropped first.** That table traces the outline of the BSH
+model's wet cells, and the outline closes along the edge of the fine nest as
+well as along real land: the model's water simply stops there. `on_seam` marks
+those sub-segments — 1 100 of them, 472 km, 1.6 % of the modelled coastline,
+all but 9 km being the nest's northern edge at 56.4500 N in two dead-straight
+open-water runs (North Sea 6.2–8.2 E, Kattegat 10.9–12.7 E south of Anholt).
+Left in, they drew a row of `flat_fraction = 0.5` hexes across open water on
+both maps, inflated the coastline-length map, and put 11 phantom hexes in the
+fit set. 024d keeps the same rows and should: a particle reaching the nest edge
+does meet a wall of land-flagged cells there. The beaching products are
+unaffected either way — the hexes that hold seam coastline and nothing else
+carry exactly 0 stranded weight under the production member and 0.0003 % of it
+under the substrate-inert contrast.
 
 **Per hex: the `seg_len_m`-weighted mean flat fraction**, plus the total
 coastline length. The midpoints are reprojected 3035 → 4326 (the same `pyproj`

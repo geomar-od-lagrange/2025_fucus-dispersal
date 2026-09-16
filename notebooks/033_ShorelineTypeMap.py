@@ -31,7 +31,8 @@
 #
 # 1. **Dominant shoreline type per hex** — the `seg_len_m`-weighted mean flat
 #    fraction of the coastline sub-segments falling in the hex, plus the total
-#    coastline length. A sub-segment with **no class attribution counts 0.5**,
+#    coastline length. Sub-segments **on the nest seam are dropped first**
+#    (below). A sub-segment with **no class attribution counts 0.5**,
 #    the same convention `024d` applies (halfway between the two trap weights,
 #    so unattributed coast is pushed neither towards trapping nor away from
 #    it); the share of coastline that is unattributed is annotated on the map
@@ -226,12 +227,33 @@ if missing:
 # labelled. Per hex: the `seg_len_m`-weighted mean flat fraction, the total
 # coastline length, and the length share that carried no class attribution.
 #
+# **The nest seam is dropped before any of that.** The table traces the outline
+# of the BSH model's wet cells, and that outline closes along the edge of the
+# fine nest as well as along real land — the model's water simply stops there.
+# The table's own `on_seam` flag marks it, 1.6 % of the modelled coastline by
+# length, and all but 9 km of that is the nest's northern edge at 56.4500 N:
+# two dead-straight east–west runs across open water, through the North Sea at
+# 6.2–8.2 E and the Kattegat at 10.9–12.7 E. This notebook removes them,
+# because a line of hexes reporting a shore type in open water is a map
+# artefact, not a shore. `024d` keeps them, and rightly: a particle reaching
+# the nest edge does meet a wall of land-flagged cells there — and the seam
+# carries essentially none of the stranded weight anyway, so the beaching
+# products do not change ([docs/visualisations.md](../docs/visualisations.md)).
+#
 # `NaN` flat fraction counts as 0.5, as everywhere else in the pipeline
 # (docs/beaching.md). The unattributed share is kept as its own column so the
-# map can say how much of what it shows is that convention rather than data.
+# map can say how much of what it shows is that convention rather than data,
+# and it is quoted for the coastline that survives the seam cut.
 
 # %%
 sc = pd.read_parquet(shoreclass_path)
+seam = sc["on_seam"]
+print(f"nest seam dropped: {int(seam.sum()):,} sub-segments, "
+      f"{sc.loc[seam, 'seg_len_m'].sum() / 1e3:,.0f} km "
+      f"({100 * sc.loc[seam, 'seg_len_m'].sum() / sc['seg_len_m'].sum():.2f} % "
+      f"of the table's length)")
+sc = sc[~seam]
+
 lon_sc, lat_sc = Transformer.from_crs(3035, 4326, always_xy=True).transform(
     sc["x_3035"].to_numpy("float64"), sc["y_3035"].to_numpy("float64")
 )
@@ -402,7 +424,9 @@ fig.set_size_inches(
 hex_map(
     gdf_shore, ax, norm=Normalize(vmin=0.0, vmax=1.0), cmap="coolwarm",
     title=(
-        f"shoreline type per hex "
+        # Two lines: at 180 mm the default title font cannot shrink, and the
+        # one-line form overran the figure on both sides.
+        "shoreline type per hex, nest seam excluded\n"
         f"({100 * unattributed_share:.0f}% of coastline unattributed, counted as 0.5)"
     ),
     label="flat fraction (0 = wall, 1 = flat)",
@@ -641,7 +665,7 @@ print(f"wrote {export_path} ({len(export):,} hexes)")
 print(f"regime={regime}, hex_radius={hex_radius} m, season={season} "
       f"(months {season_months})")
 print(f"  coastline sub-segments: {len(sc):,}, "
-      f"{sc['seg_len_m'].sum() / 1e3:,.0f} km total")
+      f"{sc['seg_len_m'].sum() / 1e3:,.0f} km total (nest seam already dropped)")
 print(f"  unattributed by length: {100 * unattributed_share:.1f}% "
       f"(counted as flat_fraction = 0.5, as 024d)")
 print(f"  hexes with coastline:   {len(shore):,} "

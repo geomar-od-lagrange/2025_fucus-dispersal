@@ -14,7 +14,7 @@
 #
 # The full table is 6.8 MB and carries 23 columns, most of them the per-source
 # evidence the sidecar needs to revisit its own precedence rule.  This study
-# reads five, so the blob committed to the data twin is slimmed — the same
+# reads eight, so the blob committed to the data twin is slimmed — the same
 # treatment as the derived release-points geojson baked by 000.
 #
 # Usage:
@@ -69,9 +69,22 @@ src, dst = sys.argv[1], sys.argv[2]
 # length weight, and the provenance/domain flags kept for diagnostics.  The
 # geometry column is dropped: it duplicates x_3035/y_3035 as a POINT, and 024d
 # snaps coordinates to a raster rather than doing geometry work.
-keep = ["x_3035", "y_3035", "flat_fraction", "seg_len_m", "source", "in_baltic"]
+#
+# `on_seam` marks the sub-segments that trace the fine nest's own boundary
+# rather than a shore: the model's water simply stops there, so they are not
+# coast at all.  033 drops them; 024d keeps them, because a particle that
+# reaches the nest edge does meet a wall of land-flagged cells there.
+keep = [
+    "x_3035", "y_3035", "flat_fraction", "seg_len_m",
+    "source", "grid", "on_seam", "in_baltic",
+]
 df = pd.read_parquet(src, columns=keep)
 df.to_parquet(dst, index=False)
+
+seam = df[df["on_seam"]]
+print(f"on the nest seam: {len(seam):,} sub-segments, "
+      f"{seam['seg_len_m'].sum() / 1e3:,.0f} km "
+      f"({100 * seam['seg_len_m'].sum() / df['seg_len_m'].sum():.2f}% of the total)")
 
 baltic = df[df["in_baltic"]]
 attributed = baltic["flat_fraction"].notna()
