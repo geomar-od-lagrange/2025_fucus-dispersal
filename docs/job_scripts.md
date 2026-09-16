@@ -242,8 +242,17 @@ local worker set, task 1 papermill (connecting via `$SCHEDULER_FILE`), tasks
 Bootstrap is one file. Task 0 writes `$SCHEDULER_FILE`; the papermill task and
 any extra workers poll for it (`Client(scheduler_file=os.environ["SCHEDULER_FILE"])`
 in the notebook, `dask worker --scheduler-file ...` in workers). A `trap cleanup
-EXIT` removes it on exit, and the hard-coded `sleep 30` after task 0 launches
-lets the scheduler come up before papermill starts.
+EXIT` removes it on exit, and the batch step polls for the file for up to 300 s
+before launching papermill, failing the job if it never appears — the notebook's
+`Client(scheduler_file=...)` waits forever otherwise, so a scheduler that dies
+at start-up would burn the whole walltime instead of the first minute.
+
+No `--interface` is passed to scheduler or workers: only the srp nodes carry
+`ib0`, so pinning it kills the scheduler outright on a clk allocation (`'ib0'
+is not a valid network interface`) or, on a mixed one, publishes an address the
+papermill task cannot reach (`OSError: [Errno 101] Network is unreachable`).
+Dask binds each node's default address instead; these jobs are GPFS-bound and
+minutes long, so IB bandwidth never set their wall time.
 
 ## Per-job constants
 
