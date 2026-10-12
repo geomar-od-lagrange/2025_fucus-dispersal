@@ -8,9 +8,11 @@ hex-aggregated dispersal store for source↔sink queries.
 
 `./data/` is a git submodule pointing at the **data twin** repo at
 <https://git.geomar.de/od-lagrange/2025_fucus_dispersal_data>; "twin"
-throughout the codebase means this submodule. Agent and contributor
-conventions live in `AGENTS.md`; methodology in `docs/`; open work in
-`plans/`.
+throughout the codebase means this submodule. `./paper/` is a second
+submodule holding the manuscript, backed by Overleaf and readable only
+to its authors — it is marked `update = none`, so ordinary clones skip
+it. Agent and contributor conventions live in `AGENTS.md`; methodology
+in `docs/`; open work in `plans/`.
 
 ## Setup
 
@@ -33,6 +35,14 @@ git -C data lfs pull
 git-lfs`), then `git lfs install` once per user. If the twin is
 unreachable or you want to rebuild its blobs from upstream sources, run
 `scripts/fetch_data.sh`.
+
+Manuscript authors additionally check out `paper/`, which needs
+Overleaf credentials — `--checkout` overrides the `update = none` that
+makes every other clone skip it:
+
+```sh
+git submodule update --init --checkout paper
+```
 
 Environment management uses **pixi**:
 
