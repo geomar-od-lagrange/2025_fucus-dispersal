@@ -14,12 +14,12 @@ The Baltic high-resolution hindcast covers most of the BSH domain at
 2 km / hourly; the global WAVERYS hindcast fills the German Bight
 strip (BSH water west of ~9 °E) at coarser resolution.
 
-| Property       | Baltic high-res                              | WAVERYS global                          |
+| Property       | Baltic high-res (`baltic_highres`)           | WAVERYS global (`waverys`)              |
 |----------------|----------------------------------------------|-----------------------------------------|
-| Dataset ID     | `cmems_mod_bal_wav_my_PT1H-i`                | `cmems_mod_glo_wav_my_0.2deg_PT3H-i`    |
+| Dataset ID     | `cmems_mod_bal_wav_my_PT1H-i`, then `cmems_mod_bal_wav_anfc_PT1H-i` | `cmems_mod_glo_wav_my_0.2deg_PT3H-i` |
 | Resolution     | 2 km, hourly                                 | 0.2°, 3-hourly                          |
 | Coverage       | 9–30 °E, 53–66 °N (Baltic + Danish Straits + Kattegat) | global                       |
-| Period         | 1980 onwards                                 | 1980 onwards                            |
+| Period         | 1980 onwards, running (see below)            | 1980 onwards, hindcast only             |
 | Variables used | `VSDX`, `VSDY` (surface Stokes drift, m/s)   | same                                    |
 
 `interpolate_stokes` interpolates both onto BSH U/V faces, then layers
@@ -30,15 +30,58 @@ between ~6.2 and 9 °E (German Bight, SH North Sea coast, Heligoland
 Bight) would silently fall back to BSH-only physics under the
 `surface_stokes` regime.
 
+## Hindcast and near-real-time
+
+The Baltic high-res hindcast is reprocessed in batches and ends months
+behind today; the analysis/forecast product of the same model
+(`cmems_mod_bal_wav_anfc_PT1H-i`, BALTICSEA_ANALYSISFORECAST_WAV_003_010)
+carries on from there. The two are interchangeable per day for everything
+downstream — identical grid (775 × 764, 53.008–65.908 °N,
+9.014–30.208 °E), identical `VSDX`/`VSDY` in m s⁻¹, identical hourly
+step, same 25-step day file. Only the land/ice NaN mask moves, and it
+moves within the hindcast too. `002` therefore picks the dataset per day
+rather than per run: hindcast where the hindcast reaches, NRT beyond.
+
+Coverage as read off the catalogue on 2026-09-15 — the split moves with
+every hindcast release, so `002` resolves it from the catalogue at run
+time instead of hard-coding a date:
+
+| product | dataset | covers | on disk |
+|---|---|---|---|
+| `baltic_highres` | `cmems_mod_bal_wav_my_PT1H-i` | 1980-01-01 … 2026-06-30 | 2016-01-01 … 2026-06-30 |
+| `baltic_highres` | `cmems_mod_bal_wav_anfc_PT1H-i` | 2021-10-01 … 2026-09-23 (forecast tail) | 2026-07-01 … 2026-09-14 |
+| `waverys` | `cmems_mod_glo_wav_my_0.2deg_PT3H-i` | 1980-01-01 … 2026-05-30 | 2016-01-01 … 2026-05-30 |
+
+WAVERYS gets no NRT continuation. The global analysis/forecast wave
+product (`cmems_mod_glo_wav_anfc_0.083deg_PT3H-i`) is on a 0.083° grid,
+so splicing it in would change the source resolution of the German Bight
+leg mid-record — and `SPREAD_N_ITER` below is calibrated against 0.2°.
+`waverys` therefore stops at the hindcast's end, and a `surface_stokes`
+2D field can only be built for a day both legs cover.
+
 ## Download
 
 `notebooks/002_download_stokes.py` pulls each product day-by-day under
-`output_root/stokes/<product>/<year>/stokes_<YYYYMMDD>.nc`, resumable:
+`output_root/stokes/<product>/<year>/stokes_<YYYYMMDD>.nc`, resumable —
+it skips a day whose file is already there, so re-running it is how the
+record is extended:
 
 ```bash
 pixi run python notebooks/002_download_stokes.py \
-    --output-root /path/to/outputs --year 2020
+    --output-root /path/to/outputs                      # 2016-01-01 … latest
+pixi run python notebooks/002_download_stokes.py \
+    --output-root /path/to/outputs \
+    --start-date 2026-01-01 --end-date 2026-09-14       # one window
 ```
+
+Without `--end-date` each product runs to the last day it fully covers,
+capped at yesterday: the NRT dataset's last ~9 days are forecast, and
+ingesting those as if they were analysis would quietly put forecast
+Stokes into the forcing record. `scripts/002_download_stokes_job.sh` is
+that bare form on the `data` partition. One day is ~113 MB for
+`baltic_highres` and ~56 MB for `waverys`, and a single stream runs at
+roughly one day per minute, so a long catch-up is worth fanning out over
+disjoint date windows.
 
 ## Regrid onto BSH C-grid
 

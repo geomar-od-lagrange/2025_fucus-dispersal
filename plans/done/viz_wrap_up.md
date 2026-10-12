@@ -1,4 +1,4 @@
-> Subsumed by `plans/wrapup.md` §4 / §5. Original plan retained as historical record.
+> Subsumed by `plans/done/wrapup.md` §4 / §5. Original plan retained as historical record.
 
 # Viz wrap-up
 

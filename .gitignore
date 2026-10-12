@@ -1,5 +1,8 @@
 *.ipynb_checkpoints
 __pycache__/
+
+# Credentials — Copernicus Land Monitoring Service machine-to-machine key
+.clms.json
 *.pyc
 output/*
 *.sif
@@ -9,6 +12,10 @@ output/*
 notebooks_executed/*
 !notebooks_executed/.gitkeep
 *.out
+# Redundant with *.out above, but explicit: every job script now points
+# #SBATCH --output at output_root/logs/<stage>/, so a slurm-*.out in the repo
+# root is always a stray submit-dir default and must never be committed.
+slurm-*.out
 *startup.sh
 *.pdf
 # Agent harness — track only shared skills, ignore everything else

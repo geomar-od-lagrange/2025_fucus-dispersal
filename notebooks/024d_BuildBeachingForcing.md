@@ -28,8 +28,11 @@ a different `hex_radius` needs the sidecar rebuilt — at
 | `w_on` | float16 | onshore Stokes (m/s), 0 outside the sampled band |
 | `dist` | uint8 | distance to BSH land in 25 m steps, 255 = beyond `band_max_m` / no position |
 | `hex` | int32 | `024a` hex id of the position, everywhere; -1 = no position |
-| `flat` | bool | nearest land is fronted by a tidal flat |
+| `ff` | uint8 | flat fraction (%) of the nearest coastal land cell, in band |
 | `disp` | uint8 | crow-flies displacement from release (km), 255 = saturated |
+
+The `obs` axis is the half-open `[0, window_days*24)` in hours; at the
+default `window_days = 220` that is the whole Parcels simulation.
 
 Every one of these is **parameter-free with respect to the rate model**:
 `τ`, the functional form of `s(w)`, the band width, the viability window,
@@ -44,11 +47,15 @@ instead of a re-read of the trajectories and the raw wave field.
   = tidal flat), fine-over-coarse, in EPSG:3035. This is the mask the
   particles were advected on; the coastline geojson polygons miss a large
   fraction of genuine water positions and are not used here.
-- **shore type** — the nearest land cell fronted by a tidal-flat
-  (`H0 ≤ 0`) cell reads as `flat`, else `wall`. Carried as the seam for a
-  real substrate classification; the BSH tidal-flat flag is not itself a
-  retentiveness proxy for Baltic shores (the basin is tide-free and the
-  flag fires only in the German Bight).
+- **shore type** — the **flat fraction** `ff` of the nearest coastal land
+  cell, in percent: the seg-length-weighted share of classified shoreline
+  within that cell that is low/flat (sandy, marshy, unconsolidated) rather
+  than a hard wall. It comes from the shoreline-class table
+  `shoreclass_bsh_coastline/bsh_coastline_k2_flatfraction.parquet` in the
+  data twin (sub-segment midpoints in EPSG:3035, the raster's own CRS);
+  sub-segments with no class attribution count as 0.5, so an unclassified
+  coast sits halfway between the two trap weights rather than being pushed
+  to either.
 - **onshore wave forcing** — the onshore component of the raw
   `baltic_highres` Stokes drift (`VSDX/VSDY`), i.e. the cross-shore
   transport the `surface_stokes` runs masked at blocked faces, sampled
@@ -63,7 +70,9 @@ records which source trajectories survived. The key file from
 `HexProj` used to label hexes.
 
 ```python
+import hashlib
 import json
+import os
 import re
 import subprocess
 import time
@@ -106,6 +115,10 @@ def parse_zarr_stem(path):
 data_root = "../data"
 output_root = "../output"
 
+# Shoreline-class table (sub-segment midpoints in EPSG:3035 with a flat
+# fraction each). "" = the data twin's copy under `data_root`.
+shoreclass_path = ""
+
 # One (regime, release_year) per run. surface_stokes is the baseline — the
 # beaching driver is the wave field those runs actually felt; surface/bottom
 # are sensitivity variants (Stokes was not in their drift).
@@ -124,10 +137,11 @@ hex_radius = 6000
 # dist reads 255.
 band_max_m = 5000.0
 
-# Hours cached per trajectory, as 0..window_days*24 inclusive. 120 d covers
-# the longest downstream horizon; shorter viability windows are a slice of
+# Hours cached per trajectory, as the half-open [0, window_days*24) in hours
+# — the same convention the reducers slice with. 220 d is the full Parcels
+# simulation (obs=5280 at dt60min); shorter viability windows are a slice of
 # the `obs` axis in the reducers.
-window_days = 120
+window_days = 220
 
 # Zarr output cadence (hours). The trajectory zarrs are dt60min.
 output_dt_hours = 1
@@ -144,6 +158,10 @@ stokes_fill_max_cells = 32
 overwrite = False
 # Stop after this many zarrs of the partition (0 = all); a test knob.
 max_zarrs = 0
+# Build exactly this one trajectory zarr (its stem, no ".zarr"); "" = the
+# whole (regime, release_year[, release_month]) partition. One sidecar per
+# papermill run is how the SLURM job fans 292 zarrs over 292 srun steps.
+only_stem = ""
 ```
 
 # Derived layout / key + projection
@@ -151,6 +169,14 @@ max_zarrs = 0
 ```python
 data_root = Path(data_root)
 output_root = Path(output_root)
+shoreclass_path = Path(
+    shoreclass_path
+    or data_root / "shoreclass_bsh_coastline/bsh_coastline_k2_flatfraction.parquet"
+)
+if not shoreclass_path.exists():
+    raise FileNotFoundError(f"shoreline-class table missing: {shoreclass_path}")
+shoreclass_sha256 = hashlib.sha256(shoreclass_path.read_bytes()).hexdigest()
+print(f"shoreclass: {shoreclass_path} sha256={shoreclass_sha256[:12]}…")
 
 key_path = output_root / "HexAggregates" / f"HexAgg_key_r{hex_radius}m.parquet"
 meta_path = key_path.with_suffix(".json")
@@ -170,7 +196,10 @@ print(f"sidecars → {forcing_root}")
 
 stokes_dir = output_root / "stokes" / "baltic_highres" / str(release_year)
 
-nobs = window_days * 24 + 1
+# Half-open [0, window_days*24): an inclusive end hour would add a column no
+# source zarr has (obs = 5280 = 220*24) and open a one-hour trailing age bin
+# in every reducer that bins `obs`.
+nobs = window_days * 24
 try:
     git_sha = subprocess.run(
         ["git", "rev-parse", "--short", "HEAD"],
@@ -178,7 +207,12 @@ try:
     ).stdout.strip()
 except Exception:
     git_sha = "unknown"
-print(f"nobs={nobs} (hourly), git_sha={git_sha}")
+# Which allocation and which step wrote this sidecar. Empty outside SLURM, so
+# a laptop rebuild is distinguishable from a cluster one without a lookup.
+slurm_job_id = os.environ.get("SLURM_JOB_ID", "")
+slurm_step_id = os.environ.get("SLURM_STEP_ID", "")
+print(f"nobs={nobs} (hourly), git_sha={git_sha}, "
+      f"slurm={slurm_job_id or '-'}.{slurm_step_id or '-'}")
 ```
 
 # Beaching geometry raster
@@ -210,13 +244,13 @@ def _h0_nearest_sampler(h0):
     return sample
 
 
-def build_beaching_raster(data_root, dx_m, hp):
-    """Distance-to-coast field + seaward normal + shore type + hex id on a
+def build_beaching_raster(data_root, dx_m, hp, shoreclass_path):
+    """Distance-to-coast field + seaward normal + flat fraction + hex id on a
     3035 raster.
 
-    Water = finite H0 (fine grid over coarse), land = NaN, tidal flat =
-    finite H0 ≤ 0. Returns a dict with the raster arrays and the affine
-    parameters + a lon/lat→(row, col) mapper for sampling.
+    Water = finite H0 (fine grid over coarse), land = NaN. Returns a dict
+    with the raster arrays and the affine parameters + a lon/lat→(row, col)
+    mapper for sampling.
     """
     h0_fine = xr.open_dataset(
         data_root / "bsh_hbmnoku_static/static_file_fine/H0_file_fine.nc"
@@ -255,13 +289,46 @@ def build_beaching_raster(data_root, dx_m, hp):
     h0r = h0r.reshape(nrow, ncol)
 
     water = np.isfinite(h0r)
-    flat = water & (h0r <= 0)
 
     dist_cells, (jy, jx) = ndimage.distance_transform_edt(water, return_indices=True)
     dist_m = (dist_cells * dx_m).astype("float32")
-    # shore type: nearest land cell adjacent to any tidal-flat cell → flat.
-    flat_fronted_land = (~water) & ndimage.binary_dilation(flat)
-    nearest_flat = flat_fronted_land[jy, jx]
+
+    # Flat fraction per cell, from the shoreline-class sub-segment midpoints.
+    # The table is already in EPSG:3035 — the raster's own CRS — so snapping
+    # is the same affine the sampler uses, no reprojection.
+    sc = pd.read_parquet(shoreclass_path)
+    ff_pt = sc["flat_fraction"].to_numpy("float64")
+    # Unattributed shoreline sits halfway between the two trap weights.
+    ff_pt = np.where(np.isfinite(ff_pt), ff_pt, 0.5)
+    wt = sc["seg_len_m"].to_numpy("float64")
+    sc_col = np.round((sc["x_3035"].to_numpy("float64") - xmin) / dx_m)
+    sc_row = np.round((ymax - sc["y_3035"].to_numpy("float64")) / dx_m)
+    keep = (sc_col >= 0) & (sc_col < ncol) & (sc_row >= 0) & (sc_row < nrow)
+    keep &= np.isfinite(wt) & (wt > 0)
+    idx = (sc_row[keep].astype(np.int64) * ncol + sc_col[keep].astype(np.int64))
+    num = np.bincount(idx, weights=ff_pt[keep] * wt[keep], minlength=nrow * ncol)
+    den = np.bincount(idx, weights=wt[keep], minlength=nrow * ncol)
+    ff_direct = np.divide(num, den, out=np.zeros_like(num), where=den > 0)
+    ff_direct = ff_direct.reshape(nrow, ncol)
+    has_ff = (den > 0).reshape(nrow, ncol)
+    if not has_ff.any():
+        raise ValueError(f"no shoreline-class midpoint falls on the raster: "
+                         f"{shoreclass_path}")
+    # Cells the table does not reach inherit from the nearest cell that does,
+    # so every land cell carries a value; per position we then read the flat
+    # fraction of its nearest land cell (`jy, jx` from the distance EDT).
+    _, (fy, fx) = ndimage.distance_transform_edt(~has_ff, return_indices=True)
+    ff_cell = ff_direct[fy, fx]
+    nearest_ff = np.rint(100.0 * ff_cell[jy, jx]).astype("uint8")
+
+    # Coverage: how much of the coastal land the table attributes directly.
+    coastal_land = (~water) & ndimage.binary_dilation(water)
+    ff_direct_share = float((has_ff & coastal_land).sum()) / max(
+        int(coastal_land.sum()), 1
+    )
+    band_cells = water & (dist_m < band_max_m)
+    ff_band_mean = float(nearest_ff[band_cells].mean()) if band_cells.any() else np.nan
+    n_baltic = int(sc["in_baltic"].sum()) if "in_baltic" in sc else -1
 
     # Seaward normal = ∇distance (distance grows into open water), in the
     # projected (3035) plane: +col = +easting, row increases southward.
@@ -309,16 +376,25 @@ def build_beaching_raster(data_root, dx_m, hp):
         return row, col, ok
 
     return dict(
-        dist_m=dist_m, n_out_x=n_out_x, n_out_y=n_out_y, nearest_flat=nearest_flat,
+        dist_m=dist_m, n_out_x=n_out_x, n_out_y=n_out_y, nearest_ff=nearest_ff,
         hex_id=hex_id, to_rowcol=to_rowcol, water_cells=int(water.sum()),
-        flat_cells=int(flat.sum()), shape=(nrow, ncol),
+        shape=(nrow, ncol), n_shoreclass=int(len(sc)), n_snapped=int(keep.sum()),
+        ff_cells=int(has_ff.sum()), coastal_land_cells=int(coastal_land.sum()),
+        ff_direct_share=ff_direct_share, ff_band_mean=ff_band_mean,
+        n_baltic=n_baltic,
     )
 
 
 t0 = time.time()
-rast = build_beaching_raster(data_root, raster_dx_m, hp)
+rast = build_beaching_raster(data_root, raster_dx_m, hp, shoreclass_path)
 print(f"raster {rast['shape']} water={rast['water_cells']:,} "
-      f"flat={rast['flat_cells']:,} in {time.time() - t0:.1f}s")
+      f"in {time.time() - t0:.1f}s")
+print(f"flat fraction: {rast['n_snapped']:,} of {rast['n_shoreclass']:,} "
+      f"sub-segments snapped ({rast['n_baltic']:,} flagged in_baltic) onto "
+      f"{rast['ff_cells']:,} cells; {100 * rast['ff_direct_share']:.1f}% of the "
+      f"{rast['coastal_land_cells']:,} coastal land cells carry a direct value, "
+      f"the rest inherit from the nearest that does; mean ff over the "
+      f"{band_max_m:g} m band = {rast['ff_band_mean']:.1f}%")
 ```
 
 # Onshore Stokes sampler (land-extrapolated)
@@ -573,7 +649,7 @@ def build_one_zarr(path, release_time, rast, stokes):
 
     dist = np.full((n_real, nobs), 255, dtype="uint8")
     hex_at = np.full((n_real, nobs), -1, dtype="int32")
-    flat_at = np.zeros((n_real, nobs), dtype=bool)
+    ff_at = np.zeros((n_real, nobs), dtype="uint8")
     disp = np.full((n_real, nobs), 255, dtype="uint8")
     w_on = np.zeros((n_real, nobs), dtype="float16")
     in_band = np.zeros((n_real, nobs), dtype=bool)
@@ -595,7 +671,9 @@ def build_one_zarr(path, release_time, rast, stokes):
         hex_at[sl, :n_obs_source] = np.where(
             ok, rast["hex_id"][row, col].reshape(shape), -1
         )
-        flat_at[sl, :n_obs_source] = rast["nearest_flat"][row, col].reshape(shape) & ok
+        ff_at[sl, :n_obs_source] = np.where(
+            band, rast["nearest_ff"][row, col].reshape(shape), 0
+        )
         n_out_x[sl] = np.where(band, rast["n_out_x"][row, col].reshape(shape), 0.0)
         n_out_y[sl] = np.where(band, rast["n_out_y"][row, col].reshape(shape), 0.0)
         # Equirectangular crow-flies displacement from the release position.
@@ -633,8 +711,10 @@ def build_one_zarr(path, release_time, rast, stokes):
             "hex": (("trajectory", "obs"), hex_at,
                     {"long_name": "024a hex id of the position",
                      "comment": "-1 = no position or outside the raster"}),
-            "flat": (("trajectory", "obs"), flat_at,
-                     {"long_name": "nearest land is tidal-flat-fronted"}),
+            "ff": (("trajectory", "obs"), ff_at,
+                   {"long_name": "flat fraction of the nearest coastal land cell",
+                    "units": "percent",
+                    "comment": "0 outside the band; unattributed shoreline counts 50"}),
             "disp": (("trajectory", "obs"), disp,
                      {"long_name": "crow-flies displacement from release",
                       "units": "km", "comment": "255 = saturated or no position"}),
@@ -654,11 +734,14 @@ def build_one_zarr(path, release_time, rast, stokes):
             "window_days": int(window_days),
             "raster_dx_m": float(raster_dx_m),
             "stokes_fill_max_cells": int(stokes_fill_max_cells),
+            "shoreclass_sha256": shoreclass_sha256,
             "hex_radius": int(hex_radius),
             "n_traj_source": int(n_traj_source),
             "n_obs_source": int(n_obs_source),
             "builder": "024d_BuildBeachingForcing",
             "git_sha": git_sha,
+            "slurm_job_id": slurm_job_id,
+            "slurm_step_id": slurm_step_id,
         },
     )
     # Every array gets Zstd explicitly — xarray would otherwise fall back to
@@ -701,6 +784,7 @@ def sidecar_is_current(target):
             ("hex_radius", int(hex_radius)),
             ("raster_dx_m", float(raster_dx_m)),
             ("stokes_fill_max_cells", int(stokes_fill_max_cells)),
+            ("shoreclass_sha256", shoreclass_sha256),
         )
     )
 ```
@@ -714,14 +798,17 @@ for p, ts, fn_regime, dt_min in parsed:
     assert ts.year == release_year, (ts, release_year, p)
     assert fn_regime == regime, (fn_regime, regime, p)
     assert dt_min == output_dt_hours * 60, (dt_min, output_dt_hours, p)
-if release_month:
+if only_stem:
+    parsed = [x for x in parsed if x[0].stem == only_stem]
+elif release_month:
     parsed = [x for x in parsed if x[1].month == release_month]
 if not parsed:
     raise FileNotFoundError(
         f"no zarrs at {output_root}/Trajectories/{regime}/{release_year}/"
-        + (f" for month {release_month}" if release_month else "")
+        + (f" named {only_stem}" if only_stem
+           else f" for month {release_month}" if release_month else "")
     )
-if max_zarrs:
+if max_zarrs and not only_stem:
     parsed = parsed[:max_zarrs]
 release_doys = sorted({int(ts.dayofyear) for _, ts, _, _ in parsed})
 print(f"{len(parsed)} zarrs, release_doys "
@@ -759,7 +846,8 @@ for p, ts, _, _ in parsed:
 
 ```python
 print(f"regime={regime}, release_year={release_year}"
-      + (f", month={release_month}" if release_month else "")
+      + (f", stem={only_stem}" if only_stem
+         else f", month={release_month}" if release_month else "")
       + f", hex_radius={hex_radius} m")
 print(f"  band_max_m={band_max_m:g}, window_days={window_days} (nobs={nobs}), "
       f"raster_dx_m={raster_dx_m:g}, stokes_fill_max_cells={stokes_fill_max_cells}")
