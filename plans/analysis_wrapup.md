@@ -19,6 +19,10 @@ compute node via `pixi run`.
   [subbasin_rebuild.md](subbasin_rebuild.md) runs, and §3's connectivity
   conclusions must be re-read afterwards rather than assumed to hold.
 
+- **Manuscript:** the extension of `paper/main.tex` along the authors'
+  outline notes is planned in
+  [manuscript_extension.md](manuscript_extension.md).
+
 - **Data twin push owed:** the `data` gitlink points at twin merge
   `d2d43cb` (shoreclass parquet with `grid`/`on_seam`, stored via LFS),
   which is not yet on the git.geomar.de remote. `--recurse-submodules`
