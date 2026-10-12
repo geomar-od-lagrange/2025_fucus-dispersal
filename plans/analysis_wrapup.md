@@ -19,6 +19,12 @@ compute node via `pixi run`.
   [subbasin_rebuild.md](subbasin_rebuild.md) runs, and §3's connectivity
   conclusions must be re-read afterwards rather than assumed to hold.
 
+- **Data twin push owed:** the `data` gitlink points at twin merge
+  `d2d43cb` (shoreclass parquet with `grid`/`on_seam`, stored via LFS),
+  which is not yet on the git.geomar.de remote. `--recurse-submodules`
+  clones fail until `git -C data push origin main` runs with
+  git.geomar.de credentials.
+
 - **Implemented:** beaching (§5), the relative-density rescaling and 3 m
   isobath overlay (§1), the per-origin-subbasin split (§2), connectivity
   including survival-weighted `024g` (§3), the `season` roll-out across
