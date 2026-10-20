@@ -145,6 +145,14 @@ because the interannual spread below groups by it. A whole-year partition
 (no `_mMM` suffix) carries every month, so it is only read for
 `season = "ALL"`.
 
+Each partition is **reduced as it is read**, to the two things the
+statistics and maps below use: its total weight (the released water-seeded
+drifters, the denominator) and its stranded weight summed over
+`(beach_hex, beach_age_bin, disp_bin)`. Release hex, release day and shore
+type are summed out. Holding the raw rows instead would cost every member's
+full store at once (~10⁸ rows per member for a year-pooled season); weights
+are additive, so the reduced frames pool exactly. Sums run in float64.
+
 Each partition carries its build parameters as `df.attrs`, taken per file
 **before** the concat (pandas drops attrs that differ between the frames it
 concatenates). Within a member every partition must agree on the window,
@@ -181,11 +189,15 @@ def pooled_attrs(attrs, store):
 
 
 def load_member(tag):
+    """One member's season, reduced per partition: stranded weight per
+    (release_year, beach_hex, beach_age_bin, disp_bin), released weight per
+    release_year, and the build attrs every partition shares."""
     part_re = re.compile(
         rf"HexAgg_beaching_r{hex_radius}m_{regime}_(\d{{4}})(?:_m(\d{{2}}))?"
         rf"_{re.escape(tag)}\.parquet$"
     )
-    parts = []
+    stranded = []
+    released = []
     attrs = []
     for f in sorted(store_root.glob(f"HexAgg_beaching_r{hex_radius}m_{regime}_*.parquet")):
         m = part_re.search(f.name)
@@ -197,24 +209,39 @@ def load_member(tag):
                 continue
         elif int(month) not in season_months:
             continue
-        df = pd.read_parquet(f).reset_index(drop=True)
+        year = int(m.group(1))
+        df = pd.read_parquet(f, columns=["beach_hex", "beach_age_bin", "disp_bin", "weight"])
         attrs.append(df.attrs)
-        parts.append(df.assign(release_year=int(m.group(1))))
-    if not parts:
-        return None, None
-    return pd.concat(parts, ignore_index=True), pooled_attrs(attrs, f"024e {tag}")
+        weight = df["weight"].astype("float64")
+        released.append({"release_year": year, "weight": float(weight.sum())})
+        beached = df["beach_hex"] >= 0
+        stranded.append(
+            df[beached].assign(weight=weight[beached])
+            .groupby(["beach_hex", "beach_age_bin", "disp_bin"], as_index=False)["weight"].sum()
+            .assign(release_year=year)
+        )
+    if not released:
+        return None, None, None
+    stranded = (
+        pd.concat(stranded, ignore_index=True)
+        .groupby(["release_year", "beach_hex", "beach_age_bin", "disp_bin"], as_index=False)["weight"]
+        .sum()
+    )
+    released = pd.DataFrame(released).groupby("release_year")["weight"].sum()
+    return stranded, released, pooled_attrs(attrs, f"024e {tag}")
 
 
 members = {}
 windows = {}
 for tag, label in zip(member_tags, member_labels):
-    df, attrs = load_member(tag)
-    if df is None:
+    stranded, released, attrs = load_member(tag)
+    if stranded is None:
         print(f"{tag}: no partitions found — skipped")
         continue
-    members[label] = df
+    members[label] = (stranded, released)
     windows[label] = (attrs["max_age_days"], attrs["age_bin_days"], attrs["disp_bin_km"])
-    print(f"{tag} ({label}): {len(df):,} rows; {attrs}")
+    print(f"{tag} ({label}): released {released.sum():,.0f}, "
+          f"{len(stranded):,} stranded (year, hex, age, displacement) rows; {attrs}")
 if not members:
     raise FileNotFoundError(
         f"no sweep members found for regime {regime!r}, season {season}, "
@@ -234,7 +261,7 @@ assert store_disp_bin_km == disp_bin_km, (
 )
 print(f"every member reduced over {max_age_days} d")
 pooled_years = sorted(
-    int(y) for y in pd.concat([df["release_year"] for df in members.values()]).unique()
+    {int(y) for _, released in members.values() for y in released.index}
 )
 print(f"season {season} (months {season_months}); release years {pooled_years}")
 ```
@@ -242,8 +269,9 @@ print(f"season {season} (months {season_months}); release years {pooled_years}")
 # Per-member statistics
 
 `beached_pct` is stranded weight over all released weight within the
-window, in percent (the residual rows carry the never-beached remainder, so
-the denominator is the full release pool of water-seeded drifters). `gini` measures how unevenly the stranded weight is spread
+window, in percent (the denominator is every row's weight, including the
+never-beached residual, so it is the full release pool of water-seeded
+drifters). `gini` measures how unevenly the stranded weight is spread
 over the coastal hexes that receive any: 0 = uniform, → 1 = concentrated.
 `median_age_days` and `median_travel_km` are weight-weighted medians of the
 store's `beach_age_bin` and `disp_bin` axes — how long the stranded material
@@ -272,32 +300,38 @@ def weighted_median_bin(weights_per_bin, bin_width):
     return float(np.interp(0.5, weights_per_bin.cumsum() / weights_per_bin.sum(), centres))
 
 
-def member_stats(df):
-    beached = df[df["beach_hex"] >= 0]
-    per_hex = beached.groupby("beach_hex")["weight"].sum()
-    total = float(df["weight"].sum())
+def member_stats(stranded, released):
+    """Statistics of one member's stranded weight over `released` drifters."""
+    per_hex = stranded.groupby("beach_hex")["weight"].sum()
     return {
-        "beached_pct": 100 * float(beached["weight"].sum()) / max(total, 1.0),
+        "beached_pct": 100 * float(stranded["weight"].sum()) / max(released, 1.0),
         "gini": gini(per_hex.to_numpy()),
         "beach_hexes": int(per_hex.size),
         "median_age_days": weighted_median_bin(
-            beached.groupby("beach_age_bin")["weight"].sum(), age_bin_days
+            stranded.groupby("beach_age_bin")["weight"].sum(), age_bin_days
         ),
         "median_travel_km": weighted_median_bin(
-            beached.groupby("disp_bin")["weight"].sum(), disp_bin_km
+            stranded.groupby("disp_bin")["weight"].sum(), disp_bin_km
         ),
     }
 
 
 stats = pd.DataFrame(
-    [{"member": label, **member_stats(df)} for label, df in members.items()]
+    [
+        {"member": label, "released": released.sum(), **member_stats(stranded, released.sum())}
+        for label, (stranded, released) in members.items()
+    ]
 ).set_index("member")
 # Per-(member, year), for the interannual min–max error bars.
 stats_year = pd.DataFrame(
     [
-        {"member": label, "release_year": y, **member_stats(g)}
-        for label, df in members.items()
-        for y, g in df.groupby("release_year")
+        {
+            "member": label,
+            "release_year": y,
+            **member_stats(stranded[stranded["release_year"] == y], released[y]),
+        }
+        for label, (stranded, released) in members.items()
+        for y in released.index
     ]
 ).set_index(["member", "release_year"])
 print(stats.to_string(float_format=lambda v: f"{v:,.4f}"))
@@ -389,11 +423,11 @@ domain_aspect = (
 ) / (lat_max - lat_min)
 
 
-def hex_gdf(df):
+def hex_gdf(stranded, released):
     """Stranded weight per beach_hex as % of the member's released drifters."""
-    grp = df[df["beach_hex"] >= 0].groupby("beach_hex")["weight"].sum()
+    grp = stranded.groupby("beach_hex")["weight"].sum()
     return (
-        grp.div(df["weight"].sum()).mul(100).rename("value").reset_index()
+        grp.div(released.sum()).mul(100).rename("value").reset_index()
         .merge(key[["hex_id", "geometry"]], left_on="beach_hex", right_on="hex_id")
         .pipe(gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326")
     )
@@ -408,7 +442,7 @@ def grid_height_in(nrows, ncols, aspect, width_in):
     return 1.10 * nrows * (0.72 * width_in / ncols) / aspect
 
 
-gdfs = {label: hex_gdf(df) for label, df in members.items()}
+gdfs = {label: hex_gdf(*member) for label, member in members.items()}
 # A member can carry no stranded weight at all (a threshold above every
 # forcing hour in the partition). Report and drop it rather than feeding an
 # empty list to pd.concat.

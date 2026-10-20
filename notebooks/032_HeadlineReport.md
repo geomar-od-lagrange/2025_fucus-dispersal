@@ -47,6 +47,10 @@ Seven tables:
 The window every number refers to is read from the `024e`/`024g`
 partitions' build attrs, and every pooled partition must agree on it.
 
+A consumer export or figure older than the newest store partition it was
+reduced from is **stale** and is not used: it lands in the report's Gaps
+section, as a missing one does.
+
 No figure is drawn here — the manuscript figures are the `025`–`031` PNGs,
 and this stage only selects, numbers and downscales them.
 
@@ -96,6 +100,9 @@ viable_depth_m = 3.0
 # Share q of the cumulative particle-time whose holding area table F reports;
 # the 026 areas CSV rows at other q are filtered out.
 area_quantile = 0.9
+# Horizons (d) table F reports, the 026 map horizons; the CSV's other rows
+# (026 exports every age-bin edge) are 035's time series.
+area_horizons_csv = "30,60,90,180"
 # Number of largest emitters per season in table C's top-target comparison.
 n_top_origins = 4
 # Release season the map figures are shown for.
@@ -131,6 +138,9 @@ if not regimes:
 connectivity_horizons = [int(h) for h in connectivity_horizons_csv.split(",") if h.strip()]
 if not connectivity_horizons:
     raise ValueError("connectivity_horizons_csv is empty")
+area_horizons = [int(h) for h in area_horizons_csv.split(",") if h.strip()]
+if not area_horizons:
+    raise ValueError("area_horizons_csv is empty")
 # `release_years` is "first-last" (inclusive) or a single year.
 first_year, _, last_year = release_years.partition("-")
 analysis_years = range(int(first_year), int(last_year or first_year) + 1)
@@ -150,9 +160,9 @@ figure_root = output_root / "Figures"
 headline_dir = output_root / "Headline"
 headline_dir.mkdir(parents=True, exist_ok=True)
 
-# Artefacts the report expected and did not find. Written into HEADLINE.md as
-# a "gaps" section instead of raising: a partially-run consumer matrix should
-# still produce a report that says what is missing.
+# Artefacts the report expected and did not find, or found stale. Written
+# into HEADLINE.md as a "gaps" section instead of raising: a partially-run
+# consumer matrix should still produce a report that says what is missing.
 gaps = []
 ```
 
@@ -195,7 +205,12 @@ year_store_pattern = re.compile(
 )
 year_parts = pd.DataFrame(
     [
-        {"kind": m.group(1), "regime": m.group(2), "year": int(m.group(3))}
+        {
+            "kind": m.group(1),
+            "regime": m.group(2),
+            "year": int(m.group(3)),
+            "path": store_root / m.group(0),
+        }
         for m in map(year_store_pattern.match, sorted(p.name for p in store_root.glob("*.parquet")))
         if m
     ]
@@ -258,6 +273,90 @@ heatmap_tag = {
 }
 print(f"025/026 weighting per regime: {heatmap_tag}")
 ```
+
+# Staleness
+
+Every export and figure this report reads is a reduction of store
+partitions, and a store can be rebuilt after the consumer ran (a longer
+window, a new key). Such a product still exists under its old name and
+would be captioned with the new window, so presence is not enough: a
+product is **stale** when its mtime is older than the newest
+`release_years` partition of the store it derives from, or than the `024a`
+key, and a stale product is a gap like a missing one. The derivation is a
+list of `(store kind, regime, member)` sources per product (`member = None`:
+every member, for the sweep); the 025/026 family derives from 024f at the
+production member where the regime is weighted, from the 024 counts
+otherwise. 035 draws 026's area CSVs rather than a store, so its sources
+are those CSVs, each with its own store sources: a 035 figure drawn from a
+stale CSV is stale however new it is. Considered recording the input
+partitions' build ids in every product and comparing those; rejected,
+mtime needs no change to the consumers. Copying outputs without preserving
+mtimes defeats it.
+
+```python
+store_parts = pd.concat([year_parts, member_parts], ignore_index=True)
+store_parts = store_parts[store_parts.year.isin(analysis_years)].assign(
+    mtime=lambda d: [p.stat().st_mtime for p in d.path]
+).reset_index(drop=True)
+
+
+def stamp(mtime):
+    """An mtime as a UTC timestamp for a gap line."""
+    return f"{datetime.fromtimestamp(mtime, timezone.utc):%Y-%m-%d %H:%M UTC}"
+
+
+def heatmap_sources(regime):
+    """The store a regime's 025/026 products (and 035's line) reduce."""
+    if regime is None:
+        return []
+    if heatmap_tag[regime] == "unweighted":
+        return [("counts", regime, None)]
+    return [("survocc", regime, heatmap_tag[regime])]
+
+
+def newest_input(sources):
+    """(mtime, file name) of the newest input among `sources`, the key
+    included. A source is a store `(kind, regime, member)` or an upstream
+    product `(path, its sources)`; a missing or stale upstream product counts
+    as newer than anything (mtime inf)."""
+    newest = (key_path.stat().st_mtime, key_path.name)
+    for source in sources:
+        if isinstance(source[0], Path):
+            path, upstream = source
+            mtime = path.stat().st_mtime if path.exists() else np.inf
+            if mtime < newest_input(upstream)[0]:
+                mtime = np.inf
+            newest = max(newest, (mtime, path.name))
+            continue
+        kind, regime, member_tag = source
+        sel = store_parts[(store_parts.kind == kind) & (store_parts.regime == regime)]
+        if member_tag is not None:
+            sel = sel[sel.member == member_tag]
+        if not sel.empty:
+            row = sel.loc[sel.mtime.idxmax()]
+            newest = max(newest, (row.mtime, row.path.name))
+    return newest
+
+
+def usable(path, sources, what):
+    """Whether a product exists and is not older than its inputs; records a
+    gap otherwise."""
+    if not path.exists():
+        gaps.append(f"{what}: missing `{path.name}`")
+        return False
+    mtime, name = newest_input(sources)
+    if mtime == np.inf:
+        gaps.append(f"{what}: its input `{name}` is missing or stale — rerun both")
+        return False
+    if path.stat().st_mtime < mtime:
+        gaps.append(
+            f"{what}: `{path.name}` ({stamp(path.stat().st_mtime)}) is older than its input "
+            f"`{name}` ({stamp(mtime)}) — stale, rerun its producer"
+        )
+        return False
+    return True
+```
+
 
 # Coverage
 
@@ -527,9 +626,13 @@ for regime in beaching_regimes:
             "unweighted": export_dir / f"{stem}_unweighted_T{top_horizon_days}d_emission_fraction.csv",
             "weighted": export_dir / f"{stem}_{member}_T{top_horizon_days}d_emission_fraction.csv",
         }
-        missing = [p.name for p in paths.values() if not p.exists()]
-        if missing:
-            gaps.append(f"table C top targets, {regime} {season}: missing {', '.join(missing)}")
+        sources = {
+            "n_obs": [("connectivity", regime, None)],
+            "unweighted": [("connectivity", regime, None)],
+            "weighted": [("survconn", regime, member)],
+        }
+        what = f"table C top targets, {regime} {season}"
+        if not all([usable(paths[k], sources[k], what) for k in paths]):
             continue
         counts = pd.read_csv(paths["n_obs"])
         unweighted = pd.read_csv(paths["unweighted"])
@@ -568,8 +671,7 @@ distance_rows = []
 for season in seasons:
     for regime in regimes:
         path = export_root / "027" / f"027_{regime}_{season}.geojson"
-        if not path.exists():
-            gaps.append(f"table D: missing {path.name}")
+        if not usable(path, [("distance", regime, None)], "table D"):
             continue
         frame = gpd.read_file(path)
         for column in [c for c in frame.columns if re.fullmatch(r"q[\d.]+_km", c)]:
@@ -582,7 +684,11 @@ for season in seasons:
                     "source_hexes": len(frame),
                 }
             )
-distance = pd.DataFrame(distance_rows)
+# Explicit columns: every 027 export can be missing or stale, and the table
+# then renders as an empty row per season rather than raising.
+distance = pd.DataFrame(
+    distance_rows, columns=["season", "regime", "level", "median_km", "source_hexes"]
+)
 table_d = (
     distance.assign(
         column=distance.regime + " " + distance.level,
@@ -603,8 +709,8 @@ print(distance.to_string(index=False))
 (`percentage` = share of that horizon's particle-time, survival-weighted
 where the regime has a 024f store — `heatmap_tag` above). Joined to the
 `024a` key for `mean_depth_m`, it gives the concentration of the cloud and
-the crude share of particle-time inside the Fucus viable band. A 6 km hex
-mean cannot resolve a 3 m contour, so the last column is a contrast
+the crude share of particle-time inside the Fucus viable band. A hex-mean
+depth cannot resolve a 3 m contour, so the last column is a contrast
 between regimes, not a rate.
 
 ```python
@@ -615,8 +721,7 @@ for regime in regimes:
             export_root / "026"
             / f"026_{regime}_{season}_{heatmap_tag[regime]}_T{horizon_days}d.geojson"
         )
-        if not path.exists():
-            gaps.append(f"table E: missing {path.name}")
+        if not usable(path, heatmap_sources(regime), "table E"):
             continue
         frame = gpd.read_file(path).drop(columns="geometry").merge(key, on="hex_id", how="left")
         ranked = frame.percentage.sort_values(ascending=False)
@@ -632,7 +737,13 @@ for regime in regimes:
                 "viable_pct": float(frame.percentage[frame.mean_depth_m <= viable_depth_m].sum()),
             }
         )
-concentration = pd.DataFrame(concentration_rows)
+concentration = pd.DataFrame(
+    concentration_rows,
+    columns=[
+        "regime", "weighting", "season", "max_hex_pct", "top10_pct", "top100_pct",
+        "occupied_hexes", "viable_pct",
+    ],
+)
 table_e = pd.DataFrame(
     {
         "regime": concentration.regime,
@@ -656,31 +767,33 @@ share `q` of the cumulative particle-time by each horizon, pooled over the
 release years (`scope = pooled`) and per release year. The CSV is read
 generically: `scope` splits pooled from per-year rows, every float column
 other than `q` is a reported value (`area_km2`, `length_km`), and every
-remaining column is a row key — so a key column the export gains later
-(an origin subbasin, say) becomes a row of this table without an edit
-here. Only the rows at `area_quantile` are reported — an export written
-with more shares still carries the others, and they are filtered, not
-assumed absent. A cell is the pooled value with the per-year min–max in
-brackets.
+remaining column but `q` is a row key — so a key column the export gains
+later (an origin subbasin, say) becomes a row of this table without an edit
+here. Only the rows at `area_quantile` and at the `area_horizons` (the map
+horizons) are reported — 026 exports every age-bin edge for 035's time
+series, and further shares; they are filtered, not assumed absent, and a
+requested horizon the CSV lacks is a gap. A cell is the pooled value with
+the per-year min–max in brackets. The pooled area ranks the years' summed
+weights, which spread over more hexes than any one year's, so it can lie
+outside the per-year range.
 
 ```python
 area_rows = []
 for regime in regimes:
     for season in seasons:
         path = export_root / "026" / f"026_areas_{regime}_{season}_{heatmap_tag[regime]}.csv"
-        if not path.exists():
-            gaps.append(f"table F: missing {path.name}")
+        if not usable(path, heatmap_sources(regime), "table F"):
             continue
-        area_rows.append(
-            pd.read_csv(path, dtype={"scope": str}).assign(
-                regime=regime, weighting=heatmap_tag[regime], season=season
+        frame = pd.read_csv(path, dtype={"scope": str})
+        frame = frame[np.isclose(frame.q, area_quantile) & frame.horizon_days.isin(area_horizons)]
+        absent = sorted(set(area_horizons) - set(frame.horizon_days))
+        if absent:
+            gaps.append(
+                f"table F: `{path.name}` has no q = {area_quantile:g} rows at "
+                f"{'/'.join(map(str, absent))} d"
             )
-        )
+        area_rows.append(frame.assign(regime=regime, weighting=heatmap_tag[regime], season=season))
 areas = pd.concat(area_rows, ignore_index=True) if area_rows else pd.DataFrame()
-if not areas.empty:
-    areas = areas[np.isclose(areas.q, area_quantile)]
-    if areas.empty:
-        gaps.append(f"table F: no rows at q = {area_quantile:g} in the 026 areas exports")
 
 table_f_md = {}
 if not areas.empty:
@@ -691,7 +804,7 @@ if not areas.empty:
     run_columns = ["regime", "weighting", "season"]
     key_columns = run_columns + [
         c for c in areas.columns
-        if c not in value_columns and c not in ("scope", "horizon_days", *run_columns)
+        if c not in value_columns and c not in ("q", "scope", "horizon_days", *run_columns)
     ]
     pooled_rows = areas[areas.scope == "pooled"].set_index(key_columns + ["horizon_days"])
     year_rows = areas[areas.scope != "pooled"].groupby(key_columns + ["horizon_days"])
@@ -729,8 +842,7 @@ afloat_rows = []
 for regime in beaching_regimes:
     for season in seasons:
         path = export_root / "029" / f"afloat_by_origin_{regime}_{season}_{member}.csv"
-        if not path.exists():
-            gaps.append(f"table G: missing {path.name}")
+        if not usable(path, [("beaching", regime, member)], "table G"):
             continue
         afloat_rows.append(
             pd.read_csv(path, comment="#", dtype={"origin_subbasin": str}).assign(
@@ -796,8 +908,10 @@ weighting tag, horizon). Resolution takes the exact `<stem>.png` only: every
 field of a stem is a run parameter, and a looser `<stem>_*.png` match would
 silently resolve one member's figure for another whose tag it extends
 (`step_wc0p1_ts3_tcinf` → `step_wc0p1_ts3_tcinf_tf1_tw0`). An entry that
-resolves to nothing is recorded as a gap rather than raising: a
-partially-run consumer matrix should still yield a report.
+resolves to nothing, or to a stale PNG (its `sources`, see Staleness), is
+recorded as a gap rather than raising: a partially-run consumer matrix
+should still yield a report. An entry read against another (`pairs_with`)
+names that figure's number, or says it is absent.
 
 Captions take their horizons and windows from the parameters, the store
 attrs and the 026 exports on disk — nothing is hardcoded.
@@ -836,48 +950,99 @@ def horizons_on_disk(regime, season):
 
 
 figure_specs = [
-    ("025", "HexRelativeDensity_{regime}_{pooled}_r{radius}m_{tag}", "density_baltic_{regime}_{pooled}",
-     f"Basin-wide relative density, {weighting_phrase(figure_fields['tag'])}, ages < {max_age_days} d: "
-     "share of particle-time (left) and dilution per km² of hex water area (right). Where the "
-     "particle-time sits, and how much of it is a coastal-hex artefact."),
-    ("025", "HexRelativeDensityDE_{regime}_{pooled}_r{radius}m_{tag}", "density_german_waters_{regime}_{pooled}",
-     "The same two fields on the German-waters viewport, normalisation still basin-wide."),
-    ("026", "TimeHorizonMaps_{regime}_{season}_r{radius}m_{tag}_percentage", "horizons_{regime}_{season}",
-     f"Cumulative {horizons_on_disk(primary_regime, figure_season)} d horizons, "
-     f"{weighting_phrase(figure_fields['tag'])}, each normalised to its own 100 %: how the cloud "
-     "fills the basin."),
-    ("026", "TimeHorizonMaps_{other_regime}_{season}_r{radius}m_{other_tag}_percentage",
-     "horizons_{other_regime}_{season}",
-     f"The same for the comparison regime ({horizons_on_disk(other_regime, figure_season)} d, "
-     f"{weighting_phrase(figure_fields['other_tag']) if other_regime else '—'}). Read against the "
-     "previous figure."),
-    ("035", "AreaTimeSeries_{pooled}_r{radius}m", "area_time_series_{pooled}",
-     "Table F's area (left) and its square root (right) against the cumulative horizon T (ages in "
-     "[0, T)) at every age-bin edge, one line per regime at its 025/026 weighting: pooled line, "
-     "per-release-year min–max band."),
-    ("029", "WhereStranded_{regime}_r{radius}m_{season}_{member}", "where_stranded_{season}",
-     f"Stranded within {max_age_days} d, % of the released drifters per hex (log, 4 decades): the "
-     "stranding coastline of this season."),
-    ("029", "BeachedFractionCurve_{regime}_r{radius}m_{pooled}_{member}", "beached_fraction_curve_{pooled}",
-     f"Cumulative stranded % of the released drifters against age over the {max_age_days} d window, "
-     "with the interannual min–max band; the curve behind table A."),
-    ("031", "BeachingSweepStats_{regime}_r{radius}m_{pooled}", "beaching_sweep_stats_{pooled}",
-     f"Stranded % by {max_age_days} d, Gini, stranding-hex count, median stranding age and median "
-     "displacement across every member with interannual bars; the visual form of table B."),
-    ("028", "SubbasinConnectivity_emission_{regime}_{season}_unweighted_T{horizon}d",
-     "connectivity_{season}_T{horizon}d_unweighted",
-     f"Subbasin emission fraction at ages < {top_horizon_days} d, unweighted residence. "
-     "Diagonal = self-retention."),
-    ("028", "SubbasinConnectivity_emission_{regime}_{season}_{member}_T{horizon}d",
-     "connectivity_{season}_T{horizon}d_survival_weighted",
-     "The same matrix survival-weighted; compare with the previous figure (table C's top-target "
-     "columns are the same numbers)."),
-    ("027", "DistanceQuantiles_{regime}_r{radius}m_{season}", "distance_quantiles_{regime}_{season}",
-     "Per-source-hex quantiles of final crow-flies displacement; the map behind table D."),
-    ("030", "SurvivalFraction_{regime}_r{radius}m_{season}_{member}", "surviving_fraction_{season}",
-     f"Surviving (un-beached) fraction per hex in the {age_bin_days} d snapshot bin ending at each "
-     "mapped horizon, on a fixed 0–1 scale: where propagules still drift after the coast has taken "
-     "its share."),
+    dict(
+        notebook="025", stem="HexRelativeDensity_{regime}_{pooled}_r{radius}m_{tag}",
+        name="density_baltic_{regime}_{pooled}",
+        sources=heatmap_sources(primary_regime),
+        note=f"Basin-wide relative density, {weighting_phrase(figure_fields['tag'])}, ages < "
+        f"{max_age_days} d: share of particle-time (left) and dilution per km² of hex water area "
+        "(right). Where the particle-time sits, and how much of it is a coastal-hex artefact.",
+    ),
+    dict(
+        notebook="025", stem="HexRelativeDensityDE_{regime}_{pooled}_r{radius}m_{tag}",
+        name="density_german_waters_{regime}_{pooled}",
+        sources=heatmap_sources(primary_regime),
+        note="The same two fields on the German-waters viewport, normalisation still basin-wide.",
+    ),
+    dict(
+        notebook="026", stem="TimeHorizonMaps_{regime}_{season}_r{radius}m_{tag}_percentage",
+        name="horizons_{regime}_{season}",
+        sources=heatmap_sources(primary_regime),
+        note=f"Cumulative {horizons_on_disk(primary_regime, figure_season)} d horizons, "
+        f"{weighting_phrase(figure_fields['tag'])}, each normalised to its own 100 %: how the "
+        "cloud fills the basin.",
+    ),
+    dict(
+        notebook="026", stem="TimeHorizonMaps_{other_regime}_{season}_r{radius}m_{other_tag}_percentage",
+        name="horizons_{other_regime}_{season}",
+        sources=heatmap_sources(other_regime),
+        note=f"The same for the comparison regime ({horizons_on_disk(other_regime, figure_season)} d, "
+        f"{weighting_phrase(figure_fields['other_tag']) if other_regime else '—'}).",
+        pairs_with="horizons_{regime}_{season}",
+    ),
+    dict(
+        notebook="035", stem="AreaTimeSeries_{pooled}_r{radius}m", name="area_time_series_{pooled}",
+        # 035 draws 026's area CSVs, so it is only as fresh as they are.
+        sources=[
+            (
+                export_root / "026" / f"026_areas_{r}_{pooled_season}_{heatmap_tag[r]}.csv",
+                heatmap_sources(r),
+            )
+            for r in regimes
+        ],
+        note="Table F's area (left) and its square root (right) against the cumulative horizon T "
+        "(ages in [0, T)) at every age-bin edge, one line per regime at its 025/026 weighting: "
+        "pooled line, per-release-year min–max band.",
+    ),
+    dict(
+        notebook="029", stem="WhereStranded_{regime}_r{radius}m_{season}_{member}",
+        name="where_stranded_{season}",
+        sources=[("beaching", primary_regime, member)],
+        note=f"Stranded within {max_age_days} d, % of the released drifters per hex (log, 4 "
+        "decades): the stranding coastline of this season.",
+    ),
+    dict(
+        notebook="029", stem="BeachedFractionCurve_{regime}_r{radius}m_{pooled}_{member}",
+        name="beached_fraction_curve_{pooled}",
+        sources=[("beaching", primary_regime, member)],
+        note=f"Cumulative stranded % of the released drifters against age over the {max_age_days} d "
+        "window, with the interannual min–max band; the curve behind table A.",
+    ),
+    dict(
+        notebook="031", stem="BeachingSweepStats_{regime}_r{radius}m_{pooled}",
+        name="beaching_sweep_stats_{pooled}",
+        sources=[("beaching", primary_regime, None)],
+        note=f"Stranded % by {max_age_days} d, Gini, stranding-hex count, median stranding age and "
+        "median displacement across every member with interannual bars; the visual form of table B.",
+    ),
+    dict(
+        notebook="028", stem="SubbasinConnectivity_emission_{regime}_{season}_unweighted_T{horizon}d",
+        name="connectivity_{season}_T{horizon}d_unweighted",
+        sources=[("connectivity", primary_regime, None)],
+        note=f"Subbasin emission fraction at ages < {top_horizon_days} d, unweighted residence. "
+        "Diagonal = self-retention.",
+    ),
+    dict(
+        notebook="028", stem="SubbasinConnectivity_emission_{regime}_{season}_{member}_T{horizon}d",
+        name="connectivity_{season}_T{horizon}d_survival_weighted",
+        sources=[("survconn", primary_regime, member)],
+        note="The same matrix survival-weighted (table C's top-target columns are the same numbers).",
+        pairs_with="connectivity_{season}_T{horizon}d_unweighted",
+    ),
+    dict(
+        notebook="027", stem="DistanceQuantiles_{regime}_r{radius}m_{season}",
+        name="distance_quantiles_{regime}_{season}",
+        sources=[("distance", primary_regime, None)],
+        note="Per-source-hex quantiles of final crow-flies displacement; the map behind table D.",
+    ),
+    dict(
+        notebook="030", stem="SurvivalFraction_{regime}_r{radius}m_{season}_{member}",
+        name="surviving_fraction_{season}",
+        sources=[("survocc", primary_regime, member)],
+        note=f"Surviving (un-beached) fraction per hex in the {age_bin_days} d snapshot bin ending "
+        "at each mapped horizon, on a fixed 0–1 scale: where propagules still drift after the "
+        "coast has taken its share.",
+    ),
 ]
 ```
 
@@ -889,17 +1054,30 @@ for stale in headline_dir.glob("[0-9][0-9]_*.png"):
     stale.unlink()
 
 figure_notes = []
-for notebook, stem_template, name, note in figure_specs:
-    fields = re.findall(r"{(\w+)}", stem_template + name)
+# Figure number of each resolved entry, by its formatted name, for the
+# `pairs_with` references.
+figure_numbers = {}
+for spec in figure_specs:
+    notebook = spec["notebook"]
+    fields = re.findall(r"{(\w+)}", spec["stem"] + spec["name"])
     if any(figure_fields.get(f) in (None, "") for f in fields):
-        gaps.append(f"figure `{name}` ({notebook}): parameters give no value for one of {fields}")
+        gaps.append(f"figure `{spec['name']}` ({notebook}): parameters give no value for one of {fields}")
         continue
-    stem = stem_template.format(**figure_fields)
+    stem = spec["stem"].format(**figure_fields)
+    name = spec["name"].format(**figure_fields)
     source = figure_root / notebook / f"{stem}.png"
-    if not source.exists():
-        gaps.append(f"figure `{name}`: no `{stem}.png` under Figures/{notebook}/")
+    if not usable(source, spec["sources"], f"figure `{name}` (Figures/{notebook}/)"):
         continue
-    target = headline_dir / f"{len(figure_notes) + 1:02d}_{name.format(**figure_fields)}.png"
+    note = spec["note"]
+    if "pairs_with" in spec:
+        partner = spec["pairs_with"].format(**figure_fields)
+        note += (
+            f" Read against figure {figure_numbers[partner]}."
+            if partner in figure_numbers
+            else f" Its counterpart `{partner}` is not in this report (see Gaps)."
+        )
+    figure_numbers[name] = len(figure_notes) + 1
+    target = headline_dir / f"{figure_numbers[name]:02d}_{name}.png"
     with Image.open(source) as image:
         if image.width > figure_width_px:
             height = round(image.height * figure_width_px / image.width)
@@ -1077,7 +1255,7 @@ sections += [
     f"ages < {horizon_days} d; `percentage` = share of that horizon's particle-time, "
     "survival-weighted where the weighting column names a member), joined to "
     f"`HexAggregates/HexAgg_key_r{hex_radius}m.parquet` for `mean_depth_m`. The last column is a "
-    "crude viable-zone proxy — a 6 km hex mean cannot resolve the real "
+    f"crude viable-zone proxy — a {hex_radius / 1000:g} km hex mean cannot resolve the real "
     f"{viable_depth_m:g} m band, so read it as a regime contrast, not a rate.",
     "",
     table_e_md,
@@ -1090,11 +1268,12 @@ sections += [
     "",
     "From `Exports/026/026_areas_<regime>_<season>_<weighting>.csv`: the smallest water area "
     f"holding a share q = {area_quantile:g} of the cumulative particle-time at ages < each "
-    "horizon (hexes ranked by "
-    "density, the crossing hex taken fractionally); `length_km` = √area. Pooled over the release "
-    "years, per-release-year min–max in brackets. It ranks cumulative particle-time, so it "
-    "measures concentration, not spread: where drifters accumulate in few hexes the area can "
-    "shrink as the horizon grows.",
+    f"horizon ({'/'.join(map(str, area_horizons))} d; hexes ranked by density, the crossing hex "
+    "taken fractionally); `length_km` = √area. Pooled over the release years, per-release-year "
+    "min–max in brackets. The pooled area ranks the years' summed weights, which spread over "
+    "more hexes than any one year's, so it can lie outside the per-year range. It ranks "
+    "cumulative particle-time, so it measures concentration, not spread: where drifters "
+    "accumulate in few hexes the area can shrink as the horizon grows.",
     "",
 ]
 for value, table in table_f_md.items():
@@ -1143,7 +1322,8 @@ if gaps:
     sections += [
         "## Gaps",
         "",
-        "Artefacts this report expected and did not find on disk:",
+        "Artefacts this report expected and did not find on disk, or found older than the "
+        "newest store partition (or `024a` key) they derive from — stale, so not used:",
         "",
         *[f"- {g}" for g in gaps],
         "",

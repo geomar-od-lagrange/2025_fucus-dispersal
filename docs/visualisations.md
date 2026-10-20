@@ -535,7 +535,12 @@ a member reduced over a longer window has had longer to strand. Stranded
 share and maps are in % of released, the maps on a shared `LogNorm` floored
 four decades below the peak. It reports a **range** rather than a number, because
 in the Baltic the beaching scheme can dominate the result. A statistics
-grid plus a map row:
+grid plus a map row. Each partition is reduced as it is read — its total
+weight (the denominator) and its stranded weight per `(beach_hex,
+beach_age_bin, disp_bin)` with the release year — so memory holds the
+reduced frames, not the ~10⁸ raw rows per member a year-pooled season has
+(measured peak 6.2 GiB for 14 members at season ALL, 2016–2024; the raw
+rows would be ~112 GB):
 
 - **Five statistics across members** — stranded % by `max_age_days`, Gini
   concentration of the stranded weight, number of stranding hexes,
@@ -573,16 +578,16 @@ Every number is **recomputed**, never transcribed:
 | C | `Σw_obs/Σn_obs` per season and cumulative horizon (`connectivity_horizons_csv`, 30/60/90/180 d), plus the top-target comparison at `top_horizon_days` (60 d) | `HexAgg_survconn_*`, `Exports/028/*.csv` |
 | D | median over source hexes of each displacement quantile | `Exports/027/*.geojson` |
 | E | concentration and viable-band share at `horizon_days` (180 d) | `Exports/026/026_<regime>_<season>_<weighting>_T<h>d.geojson` + the 024a key |
-| F | water area (and its √) holding `area_quantile` (0.9) of the cumulative particle-time per horizon, pooled [per-year min–max]; CSV rows at other `q` are filtered out | `Exports/026/026_areas_<regime>_<season>_<weighting>.csv` |
+| F | water area (and its √) holding `area_quantile` (0.9) of the cumulative particle-time at the `area_horizons_csv` (30/60/90/180 d) map horizons, pooled [per-year min–max; the pooled value can lie outside it]; CSV rows at other `q` or horizons are filtered out | `Exports/026/026_areas_<regime>_<season>_<weighting>.csv` |
 | G | afloat % per origin subbasin per horizon, pooled [per-year min–max], plus the basin-wide row per season | `Exports/029/afloat_by_origin_<regime>_<season>_<member>.csv` |
 
 `<weighting>` is the regime's 025/026 tag: the production member where the
 regime has a 024f store (surface_stokes), `unweighted` otherwise (bottom) —
 the rule the consumer driver applies, discovered from the partitions on
 disk. Table F reads its CSV generically — `scope` splits pooled from
-per-year rows, every float column but `q` is a value, every other column a
-row key — so a key column the export gains later becomes rows without an
-edit. The window every number refers to comes from the 024e/024g attrs
+per-year rows, every float column but `q` is a value, every other column
+but `q` a row key — so a key column the export gains later becomes rows
+without an edit; a requested horizon the CSV lacks is a gap. The window every number refers to comes from the 024e/024g attrs
 (asserted equal across members and between the two stores), not from a
 parameter.
 
@@ -618,7 +623,22 @@ reading order rather than twelve hardcoded names. Captions take their
 horizons and windows from the parameters, the store attrs and the 026
 exports on disk. An entry that resolves to nothing is recorded in a "Gaps"
 section of `HEADLINE.md` rather than raising: a partially-run consumer
-matrix should still yield a report that says what is missing.
+matrix should still yield a report that says what is missing. An entry read
+against another (`pairs_with`) names its figure number, or says it is
+absent.
+
+**Stale is missing.** Every export a table reads and every figure entry
+carries its sources — `(store kind, regime, member)` — and is a gap if its
+mtime is older than the newest `release_years` partition of those stores or
+than the 024a key. Otherwise a store rebuilt at a new window would leave the
+old consumer products in place under the same names, captioned with the new
+window. Sources: 024f at the production member for a weighted 025/026
+product, else the 024 counts; 024b for 027; 024c / 024g for unweighted /
+weighted 028; 024e for 029 and (every member) 031; 024f for 030. 035
+draws 026's area CSVs, so its sources are those CSVs, each checked against
+its own stores — a 035 figure drawn from a stale CSV is stale too. Considered recording input build ids in
+every product; rejected, mtime needs no consumer change (copying outputs
+without preserving mtimes defeats it).
 
 Copies are downscaled to `figure_width_px` (1400) with PIL; the 180 mm /
 300 dpi originals stay under `Figures/` as the manuscript versions, so the
