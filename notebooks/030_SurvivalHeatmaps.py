@@ -22,13 +22,20 @@
 # it uses the same two-state hazard as the beaching store — background rate in
 # the near-shore band plus a strong-wave rate above an onshore-Stokes
 # threshold, its settings baked into the opaque `member` tag that selects the
-# partitions read here (`docs/beaching.md`). For each elapsed-time horizon it
-# draws three panels:
+# partitions read here (`docs/beaching.md`). For each elapsed-time horizon `T`
+# it maps the **snapshot** age bin ending at `T` (ages in
+# `[T − age_bin_days, T)`), in three panels:
 #
 # 1. **Occupancy** — plain particle-residence density (`occ`), the baseline
 #    (no beaching), on a log scale.
 # 2. **Survival-weighted** — the same, with beaching progressively removed
 #    (`surv = Σ exp(−A)`), on the *same* log scale, so the thinning is legible.
+#
+#    Both are in **% of the released water-seeded drifters**: 024f keeps the
+#    `target_hex = -1` sentinel rows, so `Σocc` over a bin is exactly the
+#    released drifters `N` times the bin's hourly samples, and
+#    `surv / (N · age_bin_days · 24) · 100` is the mean share of released
+#    drifters afloat in that hex during the bin.
 # 3. **Surviving fraction** — `surv / occ` per hex (linear 0–1), i.e. the mean
 #    un-beached fraction of the particles *occupying* that hex at that age.
 #    Read it as "how depleted is the mass here", NOT "how much beaching
@@ -39,10 +46,14 @@
 #    one age bin, every particle in it has the same elapsed time, so the
 #    variation is route, not age.
 #
+# A snapshot, not a cumulative `[0, T)` horizon as in 026/028/029: being
+# afloat at `T` is an instantaneous state, and a survival map accumulated over
+# `[0, T)` would be a residence map — which 026 already draws, weighted.
+#
 # A fourth figure reduces the same store to the domain-wide **drifting
-# fraction vs. age**, with the 2016–2019 interannual min–max as a band around
-# the pooled curve. Maps stay pooled; only the scalar-per-horizon curve
-# carries the spread.
+# fraction vs. age**, with the interannual min–max as a band around the
+# pooled curve. Maps stay pooled; only the scalar-per-horizon curve carries
+# the spread.
 #
 # One regime and one release `season` per run; the season's monthly
 # partitions are pooled across every available release year. No Dask, no
@@ -68,6 +79,8 @@ from cartopy.io.shapereader import natural_earth
 output_root = "../output"
 regime = "surface_stokes"
 hex_radius = 6000
+# Age-bin granularity of the store (must match 024f; asserted against the
+# partitions' attrs).
 age_bin_days = 10
 # Release season: DJF / MAM / JJA / SON, or ALL for the pooled year. Selects
 # which of the monthly `_mMM` partitions 024f wrote are read and pooled.
@@ -78,9 +91,10 @@ season = "ALL"
 # the figures.
 member = "step_wc0p1_ts3_tcinf_tf1_tw0"
 
-# Elapsed-time horizons to map (days); each a multiple of age_bin_days and
-# within the store's max_age_days.
-time_horizons_days_csv = "20,50,100"
+# Elapsed-time horizons to map (days): the snapshot bin [T − age_bin_days, T)
+# ending at each. Each a multiple of age_bin_days and ≤ the store's
+# max_age_days.
+time_horizons_days_csv = "30,60,90,180"
 
 # Map extent (degrees). The 024a key tiles the whole BSH domain including the
 # North Sea, which is empty for Fucus and costs ~35% of panel height; cropping
@@ -149,6 +163,11 @@ figure_dir.mkdir(parents=True, exist_ok=True)
 # the interannual spread below groups by it. A whole-year partition (no
 # `_mMM` suffix, written when 024f itself ran with `release_month = 0`)
 # carries every month, so it is only read for `season = "ALL"`.
+#
+# Each partition carries its build parameters as `df.attrs`. They are taken
+# per file **before** the concat — pandas drops attrs that differ between the
+# frames it concatenates — and every pooled partition must agree on the
+# window, the binning and the rate-model point.
 
 # %%
 store_root = output_root / "HexAggregates"
@@ -176,28 +195,60 @@ if not survocc_files:
         f"no survocc partitions for regime {regime!r}, season {season}, "
         f"member {member!r} at {store_root} — run 024f."
     )
-survocc = pd.concat(
-    [
-        pd.read_parquet(f).reset_index(drop=True).assign(release_year=year)
-        for f, year in survocc_files
-    ],
-    ignore_index=True,
+
+# Keys every pooled partition must share: the reduction window, the binning
+# and the rate-model point. Provenance (builder, git_sha, slurm_job_id) and
+# the partition's identity (release_year, release_month) legitimately differ
+# and are not compared.
+POOLED_KEYS = (
+    "max_age_days", "age_bin_days", "w_c", "tau_strong_hours", "tau_calm_days",
+    "delta", "trap_flat", "trap_wall", "band_m",
+)
+
+
+def pooled_attrs(attrs, store):
+    """The build attrs every pooled partition shares, from one `df.attrs`
+    per partition."""
+    old = sum("max_age_days" not in a for a in attrs)
+    if old:
+        raise ValueError(
+            f"{old} of {len(attrs)} {store} partition(s) carry no build attrs "
+            f"(old schema, written before max_age_days was recorded) — rebuild "
+            f"them with the current 024e/024f/024g reducers"
+        )
+    distinct = {tuple(a[k] for k in POOLED_KEYS) for a in attrs}
+    if len(distinct) > 1:
+        raise ValueError(
+            f"pooled {store} partitions disagree on {POOLED_KEYS}: "
+            f"{sorted(distinct)} — rebuild them at one setting"
+        )
+    return dict(zip(POOLED_KEYS, distinct.pop()))
+
+
+parts = []
+store_attrs = []
+for f, year in survocc_files:
+    df = pd.read_parquet(f).reset_index(drop=True)
+    store_attrs.append(df.attrs)
+    parts.append(df.assign(release_year=year))
+survocc = pd.concat(parts, ignore_index=True)
+del parts
+
+window = pooled_attrs(store_attrs, f"024f {member}")
+assert window["age_bin_days"] == age_bin_days, (
+    f"store age_bin_days {window['age_bin_days']} != {age_bin_days}"
+)
+max_age_days = window["max_age_days"]
+# A horizon past the window selects no bin at all.
+assert max(time_horizons_days) <= max_age_days, (
+    f"horizon {max(time_horizons_days)} d is past the store's reduction window "
+    f"({max_age_days} d) — rebuild 024f or lower the horizon"
 )
 release_years = sorted(int(y) for y in survocc["release_year"].unique())
 print(f"key: {len(key):,} hexes; pooled {len(survocc_files)} (year, month) partition(s)")
 print(f"season {season} (months {season_months}); release years {release_years}")
+print(f"024f partitions agree on {window}")
 print(f"survocc rows: {len(survocc):,}")
-
-# The store's age axis is the upper bound on the horizons: 024f wrote bins
-# 0..max_age_days/age_bin_days − 1, and a horizon past the last bin
-# selects nothing at all.
-max_age_days = (int(survocc["age_bin"].max()) + 1) * age_bin_days
-for h in time_horizons_days:
-    assert h <= max_age_days, (
-        f"horizon {h} d is past the store's reduction window "
-        f"({max_age_days} d) — rebuild 024f or lower the horizon"
-    )
-print(f"store reduction window: {max_age_days} d")
 
 # %% [markdown]
 # # Rendering helpers
@@ -208,16 +259,21 @@ print(f"store reduction window: {max_age_days} d")
 
 # %%
 def hex_gdf(df, value_col):
-    """Sum a value column per target_hex, joined to the key geometry."""
+    """A value column per target_hex as % of the released drifters, joined to
+    the key geometry. `df` is one snapshot bin, every origin and the -1
+    sentinel included, so its Σocc is N × the bin's hourly samples — the
+    exact denominator. The key join then drops the sentinel."""
     return (
-        df.groupby("target_hex")[value_col].sum().rename("value").reset_index()
+        df.groupby("target_hex")[value_col].sum()
+        .div(df["occ"].sum()).mul(100).rename("value").reset_index()
         .merge(key[["hex_id", "geometry"]], left_on="target_hex", right_on="hex_id")
         .pipe(gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326")
     )
 
 
 def frac_gdf(df):
-    """Surviving fraction surv/occ per target_hex, joined to key geometry."""
+    """Surviving fraction surv/occ per target_hex (summed over origins),
+    joined to key geometry."""
     g = df.groupby("target_hex")[["occ", "surv"]].sum()
     g["value"] = g["surv"] / g["occ"]
     return (
@@ -281,9 +337,11 @@ domain_aspect = (
 # %% [markdown]
 # # Comparison grid: occupancy vs survival-weighted
 #
-# Rows = horizons; columns = occupancy, survival-weighted. Both share one
-# `LogNorm` (across all horizons) so the age-thinning and the beaching-removal
-# are directly readable against each other.
+# Rows = horizons; columns = occupancy, survival-weighted, both in % of the
+# released drifters (mean share present, resp. afloat, in the hex during the
+# bin). Both share one `LogNorm` (across all horizons, floored four decades
+# below the peak) so the age-thinning and the beaching-removal are directly
+# readable against each other.
 #
 # Surviving fraction is drawn separately below: it is a ratio in [0, 1] on a
 # linear scale, so putting it in this grid forces an unrelated quantity to
@@ -310,10 +368,10 @@ fig.set_size_inches(
 )
 for i, h in enumerate(time_horizons_days):
     hex_map(occ_gdfs[h], axes[i, 0], norm=dens_norm,
-            title=f"occupancy — age {bin_labels[h]}", label="particle-hours")
+            title=f"occupancy — age {bin_labels[h]}", label="present (% of released)")
     hex_map(surv_gdfs[h], axes[i, 1], norm=dens_norm,
             title=f"survival-weighted — age {bin_labels[h]}",
-            label="particle-hours")
+            label="afloat (% of released)")
 fig_path = figure_dir / f"SurvivalHeatmaps_{regime}_r{hex_radius}m_{season}_{member}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
 fig.savefig(fig_path, dpi=FIGURE_DPI)
@@ -356,10 +414,16 @@ plt.show()
 # %% [markdown]
 # # Drifting fraction vs. age
 #
-# The domain-wide reduction of the same store: `Σ surv / Σ occ` per age bin —
-# the share of particle-time still afloat. The pooled curve carries the
-# 2016–2019 **interannual min–max** as a shaded band, the same reduction
-# restricted to one `release_year` at a time.
+# The domain-wide reduction of the same store: `Σ surv / Σ occ` per age bin,
+# summed over every origin subbasin **and the `target_hex = -1` sentinel** —
+# so `Σ occ` is exactly the released drifters × the bin's hourly samples and
+# the curve is the mean surviving fraction of *all* released drifters,
+# including those that left the BSH domain (they carry the survival they had
+# when they left; the band never reaches them again). Dropping the sentinel
+# would make it the surviving fraction of the drifters still in the domain,
+# a population that shrinks with age. The pooled curve carries the
+# **interannual min–max** as a shaded band, the same reduction restricted to
+# one `release_year` at a time.
 
 # %%
 def drifting_fraction_curve(df):
@@ -398,10 +462,19 @@ plt.show()
 # # Validation / summary
 
 # %%
+# Per age bin, every origin and the -1 sentinel summed: N is the released
+# drifter count Σocc / (age_bin_days · 24) (exact for a full bin), and
+# `left_domain` the share of the bin's samples at target_hex = -1.
 per_bin = survocc.groupby("age_bin")[["occ", "surv"]].sum()
+per_bin["N"] = per_bin["occ"] / (age_bin_days * 24)
+per_bin["left_domain"] = (
+    survocc[survocc["target_hex"] < 0].groupby("age_bin")["occ"].sum()
+    .reindex(per_bin.index, fill_value=0.0) / per_bin["occ"]
+)
 per_bin["drifting_fraction"] = per_bin["surv"] / per_bin["occ"]
 print(f"regime={regime}, hex_radius={hex_radius} m, season={season} "
-      f"(months {season_months}), age_bin_days={age_bin_days}")
+      f"(months {season_months}), age_bin_days={age_bin_days}, "
+      f"window {max_age_days} d, member {member}")
 print(per_bin.to_string(float_format=lambda v: f"{v:,.3f}"))
 for h in time_horizons_days:
     b = horizon_bins[h]
@@ -412,4 +485,4 @@ for h in time_horizons_days:
     per_year_bin = drift_per_year.loc[b * age_bin_days]
     print(f"  age {bin_labels[h]} (bin {b}): drifting fraction {s / max(o, 1):.3f} "
           f"[{per_year_bin.min():.3f} .. {per_year_bin.max():.3f}], "
-          f"{sub['target_hex'].nunique():,} hexes")
+          f"{sub.loc[sub['target_hex'] >= 0, 'target_hex'].nunique():,} hexes")

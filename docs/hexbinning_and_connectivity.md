@@ -159,7 +159,7 @@ release years, restricts to one release `season` (DJF/MAM/JJA/SON/ALL — the
 contract lives in [visualisations.md](visualisations.md)), drops `-1` rows
 from the matrix and reports the dropped fraction. Three views:
 
-- **Raw residence matrix**, log scale, pooled over every age bin.
+- **Raw residence matrix**, log scale, pooled over the reduction window.
 - **Emission fraction** `x / x.sum(axis=1)` — the share of an origin's
   cumulative particle-time that sits in each target, one figure per age
   horizon `T`. Cumulative and half-open: ages `< T` days, i.e.
@@ -167,6 +167,13 @@ from the matrix and reports the dropped fraction. Three views:
   comparable; raw rows differ by orders of magnitude with release count.
 - **Interannual range** — the emission fraction recomputed per release year,
   reduced to mean / min / max per (origin, target, horizon).
+
+Both stores are cut to one window, ages `< max_age_days` (a 028 parameter,
+default 180 d; horizons default 30/60/90/180 d): 024g records its own window
+in each partition's `df.attrs` and 028 asserts that every pooled partition
+agrees on it and on the rate-model point and that it covers `max_age_days`,
+while 024c is uncapped (220 d) and is cut — otherwise the weighted and the
+unweighted raw matrix would cover different ages.
 
 Exports land under `output_root/Exports/028/` as long-form CSV,
 `connectivity_<regime>_<season>_<member-or-unweighted>_T<horizon>d_` +

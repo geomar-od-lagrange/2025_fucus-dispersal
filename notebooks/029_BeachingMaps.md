@@ -27,21 +27,30 @@ exceeds a threshold (`docs/beaching.md`). Its settings are baked into the
 reducer's opaque `member` tag, which selects the partitions read here and
 labels every figure; this notebook never parses the tag. Draws:
 
-1. **Where-stranded density** — beached weight (expected particles) per
-   `beach_hex` (log scale), with the *Fucus* release sites overlaid so the
-   map reads as a source→sink picture rather than a deposition field alone.
-2. **Beached fraction per source hex** — of the drifters released in each
-   hex, what fraction strands within the reduction window (linear 0–1).
+1. **Where-stranded density** — stranded weight per `beach_hex` as a
+   percentage of the released water-seeded drifters (log scale), with the
+   *Fucus* release sites overlaid so the map reads as a source→sink picture
+   rather than a deposition field alone.
+2. **Beached share per source hex** — of the drifters released in each
+   hex, the percentage that strands within the reduction window (linear
+   0–100).
 3. **Beaching age horizons** — cumulative where-stranded density for
-   strandings at age ≤ T (the beaching analogue of `026`'s horizons).
-4. **Cumulative beached fraction vs. age** — the stranding time course,
-   with the 2016–2019 interannual min–max as a band around the pooled
-   curve. Maps stay pooled; only the scalar-per-horizon curve carries the
-   spread.
-5. **Displacement at stranding** — stranded weight over `disp_bin`, the
+   strandings at ages < T (the beaching analogue of `026`'s horizons).
+4. **Afloat by origin subbasin** — per HELCOM origin subbasin, the
+   percentage of its released drifters not yet stranded at each horizon,
+   pooled and with the per-release-year min–max; table + CSV.
+5. **Cumulative beached percentage vs. age** — the stranding time course,
+   with the interannual min–max as a band around the pooled curve. Maps
+   stay pooled; only the scalar-per-horizon curve carries the spread.
+6. **Displacement at stranding** — stranded share over `disp_bin`, the
    crow-flies displacement from release at the deposit step. Short-travel
    strandings are a real outcome under a threshold rate model, never a
    mask.
+
+Every percentage is of the **released water-seeded drifters** of the
+pooled partitions (their summed `weight`: deposits + never-beached residual
+per release hex sum to its released drifter count), so the maps, the curve
+and the table share one denominator.
 
 Between 1. and 2. sits the number the overlay exists for: the **substrate
 contrast between source and sink**, the shoreline flat fraction where the
@@ -80,8 +89,8 @@ data_root = "../data"
 regime = "surface_stokes"
 # Hex radius of the store (built by 024a/024e). Must match the files on disk.
 hex_radius = 6000
-# Age-bin granularity of the beaching store (must match 024e). Horizons must
-# be whole multiples of this.
+# Age-bin granularity of the beaching store (must match 024e; asserted
+# against the partitions' attrs). Horizons must be whole multiples of this.
 age_bin_days = 10
 # Release season: DJF / MAM / JJA / SON, or ALL for the pooled year. Selects
 # which of the monthly `_mMM` partitions 024e wrote are read and pooled.
@@ -97,15 +106,16 @@ member = "step_wc0p1_ts3_tcinf_tf1_tw0"
 # material. "" skips the comparison.
 contrast_member = "step_wc0p1_ts3_tcinf"
 # Displacement bin width (km) of the store's `disp_bin` axis (must match
-# the reducer).
+# 024e; asserted against the partitions' attrs).
 disp_bin_km = 10.0
 
 # Overlay the Fucus release sites on the where-stranded map.
 show_release_points = True
 
-# Beaching age horizons to map, in days. Each must be a multiple of
-# age_bin_days.
-time_horizons_days_csv = "10,20,50"
+# Cumulative beaching age horizons (d) for the horizon maps and the afloat
+# table: strandings at ages < T. Each must be a multiple of age_bin_days and
+# ≤ the store's max_age_days.
+time_horizons_days_csv = "30,60,90,180"
 
 # Map extent (degrees). The 024a key tiles the whole BSH domain including the
 # North Sea, which is empty for Fucus and costs ~35% of panel height; cropping
@@ -195,6 +205,11 @@ by 024e. Every partition whose month is in the season is read and pooled;
 the release year is parsed from the filename and kept as a column, because
 the interannual spread below groups by it.
 
+Each partition carries its build parameters as `df.attrs`. They are taken
+per file **before** the concat — pandas drops attrs that differ between the
+frames it concatenates — and every pooled partition must agree on the
+window, the binning and the rate-model point.
+
 A whole-year partition (no `_mMM` suffix at all, written when 024e itself
 ran with `release_month = 0`) carries every month, so it is only read for
 `season = "ALL"`.
@@ -210,58 +225,116 @@ meta = json.loads(key_path.with_suffix(".json").read_text())
 hp = HexProj(**meta["hex_proj"])
 subbasin_name = {int(k): v for k, v in meta["subbasin_id_to_name"].items()}
 
-_PART_RE = re.compile(
-    rf"HexAgg_beaching_r{hex_radius}m_{regime}_(\d{{4}})(?:_m(\d{{2}}))?"
-    rf"_{re.escape(member)}\.parquet$"
+# Keys every pooled partition of one member must share: the reduction window,
+# the binning and the rate-model point. Provenance (builder, git_sha,
+# slurm_job_id) and the partition's identity (release_year, release_month)
+# legitimately differ and are not compared.
+POOLED_KEYS = (
+    "max_age_days", "age_bin_days", "disp_bin_km", "w_c", "tau_strong_hours",
+    "tau_calm_days", "delta", "trap_flat", "trap_wall", "band_m",
 )
 
 
-beaching_files = []
-for f in sorted(store_root.glob(f"HexAgg_beaching_r{hex_radius}m_{regime}_*.parquet")):
-    m = _PART_RE.search(f.name)
-    if m is None:
-        continue
-    month = m.group(2)
-    if month is None:
-        # whole-year partition: carries every month, so only for season ALL
-        if season != "ALL":
-            continue
-    elif int(month) not in season_months:
-        continue
-    beaching_files.append((f, int(m.group(1))))
-if not beaching_files:
-    raise FileNotFoundError(
-        f"no beaching partitions for regime {regime!r}, season {season}, "
-        f"member {member!r} at {store_root} — run 024e."
+def pooled_attrs(attrs, store):
+    """The build attrs every pooled partition shares, from one `df.attrs`
+    per partition."""
+    old = sum("max_age_days" not in a for a in attrs)
+    if old:
+        raise ValueError(
+            f"{old} of {len(attrs)} {store} partition(s) carry no build attrs "
+            f"(old schema, written before max_age_days was recorded) — rebuild "
+            f"them with the current 024e/024f/024g reducers"
+        )
+    distinct = {tuple(a[k] for k in POOLED_KEYS) for a in attrs}
+    if len(distinct) > 1:
+        raise ValueError(
+            f"pooled {store} partitions disagree on {POOLED_KEYS}: "
+            f"{sorted(distinct)} — rebuild them at one setting"
+        )
+    return dict(zip(POOLED_KEYS, distinct.pop()))
+
+
+def season_partitions(tag):
+    """(path, release_year) of every partition of member `tag` in the season."""
+    part_re = re.compile(
+        rf"HexAgg_beaching_r{hex_radius}m_{regime}_(\d{{4}})(?:_m(\d{{2}}))?"
+        rf"_{re.escape(tag)}\.parquet$"
     )
+    files = []
+    for f in sorted(store_root.glob(f"HexAgg_beaching_r{hex_radius}m_{regime}_*.parquet")):
+        m = part_re.search(f.name)
+        if m is None:
+            continue
+        month = m.group(2)
+        if month is None:
+            # whole-year partition: carries every month, so only for season ALL
+            if season != "ALL":
+                continue
+        elif int(month) not in season_months:
+            continue
+        files.append((f, int(m.group(1))))
+    if not files:
+        raise FileNotFoundError(
+            f"no beaching partitions for regime {regime!r}, season {season}, "
+            f"member {tag!r} at {store_root} — run 024e"
+            + (f', or set contrast_member = "" to skip the comparison.'
+               if tag == contrast_member else ".")
+        )
+    return files
 
-beaching = pd.concat(
-    [
-        pd.read_parquet(f).reset_index(drop=True).assign(release_year=year)
-        for f, year in beaching_files
-    ],
-    ignore_index=True,
+
+beaching_files = season_partitions(member)
+parts = []
+store_attrs = []
+for f, year in beaching_files:
+    df = pd.read_parquet(f).reset_index(drop=True)
+    store_attrs.append(df.attrs)
+    parts.append(df.assign(release_year=year))
+beaching = pd.concat(parts, ignore_index=True)
+del parts
+
+window = pooled_attrs(store_attrs, f"024e {member}")
+assert window["age_bin_days"] == age_bin_days, (
+    f"store age_bin_days {window['age_bin_days']} != {age_bin_days}"
 )
+assert window["disp_bin_km"] == disp_bin_km, (
+    f"store disp_bin_km {window['disp_bin_km']} != {disp_bin_km}"
+)
+max_age_days = window["max_age_days"]
+assert max(time_horizons_days) <= max_age_days, (
+    f"horizon {max(time_horizons_days)} d is past the store's reduction window "
+    f"({max_age_days} d) — rebuild 024e or lower the horizon"
+)
+
 release_years = sorted(int(y) for y in beaching["release_year"].unique())
+# The denominator of every percentage below: the released water-seeded
+# drifters of the pooled partitions.
+total_released = float(beaching["weight"].sum())
 print(f"key: {len(key):,} hexes; pooled {len(beaching_files)} (year, month) partition(s)")
 print(f"season {season} (months {season_months}); release years {release_years}")
-print(f"beaching rows: {len(beaching):,}")
+print(f"024e partitions agree on {window}")
+print(f"beaching rows: {len(beaching):,}; released drifters (Σweight) "
+      f"{total_released:,.0f}")
 ```
 
 # Rendering helpers
 
-`hex_gdf` sums a value column over a hex column and joins to the key
-geometry (dropping the `-1` sentinel); `hex_map` draws hex polygons +
+`hex_gdf` sums the stranded weight over a hex column, converts it to a
+percentage of the released drifters and joins to the key geometry
+(dropping the `-1` sentinel); `hex_map` draws hex polygons +
 coastline on a plain EPSG:4326 axis (as 025/026), with the colorbar as an
 inset axes at axes-fraction height 1.0 so it is exactly the map height —
 a fixed-aspect map never fills its gridspec cell, and a cell-sized
 colorbar overshoots it.
 
 ```python
-def hex_gdf(df, hex_col, value_col="weight"):
-    grp = df[df[hex_col] >= 0].groupby(hex_col)[value_col].sum()
+def hex_gdf(df, hex_col):
+    """Stranded weight per hex (`weight`) and as a percentage of the released
+    drifters (`value`, the plotted column), joined to the key geometry."""
+    grp = df[df[hex_col] >= 0].groupby(hex_col)["weight"].sum()
     return (
-        grp.rename("value").reset_index()
+        grp.reset_index()
+        .assign(value=lambda d: 100 * d["weight"] / total_released)
         .merge(key[["hex_id", "geometry"]], left_on=hex_col, right_on="hex_id")
         .pipe(gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326")
     )
@@ -353,7 +426,7 @@ print(f"  in {pd.unique(release_hex_of_cell).size:,} hexes; key hexes with "
 
 # Where-stranded density
 
-Log-scale beached weight (expected particles) per stranding hex, summed over
+Log-scale stranded share (% of released drifters) per stranding hex, summed over
 the store's remaining axes (`disp_bin`, and `shore_type` where the reducer
 emits it). Neither is shown on the maps: `shore_type` is a threshold label
 on the HELCOM BRISK + CLMS flat fraction `ff` at the stranding hour (`flat`
@@ -370,9 +443,9 @@ strand_norm = log_norm(gdf_stranded["value"])
 fig, ax = plt.subplots(layout="constrained")
 fig.set_size_inches(FIGURE_WIDTH_IN, grid_height_in(1, 1, domain_aspect, FIGURE_WIDTH_IN))
 hex_map(gdf_stranded, ax, norm=strand_norm,
-        title="stranded weight, Fucus release sites overlaid"
-        if show_release_points else "stranded weight",
-        label="stranded weight (particles)")
+        title="stranded, Fucus release sites overlaid"
+        if show_release_points else "stranded",
+        label="stranded (% of released)")
 if show_release_points:
     # Hollow magenta rings, one per REDLIST release cell; style constants and
     # their rationale are at the top of the notebook.
@@ -448,31 +521,19 @@ production member's coming from the rows already in memory.
 ```python
 strand_by_hex = {member: beached.groupby("beach_hex")["weight"].sum()}
 if contrast_member:
-    contrast_re = re.compile(
-        rf"HexAgg_beaching_r{hex_radius}m_{regime}_(\d{{4}})(?:_m(\d{{2}}))?"
-        rf"_{re.escape(contrast_member)}\.parquet$"
-    )
     parts = []
-    for f in sorted(
-        store_root.glob(f"HexAgg_beaching_r{hex_radius}m_{regime}_*.parquet")
-    ):
-        m = contrast_re.search(f.name)
-        if m is None:
-            continue
-        month = m.group(2)
-        if month is None:
-            if season != "ALL":
-                continue
-        elif int(month) not in season_months:
-            continue
+    contrast_attrs = []
+    for f, _ in season_partitions(contrast_member):
         d = pd.read_parquet(f, columns=["beach_hex", "weight"])
+        contrast_attrs.append(d.attrs)
         parts.append(d[d["beach_hex"] >= 0].groupby("beach_hex")["weight"].sum())
-    if not parts:
-        raise FileNotFoundError(
-            f"no beaching partitions for contrast_member {contrast_member!r} "
-            f"(regime {regime!r}, season {season}) at {store_root} — run 024e, "
-            f'or set contrast_member = "" to skip the comparison.'
-        )
+    # The two members differ in their rate model by design; they must share
+    # the window, or the comparison mixes stranding horizons.
+    contrast_window = pooled_attrs(contrast_attrs, f"024e {contrast_member}")
+    assert contrast_window["max_age_days"] == max_age_days, (
+        f"{contrast_member} window {contrast_window['max_age_days']} d != "
+        f"{member} window {max_age_days} d"
+    )
     strand_by_hex[contrast_member] = pd.concat(parts).groupby(level=0).sum()
 for tag, w in strand_by_hex.items():
     print(f"{tag}: {len(w):,} stranding hexes, Σweight {w.sum():,.0f}")
@@ -553,10 +614,10 @@ for tag, w in strand_by_hex.items():
     print(f"stranded weight HELCOM leaves unassigned ({tag}): {100 * u:.1f} %")
 ```
 
-# Beached fraction per source hex
+# Beached share per source hex
 
-Of the drifters released in each source hex, the fraction that strands
-within the reduction window (linear 0–1). Highlights which source regions
+Of the drifters released in each source hex, the percentage that strands
+within the reduction window (linear 0–100). Highlights which source regions
 lose most of their propagules to the coast.
 
 No release-site overlay here: this panel's coloured hexes *are* the release
@@ -568,7 +629,7 @@ released = beaching.groupby("release_hex")["weight"].sum().rename("released")
 stranded = beached.groupby("release_hex")["weight"].sum().rename("stranded")
 frac = (
     pd.concat([released, stranded], axis=1).fillna({"stranded": 0})
-    .assign(value=lambda d: d["stranded"] / d["released"])
+    .assign(value=lambda d: 100 * d["stranded"] / d["released"])
     .reset_index()
 )
 frac = frac[frac["release_hex"] >= 0].merge(
@@ -577,9 +638,10 @@ frac = frac[frac["release_hex"] >= 0].merge(
 
 fig, ax = plt.subplots(layout="constrained")
 fig.set_size_inches(FIGURE_WIDTH_IN, grid_height_in(1, 1, domain_aspect, FIGURE_WIDTH_IN))
-# Linear default scale (fraction in [0, 1]); no norm override needed.
-hex_map(frac, ax, norm=None, title="beached fraction per source hex",
-        label="beached fraction")
+# Linear default scale (percentage in [0, 100]); no norm override needed.
+hex_map(frac, ax, norm=None,
+        title=f"stranded within {max_age_days} d, per source hex",
+        label="stranded (% of the hex's released)")
 fig_path = figure_dir / f"BeachedFraction_{regime}_r{hex_radius}m_{season}_{member}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
 fig.savefig(fig_path, dpi=FIGURE_DPI)
@@ -589,10 +651,11 @@ plt.show()
 
 # Beaching age horizons
 
-Cumulative where-stranded density for strandings occurring at age ≤ T.
-`beach_age_bin` bins age at `age_bin_days`, so horizon T keeps
-`beach_age_bin < T // age_bin_days` (strandings in bins fully within T).
-A shared `LogNorm` across horizons makes the fill-in over time legible.
+Cumulative where-stranded density for strandings at ages < T, as a
+percentage of all released drifters. `beach_age_bin` bins age at
+`age_bin_days`, so horizon T keeps `beach_age_bin < T // age_bin_days`
+(strandings in bins fully within T). A shared `LogNorm` across horizons
+makes the fill-in over time legible.
 
 ```python
 horizon_bins = {h: h // age_bin_days for h in time_horizons_days}
@@ -610,7 +673,7 @@ fig.set_size_inches(
 )
 for ax, h in zip(axes.flat, time_horizons_days):
     hex_map(gdfs[h], ax, norm=horizon_norm, title=f"stranded by {h} d",
-            label="stranded weight (particles)")
+            label="stranded (% of released)")
 fig_path = figure_dir / f"BeachingHorizons_{regime}_r{hex_radius}m_{season}_{member}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
 fig.savefig(fig_path, dpi=FIGURE_DPI)
@@ -620,38 +683,157 @@ plt.show()
 
 # GeoJSON export of the per-horizon deposit
 
-One file per age horizon: the cumulative stranded weight per hex with the
-024a geometry, EPSG:4326 — the horizon panels above in a form
-collaborators can open in R or QGIS.
+One file per age horizon: the cumulative stranded weight per hex
+(`stranded_weight`, expected particles) and the same as a percentage of the
+released drifters (`pct_released`, the mapped value), with the 024a
+geometry, EPSG:4326 — the horizon panels above in a form collaborators can
+open in R or QGIS.
 
 ```python
 for h in time_horizons_days:
-    g = gdfs[h].rename(columns={"value": "stranded_weight"}).drop(columns="hex_id")
+    g = (
+        gdfs[h]
+        .rename(columns={"weight": "stranded_weight", "value": "pct_released"})
+        .drop(columns="hex_id")
+    )
     export_path = export_dir / f"029_{regime}_{season}_{member}_T{h}d.geojson"
     g.to_file(export_path, driver="GeoJSON")
     print(f"wrote {export_path} ({len(g):,} hexes)")
 ```
 
-# Cumulative beached fraction vs. age
 
-Share of all released drifters stranded by each elapsed-time horizon — the
-stranding time course, summed over the store's other axes. The pooled curve
-is drawn with the 2016–2019 **interannual min–max** as a shaded band: the
+# Afloat by origin subbasin
+
+Per HELCOM origin subbasin (the key's `helcom_subbasin` of `release_hex`),
+the percentage of its released drifters **not yet stranded** at each
+horizon `T`:
+
+`afloat(T) = 100 · (Σweight − Σweight[beach_hex ≥ 0 & beach_age_bin < T / age_bin_days]) / Σweight`
+
+with Σweight the origin's released drifters (deposits + residual). Pooled
+over every release year from the summed weights, plus the min–max of the
+same reduction per release year. "Afloat" is everything not stranded: it
+includes drifters that left the BSH domain, and no lifetime or sinking is
+applied — a biological loss would have to be multiplied in downstream.
+Origin `-1` (a release hex outside every named polygon) is kept as its own
+row and printed apart from the named subbasins; the `all` row is the
+basin-wide value.
+
+```python
+origin_of_hex = key.set_index("hex_id")["helcom_subbasin"]
+origin = beaching["release_hex"].map(origin_of_hex).fillna(-1).astype(int)
+
+# Released and stranded-by-T weight per (origin, release_year, horizon).
+rows = []
+for h in time_horizons_days:
+    stranded = (beaching["beach_hex"] >= 0) & (beaching["beach_age_bin"] < h // age_bin_days)
+    rows.append(
+        beaching[["release_year", "weight"]]
+        .assign(origin=origin, stranded=beaching["weight"].where(stranded, 0.0))
+        .groupby(["origin", "release_year"])[["weight", "stranded"]].sum()
+        .assign(horizon_days=h)
+    )
+afloat_year = pd.concat(rows).reset_index()
+afloat_year["afloat"] = afloat_year["weight"] - afloat_year["stranded"]
+afloat_year = pd.concat(
+    [
+        afloat_year,
+        afloat_year.groupby(["release_year", "horizon_days"], as_index=False)[
+            ["weight", "stranded", "afloat"]
+        ].sum().assign(origin="all"),
+    ],
+    ignore_index=True,
+)
+afloat_year["afloat_pct"] = 100 * afloat_year["afloat"] / afloat_year["weight"]
+pooled = afloat_year.groupby(["origin", "horizon_days"], sort=False)[
+    ["weight", "afloat"]
+].sum()
+spread = afloat_year.groupby(["origin", "horizon_days"], sort=False)["afloat_pct"]
+afloat = pd.DataFrame(
+    {
+        "released_weight": pooled["weight"],
+        "afloat_pct": 100 * pooled["afloat"] / pooled["weight"],
+        "afloat_pct_min": spread.min(),
+        "afloat_pct_max": spread.max(),
+        "n_years": spread.size(),
+    }
+).reset_index()
+names = {**subbasin_name, -1: "outside named subbasins", "all": "all origins"}
+afloat.insert(1, "origin_name", afloat["origin"].map(names))
+afloat = afloat.rename(columns={"origin": "origin_subbasin"})
+
+afloat_path = export_dir / f"afloat_by_origin_{regime}_{season}_{member}.csv"
+with afloat_path.open("w") as fh:
+    fh.write(
+        f"# 029_BeachingMaps: percentage of each origin subbasin's released "
+        f"water-seeded drifters not stranded by age horizon_days "
+        f"(regime {regime}, season {season}, member {member}, release years "
+        f"{release_years[0]}-{release_years[-1]}, reduction window "
+        f"{max_age_days} d)\n"
+        "# afloat = released - stranded at ages < horizon_days; it includes "
+        "drifters that left the BSH domain, and no lifetime or sinking is "
+        "applied\n"
+        "# afloat_pct pools the release years (summed weights); "
+        "afloat_pct_min/max are the per-release-year range; "
+        "origin_subbasin -1 = release hex outside every named HELCOM "
+        "subbasin, all = every origin\n"
+    )
+    afloat.to_csv(fh, index=False)
+print(f"wrote {afloat_path} ({len(afloat)} rows)")
+
+
+def afloat_cells(frame):
+    """origin × horizon of 'pooled [min–max]' strings."""
+    cells = frame.assign(
+        cell=frame.apply(
+            lambda r: f"{r.afloat_pct:5.1f} [{r.afloat_pct_min:5.1f}–{r.afloat_pct_max:5.1f}]",
+            axis=1,
+        )
+    )
+    return cells.pivot(index="origin_name", columns="horizon_days", values="cell").rename(
+        columns=lambda h: f"{h} d"
+    )
+
+
+named = afloat[afloat["origin_subbasin"].map(lambda o: o not in (-1, "all"))]
+order = named[named["horizon_days"] == time_horizons_days[0]].sort_values(
+    "released_weight", ascending=False
+)["origin_name"]
+print(f"afloat % of released by origin subbasin, pooled [per-year min–max], "
+      f"{season}, {member}:")
+print(afloat_cells(named).reindex(order).to_string())
+print()
+print(afloat_cells(afloat[afloat["origin_subbasin"].isin([-1, "all"])]).to_string())
+share_outside = float(
+    afloat.loc[
+        (afloat["origin_subbasin"] == -1) & (afloat["horizon_days"] == time_horizons_days[0]),
+        "released_weight",
+    ].sum()
+    / total_released
+)
+print(f"origin -1 holds {100 * share_outside:.1f} % of the released drifters")
+```
+
+# Cumulative beached percentage vs. age
+
+Percentage of all released drifters stranded by each elapsed-time horizon —
+the stranding time course, summed over the store's other axes. The pooled
+curve is drawn with the **interannual min–max** as a shaded band: the
 per-year curves are the same reduction restricted to one `release_year`, so
 the band is the honest spread behind the single pooled number.
 
 ```python
 def beached_fraction_curve(df):
-    """Cumulative stranded / released weight at each age-bin right edge."""
+    """Cumulative stranded weight as % of released, at each age-bin right edge."""
     b = df[df["beach_hex"] >= 0]
     total = float(df["weight"].sum())
     per_bin = b.groupby("beach_age_bin")["weight"].sum().sort_index()
     return pd.Series(
-        per_bin.cumsum().to_numpy() / max(total, 1.0),
+        100 * per_bin.cumsum().to_numpy() / max(total, 1.0),
         index=pd.Index(
             (per_bin.index.to_numpy() + 1) * age_bin_days, name="age (days)"
         ),
-        name="cumulative beached fraction",
+        name="stranded (% of released)",
     )
 
 
@@ -661,7 +843,7 @@ curve = beached_fraction_curve(beaching)
 # previous bin's, not "missing": forward-fill it, and read the bins before a
 # year's first stranding as the 0 they are. Without this the band's min is the
 # nanmin over whichever years happen to carry a bin.
-per_year = pd.DataFrame(
+curve_per_year = pd.DataFrame(
     {y: beached_fraction_curve(g) for y, g in beaching.groupby("release_year")}
 ).reindex(curve.index).ffill().fillna(0.0)
 
@@ -671,10 +853,10 @@ fig, ax = plt.subplots(layout="constrained")
 fig.set_size_inches(FIGURE_WIDTH_IN, 0.45 * FIGURE_WIDTH_IN)
 curve.plot(ax=ax)
 ax.fill_between(
-    curve.index, per_year.min(axis=1), per_year.max(axis=1), alpha=0.3,
+    curve.index, curve_per_year.min(axis=1), curve_per_year.max(axis=1), alpha=0.3,
     label=f"interannual range ({release_years[0]}–{release_years[-1]})",
 )
-ax.set_ylabel("cumulative beached fraction")
+ax.set_ylabel("stranded (% of released)")
 ax.legend()
 fig_path = figure_dir / f"BeachedFractionCurve_{regime}_r{hex_radius}m_{season}_{member}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
@@ -685,15 +867,15 @@ plt.show()
 
 # Displacement at stranding
 
-Stranded weight over `disp_bin` — the crow-flies displacement from the
-release point at the deposit step, in `disp_bin_km` bins — pooled over every
-source hex. The residual (never-beached) rows carry `disp_bin = -1` and drop
+Stranded share (% of released drifters) over `disp_bin` — the crow-flies
+displacement from the release point at the deposit step, in `disp_bin_km`
+bins — pooled over every source hex. The residual (never-beached) rows carry `disp_bin = -1` and drop
 out with the `beach_hex = -1` filter. Short-displacement strandings are kept: a
 strong-wave event stranding freshly released material near home is a real
 outcome of the threshold rate model, not an artefact to mask.
 
 ```python
-disp_weight = beached.groupby("disp_bin")["weight"].sum()
+disp_weight = 100 * beached.groupby("disp_bin")["weight"].sum() / total_released
 disp_weight.index = (disp_weight.index.to_numpy() + 0.5) * disp_bin_km
 disp_weight.index.name = "displacement (km)"
 median_disp = float(
@@ -706,7 +888,7 @@ fig.set_size_inches(FIGURE_WIDTH_IN, 0.45 * FIGURE_WIDTH_IN)
 # the histogram it is; a categorical bar plot would label every bin and the
 # axis runs to hundreds of bins (docs/visualisations.md).
 disp_weight.plot(ax=ax, drawstyle="steps-mid")
-ax.set_ylabel("stranded weight")
+ax.set_ylabel("stranded (% of released)")
 fig_path = figure_dir / f"StrandingTravelDistance_{regime}_r{hex_radius}m_{season}_{member}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
 fig.savefig(fig_path, dpi=FIGURE_DPI)
@@ -718,10 +900,10 @@ plt.show()
 # Validation / summary
 
 ```python
-total_released = float(beaching["weight"].sum())
 n_beached = float(beached["weight"].sum())
 print(f"regime={regime}, hex_radius={hex_radius} m, season={season} "
-      f"(months {season_months}), age_bin_days={age_bin_days}")
+      f"(months {season_months}), age_bin_days={age_bin_days}, "
+      f"window {max_age_days} d")
 print(f"  drifters (Σweight): {total_released:,.0f}")
 print(f"  beached:           {n_beached:,.0f} "
       f"({100 * n_beached / max(total_released, 1):.1f}%)")
@@ -729,8 +911,8 @@ print(f"  stranding hexes:   {beached['beach_hex'].nunique():,}")
 print(f"  source hexes:      {frac['release_hex'].nunique():,}")
 print(f"  median displacement at stranding: {median_disp:,.1f} km")
 print(f"  member:            {member}")
-print("  cumulative beached fraction by age horizon (pooled, interannual min–max):")
+print("  cumulative stranded % of released by age (pooled, interannual min–max):")
 for t in curve.index:
-    print(f"    {t:>5} d: {100 * curve[t]:6.2f} %  "
-          f"[{100 * per_year.loc[t].min():6.2f} .. {100 * per_year.loc[t].max():6.2f}]")
+    print(f"    {t:>5} d: {curve[t]:6.2f} %  "
+          f"[{curve_per_year.loc[t].min():6.2f} .. {curve_per_year.loc[t].max():6.2f}]")
 ```

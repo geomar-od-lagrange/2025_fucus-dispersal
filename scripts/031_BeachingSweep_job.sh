@@ -16,8 +16,10 @@ set -euo pipefail
 #   sbatch scripts/031_BeachingSweep_job.sh surface_stokes 6000 \
 #       "step_wc0p05_ts3_tcinf,step_wc0p1_ts3_tcinf" "w_c 0.05,w_c 0.10" step_wc0p1_ts3_tcinf
 # labels_csv (empty = use the member tags) and baseline_member (empty = none)
-# are optional. 024e_BuildBeaching_job.sh must have run for every member, and
-# disp_bin_km must match the value 024e built with (notebook default: 10).
+# are optional. 024e_BuildBeaching_job.sh must have run for every member at
+# one reduction window; age_bin_days / disp_bin_km fall back to the notebook
+# defaults (10 d / 10 km), and both and the window are asserted against the
+# partitions' attrs.
 
 regime="${1:-surface_stokes}"
 hex_radius="${2:-6000}"

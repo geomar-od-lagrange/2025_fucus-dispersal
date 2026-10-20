@@ -29,9 +29,9 @@ output_root/Figures/
   026a/ OriginSubbasinTimeHorizonMaps_<regime>_<season>_r<radius>m_<member-or-unweighted>_<subbasin>_<column>.png
   026b/ OriginSubbasinYearTimeHorizonMaps_<regime>_<season>_r<radius>m_<member-or-unweighted>_<subbasin>_<year>_<column>.png
   027/  DistanceQuantiles_<regime>_r<radius>m_<season>.png
-  028/  connectivity_<regime>_<season>_<member-or-unweighted>_*.png
+  028/  SubbasinConnectivity_{raw,emission,interannual}_<regime>_<season>_<member-or-unweighted>_T<h>d.png
   029/  <view>_<regime>_r<radius>m_<season>_<member>.png
-  030/  SurvivalHeatmaps_<regime>_r<radius>m_<season>_<member>.png
+  030/  {SurvivalHeatmaps,SurvivalFraction,DriftingFractionCurve}_<regime>_r<radius>m_<season>_<member>.png
   031/  BeachingSweep{Stats,Maps}_<regime>_r<radius>m_<season>.png
 ```
 
@@ -41,11 +41,13 @@ is saved print-ready — one full 180 mm text width at 300 dpi — so the PNG is
 the manuscript figure, not a preview (rationale in
 [visualisations.md](visualisations.md)).
 
-`025`–`028` additionally write machine-readable exports under
+`025`–`029` and `033` additionally write machine-readable exports under
 `output_root/Exports/<stage>/`: GeoJSON (hex geometry, EPSG:4326) for the map
-products of `025`/`026`/`026a`/`026b`/`027`, long-form CSV for `028`'s
-connectivity matrices and `026`'s area-holding-a-share table
-(`026_areas_<regime>_<season>_<member-or-unweighted>.csv`).
+products of `025`/`026`/`026a`/`026b`/`027`/`029`/`033`, long-form CSV for
+`028`'s connectivity matrices, `026`'s area-holding-a-share table
+(`026_areas_<regime>_<season>_<member-or-unweighted>.csv`) and `029`'s afloat
+share per origin subbasin
+(`afloat_by_origin_<regime>_<season>_<member>.csv`).
 
 ## The 2D-field preprocessor (003)
 
@@ -438,8 +440,11 @@ away.
 
 Every default is `regime=surface_stokes`, `hex_radius=6000`. `age_bin_days`,
 `max_age_days`, `time_horizons_days_csv`, `disp_bin_km` and the origin/year
-filters fall back to the notebook defaults and must match what the
-corresponding builder wrote.
+filters fall back to the notebook defaults. A consumer of the 024e/024f/024g
+stores asserts them against the partitions' build attrs (and that every pooled
+partition shares one window and rate-model point), so a mismatch fails the
+run; the 024/024c counts-derived stores record no attrs, and there the
+defaults must match what the builder wrote.
 Each ends in `jobinfo || true`: the accounting tool is the last command, so
 without that its status, not papermill's, would be the job's — and an
 `afterok` dependency would fire on a figure that was never drawn. Same reason

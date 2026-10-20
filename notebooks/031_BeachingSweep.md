@@ -32,10 +32,12 @@ discriminate between them: concentration of the stranded weight, how many
 hexes receive any, how long stranding takes, and how far the stranded
 material had been displaced.
 
-Each statistic additionally carries the **2016–2019 interannual min–max** as
-an error bar, so the spread across members is read against the spread the
-same member shows across years. Figures are print-ready (full page width,
-300 dpi).
+Each statistic additionally carries the **interannual min–max** over the
+release years on disk as an error bar, so the spread across members is read
+against the spread the same member shows across years. Every member must
+share one reduction window (`max_age_days`, from the partitions' attrs), so
+"beached" means the same elapsed time for all of them. Figures are
+print-ready (full page width, 300 dpi).
 
 ```python
 import re
@@ -56,9 +58,9 @@ from cartopy.io.shapereader import natural_earth
 output_root = "../output"
 regime = "surface_stokes"
 hex_radius = 6000
+# Age-bin granularity (d) and displacement bin width (km) of the store's
+# axes (must match 024e; asserted against the partitions' attrs).
 age_bin_days = 10
-# Displacement bin width (km) of the store's `disp_bin` axis (must match
-# the reducer).
 disp_bin_km = 10.0
 # Release season: DJF / MAM / JJA / SON, or ALL for the pooled year.
 season = "ALL"
@@ -126,6 +128,7 @@ store_root = output_root / "HexAggregates"
 key = gpd.read_parquet(store_root / f"HexAgg_key_r{hex_radius}m.parquet")
 ```
 
+
 # Pool each sweep member
 
 One member = every partition carrying its tag whose release month is in the
@@ -134,13 +137,48 @@ because the interannual spread below groups by it. A whole-year partition
 (no `_mMM` suffix) carries every month, so it is only read for
 `season = "ALL"`.
 
+Each partition carries its build parameters as `df.attrs`, taken per file
+**before** the concat (pandas drops attrs that differ between the frames it
+concatenates). Within a member every partition must agree on the window,
+the binning and the rate-model point; across members the rate model
+differs by design, but the window and binning must not.
+
 ```python
+# Keys every pooled partition of one member must share. Provenance (builder,
+# git_sha, slurm_job_id) and the partition's identity (release_year,
+# release_month) legitimately differ and are not compared.
+POOLED_KEYS = (
+    "max_age_days", "age_bin_days", "disp_bin_km", "w_c", "tau_strong_hours",
+    "tau_calm_days", "delta", "trap_flat", "trap_wall", "band_m",
+)
+
+
+def pooled_attrs(attrs, store):
+    """The build attrs every pooled partition shares, from one `df.attrs`
+    per partition."""
+    old = sum("max_age_days" not in a for a in attrs)
+    if old:
+        raise ValueError(
+            f"{old} of {len(attrs)} {store} partition(s) carry no build attrs "
+            f"(old schema, written before max_age_days was recorded) — rebuild "
+            f"them with the current 024e/024f/024g reducers"
+        )
+    distinct = {tuple(a[k] for k in POOLED_KEYS) for a in attrs}
+    if len(distinct) > 1:
+        raise ValueError(
+            f"pooled {store} partitions disagree on {POOLED_KEYS}: "
+            f"{sorted(distinct)} — rebuild them at one setting"
+        )
+    return dict(zip(POOLED_KEYS, distinct.pop()))
+
+
 def load_member(tag):
     part_re = re.compile(
         rf"HexAgg_beaching_r{hex_radius}m_{regime}_(\d{{4}})(?:_m(\d{{2}}))?"
         rf"_{re.escape(tag)}\.parquet$"
     )
     parts = []
+    attrs = []
     for f in sorted(store_root.glob(f"HexAgg_beaching_r{hex_radius}m_{regime}_*.parquet")):
         m = part_re.search(f.name)
         if m is None:
@@ -151,27 +189,42 @@ def load_member(tag):
                 continue
         elif int(month) not in season_months:
             continue
-        parts.append(
-            pd.read_parquet(f).reset_index(drop=True).assign(release_year=int(m.group(1)))
-        )
+        df = pd.read_parquet(f).reset_index(drop=True)
+        attrs.append(df.attrs)
+        parts.append(df.assign(release_year=int(m.group(1))))
     if not parts:
-        return None, 0
-    return pd.concat(parts, ignore_index=True), len(parts)
+        return None, None
+    return pd.concat(parts, ignore_index=True), pooled_attrs(attrs, f"024e {tag}")
 
 
 members = {}
+windows = {}
 for tag, label in zip(member_tags, member_labels):
-    df, n = load_member(tag)
+    df, attrs = load_member(tag)
     if df is None:
         print(f"{tag}: no partitions found — skipped")
         continue
     members[label] = df
-    print(f"{tag} ({label}): {n} partitions, {len(df):,} rows")
+    windows[label] = (attrs["max_age_days"], attrs["age_bin_days"], attrs["disp_bin_km"])
+    print(f"{tag} ({label}): {len(df):,} rows; {attrs}")
 if not members:
     raise FileNotFoundError(
         f"no sweep members found for regime {regime!r}, season {season} at "
         f"{store_root} — run 024e."
     )
+# One window for the whole sweep: a member reduced over a longer window has
+# had longer to strand, which no rate-model setting should be credited with.
+assert len(set(windows.values())) == 1, (
+    f"members disagree on (max_age_days, age_bin_days, disp_bin_km): {windows}"
+)
+max_age_days, store_age_bin_days, store_disp_bin_km = next(iter(windows.values()))
+assert store_age_bin_days == age_bin_days, (
+    f"store age_bin_days {store_age_bin_days} != {age_bin_days}"
+)
+assert store_disp_bin_km == disp_bin_km, (
+    f"store disp_bin_km {store_disp_bin_km} != {disp_bin_km}"
+)
+print(f"every member reduced over {max_age_days} d")
 release_years = sorted(
     int(y) for y in pd.concat([df["release_year"] for df in members.values()]).unique()
 )
@@ -180,9 +233,9 @@ print(f"season {season} (months {season_months}); release years {release_years}"
 
 # Per-member statistics
 
-`beached_fraction` is stranded weight over all released weight (the residual
-rows carry the never-beached remainder, so the denominator is the full
-release pool). `gini` measures how unevenly the stranded weight is spread
+`beached_pct` is stranded weight over all released weight within the
+window, in percent (the residual rows carry the never-beached remainder, so
+the denominator is the full release pool of water-seeded drifters). `gini` measures how unevenly the stranded weight is spread
 over the coastal hexes that receive any: 0 = uniform, → 1 = concentrated.
 `median_age_days` and `median_travel_km` are weight-weighted medians of the
 store's `beach_age_bin` and `disp_bin` axes — how long the stranded material
@@ -216,7 +269,7 @@ def member_stats(df):
     per_hex = beached.groupby("beach_hex")["weight"].sum()
     total = float(df["weight"].sum())
     return {
-        "beached_fraction": float(beached["weight"].sum()) / max(total, 1.0),
+        "beached_pct": 100 * float(beached["weight"].sum()) / max(total, 1.0),
         "gini": gini(per_hex.to_numpy()),
         "beach_hexes": int(per_hex.size),
         "median_age_days": weighted_median_bin(
@@ -257,9 +310,9 @@ statistic, so a member-to-member difference smaller than its own bar is not
 a difference.
 
 ```python
-metrics = ["beached_fraction", "gini", "beach_hexes", "median_age_days", "median_travel_km"]
+metrics = ["beached_pct", "gini", "beach_hexes", "median_age_days", "median_travel_km"]
 titles = {
-    "beached_fraction": "beached fraction",
+    "beached_pct": f"stranded by {max_age_days} d (%)",
     "gini": "Gini of stranded weight",
     "beach_hexes": "stranding hexes",
     "median_age_days": "median age (d)",
@@ -306,7 +359,9 @@ plt.show()
 
 # Where-stranded maps across members
 
-A shared `LogNorm` across every member, so the change is in the pattern and
+Stranded share per hex in % of each member's released drifters (the same
+release set for every member), on a shared `LogNorm` across every member
+floored four decades below the peak, so the change is in the pattern and
 not in the colour scale. Each panel's colorbar is an inset axes at
 axes-fraction height 1.0, exactly the map height.
 
@@ -327,9 +382,10 @@ domain_aspect = (
 
 
 def hex_gdf(df):
+    """Stranded weight per beach_hex as % of the member's released drifters."""
     grp = df[df["beach_hex"] >= 0].groupby("beach_hex")["weight"].sum()
     return (
-        grp.rename("value").reset_index()
+        grp.div(df["weight"].sum()).mul(100).rename("value").reset_index()
         .merge(key[["hex_id", "geometry"]], left_on="beach_hex", right_on="hex_id")
         .pipe(gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326")
     )
@@ -369,7 +425,7 @@ fig.set_size_inches(
 for ax, (label, g) in zip(axes[0], gdfs.items()):
     cax = ax.inset_axes([1.02, 0.0, 0.035, 1.0])
     g.plot(ax=ax, column="value", norm=norm, legend=True, cax=cax,
-           legend_kwds={"label": "stranded weight (particles)"},
+           legend_kwds={"label": "stranded (% of released)"},
            edgecolor="face", linewidth=hex_seam_lw, zorder=1)
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
     ax.set_xlim(extent[0], extent[1])
@@ -388,20 +444,21 @@ plt.show()
 # Summary
 
 ```python
-lo, hi = stats["beached_fraction"].min(), stats["beached_fraction"].max()
+lo, hi = stats["beached_pct"].min(), stats["beached_pct"].max()
 print(f"regime={regime}, hex_radius={hex_radius} m, season={season} "
-      f"(months {season_months}), {len(stats)} sweep member(s)")
-print(f"  beached fraction range across members: {100 * lo:.1f}% .. {100 * hi:.1f}% "
-      f"(spread {100 * (hi - lo):.1f} points)")
-bf_year = stats_year["beached_fraction"]
+      f"(months {season_months}), {len(stats)} sweep member(s), window "
+      f"{max_age_days} d")
+print(f"  stranded by {max_age_days} d, range across members: {lo:.1f}% .. {hi:.1f}% "
+      f"(spread {hi - lo:.1f} points)")
+bf_year = stats_year["beached_pct"]
 print(f"  interannual min–max within a member ({release_years[0]}–{release_years[-1]}):")
 for label in stats.index:
-    print(f"    {label}: {100 * stats.loc[label, 'beached_fraction']:.1f}% "
-          f"[{100 * bf_year.loc[label].min():.1f} .. {100 * bf_year.loc[label].max():.1f}]")
+    print(f"    {label}: {stats.loc[label, 'beached_pct']:.1f}% "
+          f"[{bf_year.loc[label].min():.1f} .. {bf_year.loc[label].max():.1f}]")
 baseline_label = dict(zip(member_tags, member_labels)).get(baseline_member)
 if baseline_label in stats.index:
     print(f"  baseline {baseline_member}: "
-          f"{100 * stats.loc[baseline_label, 'beached_fraction']:.1f}%")
+          f"{stats.loc[baseline_label, 'beached_pct']:.1f}%")
 print(f"  Gini range: {stats['gini'].min():.3f} .. {stats['gini'].max():.3f} "
       "(higher = stranding concentrated on fewer, wave-exposed hexes)")
 print(f"  median stranding age: {stats['median_age_days'].min():.0f} .. "

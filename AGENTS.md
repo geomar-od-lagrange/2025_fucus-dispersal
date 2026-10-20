@@ -149,7 +149,7 @@ filename.
   the 024c (unweighted) or 024g (survival-weighted, via the `member`
   parameter) stores — raw matrix, row-normalised emission fraction per age
   horizon, and interannual range, with CSV exports (028), beaching maps
-  (029) and survival occupancy
+  and the afloat-by-origin-subbasin table (029) and survival occupancy
   heatmaps (030) for one 024e/024f member, and the rate-model sweep
   across members (031).
 - `notebooks/034_*` — bottom-slowdown illustration: `bottom` against the

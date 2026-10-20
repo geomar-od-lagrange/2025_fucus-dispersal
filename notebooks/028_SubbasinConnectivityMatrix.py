@@ -34,14 +34,20 @@
 #
 # Three views:
 #
-# 1. **Raw matrix**, log scale, pooled over every age bin — the magnitude
-#    picture. Rows differ by orders of magnitude.
+# 1. **Raw matrix**, log scale, pooled over the whole reduction window
+#    `age < max_age_days` — the magnitude picture. Rows differ by orders of
+#    magnitude.
 # 2. **Emission fraction** `x / x.sum(axis=1)` — the fraction of an origin's
 #    particle-time that sits in each target, one figure per age horizon
-#    `T` (cumulative, half-open `age < T` days, the same convention 026 uses
-#    for its snapshot bins). Rows sum to 1, so origins are comparable.
+#    `T` (cumulative, half-open `age < T` days, the same convention as 026's
+#    horizons). Rows sum to 1, so origins are comparable.
 # 3. **Interannual range** — the emission fraction recomputed per release
 #    year; mean / min / max per (origin, target, horizon).
+#
+# Both stores are cut to the same window, `age < max_age_days`: 024g records
+# its own window in each partition's `df.attrs` (asserted to cover this one),
+# while the 024c store is uncapped, so without the cut the weighted and the
+# unweighted raw matrix would cover different ages.
 #
 # Connectivity here is **residence** (particle-timesteps in the target
 # subbasin), not particle flux. Subbasin id `-1` = unnamed/outside and is
@@ -68,11 +74,16 @@ output_root = "../output"
 regime = "surface_stokes"
 # Hex radius of the store (built by 024a/024c/024g). Must match files on disk.
 hex_radius = 6000
-# Age-bin granularity of the store being read (must match 024/024g).
+# Age-bin granularity of the store being read (must match 024c/024g; a 024g
+# read asserts it against the partitions' attrs).
 age_bin_days = 10
+# Reduction window (d): both stores are cut to ages < max_age_days, so the
+# weighted and unweighted matrices cover the same ages. A 024g read asserts
+# its partitions' own window covers it.
+max_age_days = 180
 # Cumulative age horizons to draw, in days. Each must be a multiple of
-# age_bin_days, and (for a survconn member) ≤ the 024g connectivity horizon.
-time_horizons_days_csv = "10,20,50,100"
+# age_bin_days and ≤ max_age_days.
+time_horizons_days_csv = "30,60,90,180"
 # Release season: one of DJF, MAM, JJA, SON, ALL.
 season = "ALL"
 # Rate-model member tag. "" reads the unweighted 024c connectivity store;
@@ -112,6 +123,10 @@ for h in time_horizons_days:
     assert h % age_bin_days == 0, (
         f"horizon {h} d is not a multiple of age_bin_days {age_bin_days} d"
     )
+    assert h <= max_age_days, f"horizon {h} d is past max_age_days {max_age_days} d"
+assert max_age_days % age_bin_days == 0, (
+    f"max_age_days {max_age_days} is not a multiple of age_bin_days {age_bin_days}"
+)
 
 member_tag = member or "unweighted"
 value_col = "w_obs" if member else "n_obs"
@@ -131,6 +146,12 @@ export_dir.mkdir(parents=True, exist_ok=True)
 # ran with `release_month = 0`. Both carry `n_obs`; only `024g` carries
 # `w_obs`. The release year comes from the filename so the
 # `release_doy → month` conversion is leap-correct (same pattern as 026a).
+#
+# A 024g partition carries its build parameters as `df.attrs`. They are taken
+# per file **before** the concat — pandas drops attrs that differ between the
+# frames it concatenates, and `release_year`/`release_month`/`git_sha` always
+# differ — and every pooled partition must agree on the window, the binning
+# and the rate-model point.
 
 # %%
 subbasin_id_to_name = {
@@ -179,9 +200,41 @@ if mixed:
         f"partitions at {store_root}; remove one form before reading"
     )
 
+# Keys every pooled 024g partition must share: the reduction window, the
+# binning and the rate-model point. Provenance (builder, git_sha,
+# slurm_job_id) and the partition's identity (release_year, release_month)
+# legitimately differ and are not compared.
+POOLED_KEYS = (
+    "max_age_days", "age_bin_days", "w_c", "tau_strong_hours", "tau_calm_days",
+    "delta", "trap_flat", "trap_wall", "band_m",
+)
+
+
+def pooled_attrs(attrs, store):
+    """The build attrs every pooled partition shares, from one `df.attrs`
+    per partition."""
+    old = sum("max_age_days" not in a for a in attrs)
+    if old:
+        raise ValueError(
+            f"{old} of {len(attrs)} {store} partition(s) carry no build attrs "
+            f"(old schema, written before max_age_days was recorded) — rebuild "
+            f"them with the current 024e/024f/024g reducers"
+        )
+    distinct = {tuple(a[k] for k in POOLED_KEYS) for a in attrs}
+    if len(distinct) > 1:
+        raise ValueError(
+            f"pooled {store} partitions disagree on {POOLED_KEYS}: "
+            f"{sorted(distinct)} — rebuild them at one setting"
+        )
+    return dict(zip(POOLED_KEYS, distinct.pop()))
+
+
 parts = []
+store_attrs = []
 for f, year in zip(files, partition_years):
     df = pd.read_parquet(f).reset_index(drop=True)
+    store_attrs.append(df.attrs)
+    df = df[df["age_bin"] * age_bin_days < max_age_days].copy()
     df["release_year"] = year
     df["release_month"] = pd.to_datetime(
         (year * 1000 + df["release_doy"].astype("int32")).astype(str), format="%Y%j"
@@ -189,7 +242,18 @@ for f, year in zip(files, partition_years):
     parts.append(df)
 conn = pd.concat(parts, ignore_index=True)
 print(f"read {len(files)} partition(s), years {sorted(set(partition_years))}; "
-      f"{len(conn):,} rows")
+      f"{len(conn):,} rows at ages < {max_age_days} d")
+
+if member:
+    window = pooled_attrs(store_attrs, "024g survconn")
+    assert window["age_bin_days"] == age_bin_days, (
+        f"store age_bin_days {window['age_bin_days']} != {age_bin_days}"
+    )
+    assert window["max_age_days"] >= max_age_days, (
+        f"024g window {window['max_age_days']} d < max_age_days {max_age_days} d "
+        f"— rebuild 024g or lower max_age_days"
+    )
+    print(f"024g partitions agree on {window}")
 
 # Release-doy coverage per year, taken before the season filter: it is what
 # tells a partial release year from a hole in the build.
@@ -231,7 +295,7 @@ print(f"{len(named_ids)} named subbasins on each axis")
 def matrix(df, horizon, column):
     """Named-subbasin matrix of `column`, cumulative over ages `< horizon` d.
 
-    `horizon=None` pools every age bin in the store.
+    `horizon=None` pools the whole window read (ages `< max_age_days`).
     """
     sel = df if horizon is None else df[df["age_bin"] * age_bin_days < horizon]
     sel = sel[(sel["origin_subbasin"] >= 0) & (sel["target_subbasin"] >= 0)]
@@ -281,7 +345,7 @@ def save(fig, name):
 # %% [markdown]
 # # View 1 — raw residence matrix, log scale
 #
-# Pooled over every age bin in the store. `LogNorm` is not cosmetic: the
+# Pooled over the whole window, ages `< max_age_days`. `LogNorm` is not cosmetic: the
 # within-subbasin diagonal dominates by orders of magnitude, so a linear scale
 # washes out every cross-subbasin entry. Zeros are masked to NaN so empty
 # cells render blank rather than as the bottom of the colour scale.
@@ -300,9 +364,9 @@ fig.colorbar(im, ax=ax, label=f"residence ({value_col})")
 # axes title is centred on the axes box, which the long subbasin tick labels
 # push right, and the combined string then overruns the 180 mm page.
 fig.suptitle(f"{regime} — {season} — {member_tag}")
-ax.set_title("all ages")
+ax.set_title(f"age < {max_age_days} d")
 fig.set_size_inches(PAGE_WIDTH_IN, PAGE_WIDTH_IN * 0.80)
-save(fig, f"SubbasinConnectivity_raw_{regime}_{season}_{member_tag}_Tall.png")
+save(fig, f"SubbasinConnectivity_raw_{regime}_{season}_{member_tag}_T{max_age_days}d.png")
 
 # %% [markdown]
 # # View 2 — emission fraction per age horizon
@@ -442,7 +506,8 @@ for h in time_horizons_days:
 
 # %%
 print(f"regime={regime}, hex_radius={hex_radius} m, age_bin_days={age_bin_days}, "
-      f"season={season}, member={member_tag}, value={value_col}")
+      f"max_age_days={max_age_days}, season={season}, member={member_tag}, "
+      f"value={value_col}")
 print(f"years pooled: {years}")
 print(f"matrix: {len(named_ids)}×{len(named_ids)} named subbasins; "
       f"{dropped:.1%} of {value_col} outside them")
@@ -471,4 +536,4 @@ if member:
     w = conn["w_obs"].sum()
     n = conn["n_obs"].sum()
     print(f"\nsurvival weighting: Σw_obs / Σn_obs = {w / n:.3f} over the "
-          f"{season} season")
+          f"{season} season, ages < {max_age_days} d")

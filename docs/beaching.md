@@ -21,7 +21,7 @@ without touching the runs.
 |-------|------|-------|--------|
 | Sidecar | [`024d_BuildBeachingForcing`](../notebooks/024d_BuildBeachingForcing.py) | trajectory zarrs + raw `baltic_highres` Stokes + BSH H0 statics + shoreline-class table + `024a` key | one forcing zarr per trajectory zarr |
 | Reduce | [`024e_BuildBeaching`](../notebooks/024e_BuildBeaching.py) | sidecar + key | `HexAgg_beaching_*.parquet` |
-| Consume | [`029_BeachingMaps`](../notebooks/029_BeachingMaps.py) | beaching parquet + key | PNGs under `Figures/029/` |
+| Consume | [`029_BeachingMaps`](../notebooks/029_BeachingMaps.py) | beaching parquet + key | PNGs under `Figures/029/`; per-horizon GeoJSON and `afloat_by_origin_*.csv` under `Exports/029/` |
 | Sweep | [`031_BeachingSweep`](../notebooks/031_BeachingSweep.py) | several members + key | PNGs under `Figures/031/` |
 
 [`024f_BuildSurvivalOccupancy`](../notebooks/024f_BuildSurvivalOccupancy.py) and
@@ -202,10 +202,7 @@ the beached fraction is `sum(weight | beach_hex ≥ 0) / sum(weight)`. The
 `member` tag names the rate-model point and consumers take it as an opaque
 string:
 `step_wc<w_c>_ts<tau_strong_hours>_tc<tau_calm_days|inf>[_d<delta>][_tf<trap_flat>_tw<trap_wall>]`,
-`.` → `p` (production: `step_wc0p1_ts3_tcinf_tf1_tw0`). `disp_bin_km` is a build↔consumer contract *not* stored
-in the parquet — pass `029`/`031` the value `024e` built with, exactly as
-`distance_bin_km` works in the distance store
-([hexbinning_and_connectivity.md](hexbinning_and_connectivity.md)).
+`.` → `p` (production: `step_wc0p1_ts3_tcinf_tf1_tw0`).
 
 Each partition carries its build parameters as `df.attrs`, which pandas writes
 into the parquet metadata and `pd.read_parquet` restores: `builder`, `regime`,
@@ -213,10 +210,19 @@ into the parquet metadata and `pd.read_parquet` restores: `builder`, `regime`,
 `age_bin_days`, `disp_bin_km`, `output_dt_hours`, the rate-model parameters
 (`w_c`, `tau_strong_hours`, `tau_calm_days`, `delta`, `trap_flat`,
 `trap_wall`, `band_m`), `git_sha` and `slurm_job_id` (empty outside SLURM).
-024f and 024g write the same set minus `disp_bin_km`. A consumer pooling
-partitions can assert they share a window instead of trusting filenames;
-considered encoding the window in the filename, rejected because consumers'
-member regexes would absorb it.
+024f and 024g write the same set minus `disp_bin_km`. Every consumer
+(`028`–`033`, and `025`/`026`/`026a`/`026b` for a 024f member) reads the attrs
+per file **before** concatenating — pandas drops attrs that differ between
+the frames it concatenates — and asserts that all pooled partitions agree on
+`max_age_days`, `age_bin_days`, `disp_bin_km` (024e) and the rate-model keys,
+that `age_bin_days`/`disp_bin_km` equal its own parameters, and that the
+window covers its largest horizon. `builder`, `git_sha`, `slurm_job_id`,
+`release_year` and `release_month` legitimately differ and are never
+compared; a partition with no attrs (written before the window was recorded)
+raises, asking for a rebuild. Across members (`029`'s contrast member, `031`,
+`032`, `033`) only the window and binning must agree. Considered encoding the
+window in the filename; rejected because consumers' member regexes would
+absorb it.
 
 ## Production setting
 

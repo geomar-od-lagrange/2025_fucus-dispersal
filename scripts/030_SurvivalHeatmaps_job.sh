@@ -14,8 +14,8 @@ set -euo pipefail
 #   sbatch scripts/030_SurvivalHeatmaps_job.sh surface_stokes 6000 step_wc0p1_ts3_tcinf_tf1_tw0 ALL
 # season is one of DJF / MAM / JJA / SON / ALL (release month).
 # 024f_BuildSurvivalOccupancy_job.sh must have run first for the matching
-# member; age_bin_days falls back to the notebook default (10) and must match
-# the value 024f built with.
+# member; age_bin_days falls back to the notebook default (10) and is asserted
+# against the partitions' attrs, as is one reduction window across them.
 
 regime="${1:-surface_stokes}"
 hex_radius="${2:-6000}"

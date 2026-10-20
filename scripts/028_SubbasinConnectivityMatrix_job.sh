@@ -24,8 +24,10 @@ set -euo pipefail
 #   sbatch scripts/028_SubbasinConnectivityMatrix_job.sh surface_stokes 6000 SON ""
 #   sbatch scripts/028_SubbasinConnectivityMatrix_job.sh surface_stokes 6000 ALL step_wc0p1_ts3_tcinf_tf1_tw0
 #   sbatch scripts/028_SubbasinConnectivityMatrix_job.sh bottom 6000 JJA ""
-# age_bin_days and time_horizons_days_csv fall back to the notebook defaults;
-# age_bin_days must match the value 024c/024g built the store with.
+# age_bin_days (10), max_age_days (180) and time_horizons_days_csv
+# (30,60,90,180) fall back to the notebook defaults; age_bin_days must match the
+# value 024c built with (a 024g read asserts it, and the window, against the
+# partitions' attrs). Both stores are cut to ages < max_age_days.
 
 regime="${1:-surface_stokes}"
 hex_radius="${2:-6000}"

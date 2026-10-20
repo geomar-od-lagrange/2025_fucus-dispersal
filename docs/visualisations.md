@@ -20,11 +20,11 @@ listed here should be dropped.
 | 026a | 026 per origin subbasin | Per-run (regime + season + radius + member) | One percentage and one dilution figure per origin (HELCOM) subbasin |
 | 026b | 026a per origin subbasin and year | Per-run (regime + season + radius + member) | One percentage and one dilution figure per (origin subbasin, release year) |
 | 027 | Hex distance-quantile maps | Per-run (regime + radius + season) | One 1xN panel row, one panel per quantile (0.1/0.5/0.9), the season's releases pooled across years |
-| 028 | Subbasin connectivity matrices | Per-run (regime + radius + season + member) | Raw residence · emission fraction per age horizon · interannual range |
-| 029 | Beaching maps | Per-run (regime + radius + member + season) | Where-stranded with the release sites overlaid · source/sink substrate contrast · beached fraction per source hex · age horizons (10/20/50 d) · beached-fraction curve with interannual band · displacement at stranding |
-| 030 | Survival heatmaps | Per-run (regime + radius + member + season) | Per horizon (20/50/100 d): occupancy · survival-weighted; surviving fraction as a separate 1xN figure; drifting-fraction curve with interannual band |
+| 028 | Subbasin connectivity matrices | Per-run (regime + radius + season + member) | Raw residence over the 180 d window · emission fraction per cumulative horizon (30/60/90/180 d) · interannual range |
+| 029 | Beaching maps | Per-run (regime + radius + member + season) | Where-stranded with the release sites overlaid · source/sink substrate contrast · stranded share per source hex · cumulative horizons (30/60/90/180 d) · afloat by origin subbasin (table + CSV) · stranded-share curve with interannual band · displacement at stranding |
+| 030 | Survival heatmaps | Per-run (regime + radius + member + season) | Per snapshot bin ending at 30/60/90/180 d: occupancy · survival-weighted (% of released); surviving fraction as a separate 1xN figure; drifting-fraction curve with interannual band |
 | 031 | Beaching sweep | Per-run (regime + radius + season) | Five statistics across members with interannual bars · where-stranded maps across members |
-| 032 | None — selects, numbers and downscales other notebooks' PNGs | Selection (primary + comparison regime) | One curated reading order over 025–031 |
+| 032 | None — selects, numbers and downscales other notebooks' PNGs | Selection (primary + comparison regime) | Tables A–G · one curated reading order over 025–031 |
 | 033 | Hex shoreline-type map + stranding-vs-substrate panels | Per-run (regime + radius + season + member pair) | Flat fraction per hex · coastline length per hex · stranded weight vs. flat fraction for the production and the substrate-inert member |
 | 034 | Bottom-slowdown comparison | Two regimes (`bottom` vs `bottom_vs0p8`) + one year + radius | Area / √area holding 50/90 % of particle-time at 30/60/90/180 d · map pair at 90 d |
 
@@ -81,6 +81,45 @@ a release hex outside every named polygon. Every figure and export stem
 carries the member tag or the literal `unweighted`. Considered a separate
 weighted notebook family; rejected, the maps, norms and exports are
 identical code over a different value column.
+
+**One window, recorded in the store.** The 024e/024f/024g partitions carry
+their build parameters as `df.attrs` (window `max_age_days`, `age_bin_days`,
+the rate-model point; [beaching.md](beaching.md) § Store schema). Every
+consumer of them reads the attrs per file *before* concatenating — pandas
+drops attrs that differ between the frames it concatenates, and
+`release_year`/`release_month`/`git_sha` always do — and asserts that every
+pooled partition agrees on `max_age_days`, `age_bin_days` (`disp_bin_km` for
+024e) and the rate-model keys, that the store's binning equals the
+notebook's parameters, and that `max_age_days` covers the largest horizon.
+Provenance keys are never compared. A partition with empty attrs (written
+before the window was recorded) raises with a rebuild request. Where members
+are compared (029's contrast member, 031, 032, 033) the rate model differs by
+design and only the window and binning must agree. Considered trusting the
+filenames; rejected, a partial rerun at another window would mix silently.
+
+**Units: % of released drifters (029, 030, 031).** The beaching and survival
+maps and curves are percentages of the released water-seeded drifters of the
+pooled partitions, so a map, its curve and the 029 afloat table share one
+denominator and read without knowing the release-set size. In 029 and 031 the
+denominator is the pooled `Σweight` of the 024e store (deposits + residual per
+release hex = its released drifters). In 030 it is the exact 024f denominator:
+with the `target_hex = -1` sentinel rows kept, a snapshot bin's `Σocc` over all
+origins is `N · age_bin_days · 24`, so `100 · surv / Σocc` is the mean share of
+released drifters afloat in that hex during the bin
+([survival_occupancy.md](survival_occupancy.md)). 029's GeoJSON keeps the
+absolute `stranded_weight` beside `pct_released`.
+
+**Log-scale floors.** Every log map of a share — 028's emission fraction,
+029/031's stranded share, 030's densities — is floored a fixed **four decades
+below its peak**: the `exp(−A)` tail of a weighted quantity runs arbitrarily
+far down, and how far depends on the rate-model member, so a percentile floor
+would give every member its own dynamic range. The 025/026 family's
+**dilution** maps, weighted or not, keep the 1st-percentile floor (below).
+Considered the four-decade floor there too; rejected, dilution divides by
+water area, so its peak sits in near-land hexes with a sliver of water: on
+a survival-weighted surface_stokes JJA test pool (2019–2020) at 180 d the
+median hex sits 5.3 decades below the peak (the unweighted maps span ~8), and
+a four-decade floor painted more than half the basin the floor colour.
 
 **Relative density, not counts (025/026 family).** `percentage` =
 100 · weight(hex) / Σ weight over the selected release set (regime, season,
@@ -298,9 +337,13 @@ a plain subbasin × subbasin grid with names as tick labels set at plot
 time.
 
 Three views, each its own figure: the raw residence matrix (log, pooled
-over every age bin), the emission fraction `x / x.sum(axis=1)` per
-cumulative age horizon (half-open, ages `< T` days), and the interannual
-mean of that fraction over the release years (min/max go to CSV).
+over the window, ages `< max_age_days`, stem `_T<max_age_days>d`), the
+emission fraction `x / x.sum(axis=1)` per cumulative age horizon (half-open,
+ages `< T` days, default 30/60/90/180 d), and the interannual mean of that
+fraction over the release years (min/max go to CSV). Both stores are cut to
+the same window: the 024c store is uncapped (220 d), 024g records its own
+window in the attrs, so without the cut the weighted and the unweighted raw
+matrix would cover different ages.
 Row-normalising is the point of view 2: raw rows differ by orders of
 magnitude with release count, so only the normalised rows compare origins.
 
@@ -334,8 +377,8 @@ seam is a fixed-pixel anti-aliasing artefact, not a fraction of hex width,
 so pinning the stroke to ~1 px keeps the seam closed while letting the
 resulting hex dilation shrink as resolution rises.
 
-- **Where-stranded density** — beached weight (expected particles) per
-  stranding hex, summed over the store's `disp_bin` (and `shore_type`
+- **Where-stranded density** — stranded weight per stranding hex as % of the
+  released drifters, summed over the store's `disp_bin` (and `shore_type`
   where the reducer emits it) axes, on a `LogNorm` floored four decades
   below the peak (weighted deposition's sparse tail carries fractional
   weight). `shore_type` is deliberately **not shown at all** — neither
@@ -392,15 +435,30 @@ resulting hex dilation shrink as resolution rises.
   the German/Polish coast the reverse. Reading the per-hex correlation behind
   this is 033's job; 029 states the two means so the overlaid map has numbers
   attached.
-- **Beached fraction per source hex** — a ratio in [0, 1], so the default
-  linear norm, no colour override to defend.
+- **Stranded share per source hex** — % of each hex's own released drifters
+  stranded within the window, in [0, 100], so the default linear norm, no
+  colour override to defend.
 - **Age-horizon where-stranded maps** — the same log-density map at
-  cumulative age cut-offs (`beach_age_bin < T // age_bin_days`), a shared
-  `LogNorm` across horizons so the fill-in over time is legible; this
-  mirrors 026's horizon logic on the beaching axis.
-- **Beached-fraction curve** — cumulative beached fraction against age,
+  cumulative age cut-offs (`beach_age_bin < T // age_bin_days`, default
+  30/60/90/180 d), a shared `LogNorm` across horizons so the fill-in over time
+  is legible; this mirrors 026's horizon logic on the beaching axis. Exported
+  per horizon as `Exports/029/029_<regime>_<season>_<member>_T<h>d.geojson`
+  with `stranded_weight` (expected particles) and `pct_released`.
+- **Afloat by origin subbasin** — printed and exported, not plotted: per
+  HELCOM origin subbasin (the key's `helcom_subbasin` of `release_hex`),
+  `afloat(T) = Σweight − Σweight[beach_hex ≥ 0 & beach_age_bin < T/age_bin_days]`
+  as % of the origin's `Σweight` (its released drifters), at the same
+  horizons; pooled from the summed weights plus the per-release-year min–max.
+  Origin `-1` (release hex outside every named polygon) is its own row, and
+  `all` is the basin-wide value. "Afloat" is everything not stranded: it
+  includes drifters that left the BSH domain, and no lifetime or sinking is
+  applied — the CSV
+  (`Exports/029/afloat_by_origin_<regime>_<season>_<member>.csv`, columns
+  `origin_subbasin, origin_name, horizon_days, released_weight, afloat_pct,
+  afloat_pct_min, afloat_pct_max, n_years`) says so in its `#` header.
+- **Stranded-share curve** — cumulative stranded % of released against age,
   with the per-release-year min–max as a shaded band.
-- **Displacement at stranding** — stranded weight over the store's
+- **Displacement at stranding** — stranded share (% of released) over the store's
   `disp_bin` axis (crow-flies displacement from release at the deposit
   step), pooled over sources, with the weight-weighted median printed.
   Drawn with `drawstyle="steps-mid"`: the axis is a binned quantity, so a
@@ -413,32 +471,48 @@ resulting hex dilation shrink as resolution rises.
 ## Notebook 030 — Survival heatmaps (special case)
 
 A **survival-occupancy consumer**: reads the store built by 024f
-(`(release_doy, age_bin, target_hex) → occ, surv`) plus the 024a key,
-selected by the same opaque `member` tag and the same `season` pooling as
-029. A horizon `T` names the snapshot bin that **ends** at `T` — ages in
-`[T − age_bin_days, T)`, index `T/age_bin_days − 1` — so `T` reads as "at
-`T` days old", and the panel titles carry the bin's age span. (026's
-horizons are cumulative `[0, T)` instead; this store is a per-age
-snapshot, so there is nothing to accumulate.) Per horizon, a 3-column row — plain occupancy, survival-weighted
-occupancy (beaching removed), and the surviving fraction `surv/occ` —
-reusing 025's hex registration. The two density columns **share one
-`LogNorm`** (029's four-decades-floored norm, since survival weights have
-a long sub-1 tail) so the age-thinning and the beaching-removal read on
-the same scale; the fraction column uses a **fixed linear 0–1** scale so
-it is comparable across horizons. A drifting-fraction curve against age,
-with the per-release-year min–max band, closes the notebook.
+(`(release_doy, age_bin, origin_subbasin, target_hex) → occ, surv`) plus the
+024a key, selected by the same opaque `member` tag and the same `season`
+pooling as 029. A horizon `T` (default 30/60/90/180 d) names the snapshot bin
+that **ends** at `T` — ages in `[T − age_bin_days, T)`, index
+`T/age_bin_days − 1` — so `T` reads as "at `T` days old", and the panel
+titles carry the bin's age span. A snapshot, not 026's cumulative `[0, T)`:
+being afloat at `T` is an instantaneous state, and a survival map
+accumulated over `[0, T)` would be a weighted residence map, which 026
+already draws. The two density panels — plain occupancy and
+survival-weighted occupancy (beaching removed) — are in % of the released
+drifters (`100 · occ / Σocc`, `100 · surv / Σocc` with the bin's exact `Σocc`,
+see Units above) and **share one `LogNorm`** floored four decades below the
+peak, so the age-thinning and the beaching-removal read on the same scale;
+the surviving fraction `surv/occ` is a separate 1×N figure on a **fixed
+linear 0–1** scale so it is comparable across horizons. Every panel sums over
+`origin_subbasin`; the `target_hex = -1` sentinel drops at the key join.
+
+A drifting-fraction curve `Σsurv / Σocc` against age, with the
+per-release-year min–max band, closes the notebook. It **keeps** the
+sentinel: the curve is then the mean surviving fraction of every released
+drifter, including those that left the BSH domain (they keep the survival
+they had on leaving), which is the same population 029's afloat table
+counts. Dropping the sentinel would condition on the drifters still in the
+domain, a population that shrinks with age. The per-bin table prints `N` and
+the share of samples at `target_hex = -1`.
 
 ## Notebook 031 — Beaching parameter sweep (special case)
 
 Compares the **members** of the 024e store — one rate-model setting each,
-named by the reducer's opaque tag (`members_csv`), drawn in the given
+named by the reducer's opaque tag (`members_csv`; the production driver passes
+every member on disk), drawn in the given
 order with a display label per tag (`labels_csv`, default = the tags) and
 an optional `baseline_member`, for one `season`. Each member is a full
-`(year, month)` set. It reports a **range** rather than a number, because
+`(year, month)` set, and every member must share one window
+(`max_age_days`, `age_bin_days`, `disp_bin_km`, asserted from the attrs) —
+a member reduced over a longer window has had longer to strand. Stranded
+share and maps are in % of released, the maps on a shared `LogNorm` floored
+four decades below the peak. It reports a **range** rather than a number, because
 in the Baltic the beaching scheme can dominate the result. A statistics
 grid plus a map row:
 
-- **Five statistics across members** — beached fraction, Gini
+- **Five statistics across members** — stranded % by `max_age_days`, Gini
   concentration of the stranded weight, number of stranding hexes,
   weight-weighted median stranding age, weight-weighted median displacement — one panel each, members on the **y axis** in the given order
   so the long tags read horizontally off one shared column, each pooled
@@ -459,7 +533,7 @@ wave-selective member from a residence-driven one.
 
 [`032_HeadlineReport`](../notebooks/032_HeadlineReport.py) is the only stage
 here that draws nothing. It regenerates `output_root/Headline/` — a
-`HEADLINE.md` carrying the study's five headline tables plus a numbered,
+`HEADLINE.md` carrying the study's seven headline tables plus a numbered,
 downscaled copy of the figures those tables are read against. Submitted by
 [`scripts/headline_report_job.sh`](../scripts/headline_report_job.sh), the
 last stage of the downstream chain, so the report regenerates whenever new
@@ -469,11 +543,23 @@ Every number is **recomputed**, never transcribed:
 
 | table | what | read from |
 |---|---|---|
-| A | beached fraction per release season and year, production member | `HexAgg_beaching_*` |
+| A | stranded % within the window per release season and year, production member | `HexAgg_beaching_*` |
 | B | the same pooled value across every rate-model member on disk | `HexAgg_beaching_*` |
-| C | `Σw_obs/Σn_obs` per season and horizon, plus the top-target comparison | `HexAgg_survconn_*`, `Exports/028/*.csv` |
+| C | `Σw_obs/Σn_obs` per season and cumulative horizon (`connectivity_horizons_csv`, 30/60/90/180 d), plus the top-target comparison at `top_horizon_days` (60 d) | `HexAgg_survconn_*`, `Exports/028/*.csv` |
 | D | median over source hexes of each displacement quantile | `Exports/027/*.geojson` |
-| E | concentration and viable-band share at the long horizon | `Exports/026/*.geojson` + the 024a key |
+| E | concentration and viable-band share at `horizon_days` (180 d) | `Exports/026/026_<regime>_<season>_<weighting>_T<h>d.geojson` + the 024a key |
+| F | water area (and its √) holding `q` of the cumulative particle-time per horizon, pooled [per-year min–max] | `Exports/026/026_areas_<regime>_<season>_<weighting>.csv` |
+| G | afloat % per origin subbasin per horizon, pooled [per-year min–max], plus the basin-wide row per season | `Exports/029/afloat_by_origin_<regime>_<season>_<member>.csv` |
+
+`<weighting>` is the regime's 025/026 tag: the production member where the
+regime has a 024f store (surface_stokes), `unweighted` otherwise (bottom) —
+the rule the consumer driver applies, discovered from the partitions on
+disk. Table F reads its CSV generically — `scope` splits pooled from
+per-year rows, every float column but `q` is a value, every other column a
+row key — so a key column the export gains later becomes rows without an
+edit. The window every number refers to comes from the 024e/024g attrs
+(asserted equal across members and between the two stores), not from a
+parameter.
 
 Tables A–C go to the parquet partitions rather than to `Exports/`, because
 the quantities they need are not exported: a pooled multi-year beached
@@ -496,14 +582,18 @@ uneven year set is worse than no headline.
 **Figure selection is a rule, not a list.** Each entry names the producing
 notebook and a filename *stem* built from the run's own parameters
 (`{regime}`, `{other_regime}`, `{season}`, `{pooled}`, `{radius}`,
-`{member}`, `{horizon}`); resolution takes the exact `<stem>.png` where it
-exists and otherwise the first `<stem>_*.png` in sorted order, so a consumer
-that later appends a field — a release-year span, say — still resolves. The
-map entries use the `figure_season` parameter and the curve/sweep entries
-the year-pooled season, so the manifest is one reading order rather than
-eleven hardcoded names. An entry that resolves to nothing is recorded in a
-"Gaps" section of `HEADLINE.md` rather than raising: a partially-run
-consumer matrix should still yield a report that says what is missing.
+`{member}`, `{tag}`/`{other_tag}` — the regime's 025/026 weighting —
+`{horizon}` = `top_horizon_days`); resolution takes the exact `<stem>.png`
+only. Considered also accepting the first `<stem>_*.png`; rejected, a member
+tag can extend another (`step_wc0p1_ts3_tcinf` →
+`step_wc0p1_ts3_tcinf_tf1_tw0`), so a missing figure would silently resolve
+to a different member's. The map entries use the `figure_season` parameter
+and the curve/sweep entries the year-pooled season, so the manifest is one
+reading order rather than eleven hardcoded names. Captions take their
+horizons and windows from the parameters, the store attrs and the 026
+exports on disk. An entry that resolves to nothing is recorded in a "Gaps"
+section of `HEADLINE.md` rather than raising: a partially-run consumer
+matrix should still yield a report that says what is missing.
 
 Copies are downscaled to `figure_width_px` (1400) with PIL; the 180 mm /
 300 dpi originals stay under `Figures/` as the manuscript versions, so the
@@ -610,6 +700,9 @@ while the trap factor is *linear* in it, so under the production member
 wall-labelled sites still strand at `ff/100` of the flat rate and only `ff = 0`
 is fully non-trapping; under the contrast member the label moves no weight at
 all and the split is the coastline's own composition as the drift samples it.
+
+Both members' partitions are checked as 029/031 do (attrs per file, one
+window and rate-model point per member, one window across the two).
 
 Export: `Exports/033/033_<regime>_<season>_<member>.geojson`, columns `hex_id,
 flat_fraction, coast_len_m, stranded_weight` plus the 024a hex geometry

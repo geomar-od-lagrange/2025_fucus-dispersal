@@ -286,8 +286,10 @@ pixi run papermill notebooks/024g_BuildSurvivalConnectivity.ipynb \
 
 # 028 reads either connectivity store, selected by `member`: "" the
 # unweighted 024c store (built at the 024c default age_bin_days of 10), a
-# rate-model tag the 024g survconn store (built at 1 d here). Horizons are
-# cumulative, so the smallest one that carries data is one age_bin_days.
+# rate-model tag the 024g survconn store (built at 1 d here, so 028's own
+# max_age_days window drops to 1 d too — it asserts the store covers it).
+# Horizons are cumulative, so the smallest one that carries data is one
+# age_bin_days.
 # `member` goes in with -r: "" is a meaningful value that -p would parse
 # away. The smoke run has only a January release, so only season ALL (and
 # DJF) carries data.
@@ -310,6 +312,7 @@ pixi run papermill notebooks/028_SubbasinConnectivityMatrix.ipynb \
     -p regime "surface_stokes" \
     -r season ALL \
     -p age_bin_days 1 \
+    -p max_age_days 1 \
     -r time_horizons_days_csv "1" \
     -r member "${SMOKE_MEMBER}" \
     --cwd notebooks/

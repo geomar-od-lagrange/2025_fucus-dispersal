@@ -31,6 +31,29 @@ Implements the cross-cutting decisions of
   visualisations.md). Step 3: 032 table E reads
   `Exports/026/026_<regime>_<season>_<member|unweighted>_T<h>d.geojson`,
   and its 025/026 figure stems need the member tag.
+- Step 3 done (SHA in the commit after it). Verified on new-schema 024e
+  (production + inert), 024f and 024g partitions built into a scratch root
+  (surface_stokes 2019 m06–m08 + 2020 m06, 180 d): 028 (JJA/ALL, both
+  weightings), 029, 030 (JJA/ALL), 031 (two members), 033, 025/026/026a/026b
+  weighted, 026 bottom unweighted, then 032 over all of them. Old-schema
+  partition raises the rebuild error; 024f N = 1 363 321 equals 029's
+  Σweight; 030 drifting fraction 170–180 d 0.462 ≈ 029 basin afloat at 180 d
+  46.0 %; afloat decreases with T for every origin. Deviations: the D8
+  four-decade floor is **not** applied to the 025/026 family's dilution maps
+  (tried: weighted median hex 5.3 decades below the near-land peak, so half
+  the basin hit the floor) — they keep the 1st-percentile floor, documented
+  in visualisations.md; 025/026/026a/026b also gained the old-schema error
+  and the rate-key comparison (step 2 only compared the window); 029/030/031
+  keep `age_bin_days`/`disp_bin_km` parameters and assert them against the
+  attrs (the smoke test passes 1 d); 028 raw figure stem `_Tall` →
+  `_T<max_age_days>d`; 029 maps/curves/displacement and 031 maps/beached
+  panel in % of released, 029 per-source-hex panel 0–100 %; 032 drops its
+  `age_bin_days` parameter (read from attrs), resolves figures by exact stem
+  only (the `<stem>_*` fallback could pick another member whose tag extends
+  this one), Table E/F pick `<member>` or `unweighted` per regime from the
+  024f partitions on disk; smoke test's 028 survconn run gains
+  `-p max_age_days 1`. Out of scope (024 lock): the 024g comment at
+  ~392–394.
 - Step 5 stores submitted 2026-10-20 (step 1 reviewed: bit-identical to
   the old stores on the shared window): 024a `24456829`; 024c
   `24456830`–`24456853` (24, afterok 024a); 024efg `24456854` (2825 cells,

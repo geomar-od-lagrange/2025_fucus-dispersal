@@ -305,7 +305,42 @@ this notebook has no release-side, age or displacement axis, and a full
 ten-year pool of the raw rows is ~31 M rows per member for a table that
 reduces to a few thousand.
 
+Each partition carries its build parameters as `df.attrs`, taken per file
+before anything is pooled (pandas drops attrs that differ between the frames
+it concatenates). Within a member every partition must agree on the window
+and the rate-model point; the two members differ in their rate model by
+design but must share the window, or the comparison mixes stranding
+horizons.
+
 ```python
+# Keys every pooled partition of one member must share. Provenance (builder,
+# git_sha, slurm_job_id) and the partition's identity (release_year,
+# release_month) legitimately differ and are not compared.
+POOLED_KEYS = (
+    "max_age_days", "age_bin_days", "disp_bin_km", "w_c", "tau_strong_hours",
+    "tau_calm_days", "delta", "trap_flat", "trap_wall", "band_m",
+)
+
+
+def pooled_attrs(attrs, store):
+    """The build attrs every pooled partition shares, from one `df.attrs`
+    per partition."""
+    old = sum("max_age_days" not in a for a in attrs)
+    if old:
+        raise ValueError(
+            f"{old} of {len(attrs)} {store} partition(s) carry no build attrs "
+            f"(old schema, written before max_age_days was recorded) — rebuild "
+            f"them with the current 024e/024f/024g reducers"
+        )
+    distinct = {tuple(a[k] for k in POOLED_KEYS) for a in attrs}
+    if len(distinct) > 1:
+        raise ValueError(
+            f"pooled {store} partitions disagree on {POOLED_KEYS}: "
+            f"{sorted(distinct)} — rebuild them at one setting"
+        )
+    return dict(zip(POOLED_KEYS, distinct.pop()))
+
+
 def load_beaching(tag):
     """Stranded weight per (beach_hex, shore_type), pooled over the season."""
     pat = re.compile(
@@ -332,21 +367,31 @@ def load_beaching(tag):
             f"member {tag!r} at {store_root} — run 024e."
         )
     parts = []
+    attrs = []
     for f, _ in files:
         d = pd.read_parquet(f, columns=["beach_hex", "shore_type", "weight"])
+        attrs.append(d.attrs)
         d = d[d["beach_hex"] >= 0]
         parts.append(d.groupby(["beach_hex", "shore_type"], observed=True)["weight"].sum())
     out = (
         pd.concat(parts).groupby(level=[0, 1], observed=True).sum()
         .rename("weight").reset_index()
     )
+    window = pooled_attrs(attrs, f"024e {tag}")
     print(f"{tag}: pooled {len(files)} partition(s) over release years "
           f"{sorted({y for _, y in files})} → {len(out):,} (hex, shore_type) rows, "
-          f"Σweight {out['weight'].sum():,.0f}")
-    return out
+          f"Σweight {out['weight'].sum():,.0f}; {window}")
+    return out, window
 
 
-beaching = {tag: load_beaching(tag) for tag in members}
+loaded = {tag: load_beaching(tag) for tag in members}
+beaching = {tag: frame for tag, (frame, _) in loaded.items()}
+member_windows = {tag: window["max_age_days"] for tag, (_, window) in loaded.items()}
+assert len(set(member_windows.values())) == 1, (
+    f"members disagree on max_age_days: {member_windows}"
+)
+max_age_days = member_windows[member]
+print(f"stranded weight within the {max_age_days} d reduction window")
 ```
 
 # Rendering helpers

@@ -13,8 +13,12 @@ set -euo pipefail
 # season's monthly partitions across every release year. E.g.:
 #   sbatch scripts/029_BeachingMaps_job.sh surface_stokes 6000 step_wc0p1_ts3_tcinf_tf1_tw0 ALL
 # season is one of DJF / MAM / JJA / SON / ALL (release month).
-# 024e_BuildBeaching_job.sh must have run first for the matching member, and
-# disp_bin_km must match the value 024e built with (notebook default: 10).
+# 024e_BuildBeaching_job.sh must have run first for the matching member (and
+# for the notebook's contrast_member). age_bin_days / disp_bin_km fall back to
+# the notebook defaults (10 d / 10 km) and are asserted against the
+# partitions' attrs, as is one reduction window across the pooled partitions.
+# Writes PNGs under Figures/029 and the per-horizon GeoJSON plus
+# afloat_by_origin_<regime>_<season>_<member>.csv under Exports/029.
 
 regime="${1:-surface_stokes}"
 hex_radius="${2:-6000}"

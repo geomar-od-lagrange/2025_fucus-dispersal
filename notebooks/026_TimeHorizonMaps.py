@@ -246,12 +246,26 @@ del parts
 # A pooled store must be one reduction window, at least as long as the one
 # mapped here (the horizons are ≤ max_age_days, asserted above).
 if member:
-    windows = {(a["max_age_days"], a["age_bin_days"]) for a in store_attrs}
-    assert len(windows) == 1, (
-        f"pooled survocc partitions disagree on (max_age_days, age_bin_days): "
-        f"{sorted(windows)} — rebuild 024f"
+    # One window, binning and rate-model point across every pooled partition;
+    # provenance (builder, git_sha, slurm_job_id) and the partition's own
+    # release_year/release_month are not compared.
+    pooled_keys = (
+        "max_age_days", "age_bin_days", "w_c", "tau_strong_hours",
+        "tau_calm_days", "delta", "trap_flat", "trap_wall", "band_m",
     )
-    store_max_age_days, store_age_bin_days = windows.pop()
+    if any("max_age_days" not in a for a in store_attrs):
+        raise ValueError(
+            "survocc partitions without build attrs (old schema, written before "
+            "max_age_days was recorded) — rebuild them with the current 024f reducer"
+        )
+    settings = {tuple(a[k] for k in pooled_keys) for a in store_attrs}
+    assert len(settings) == 1, (
+        f"pooled survocc partitions disagree on {pooled_keys}: "
+        f"{sorted(settings)} — rebuild 024f"
+    )
+    store_build = dict(zip(pooled_keys, settings.pop()))
+    store_max_age_days = store_build["max_age_days"]
+    store_age_bin_days = store_build["age_bin_days"]
     assert store_age_bin_days == age_bin_days, (
         f"store age_bin_days {store_age_bin_days} != {age_bin_days}"
     )

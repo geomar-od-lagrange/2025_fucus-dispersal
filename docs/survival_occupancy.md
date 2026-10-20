@@ -98,10 +98,23 @@ near-shore water. The sink field is [beaching.md](beaching.md)'s `beach_hex`.
 Conditioning on age bin means every particle shares an elapsed time, so the
 contrast is route, not age.
 
-At each horizon `T`, `030` selects the snapshot bin *ending* at `T` —
-`age_bin = T/age_bin_days − 1`, i.e. ages in `[T − age_bin_days, T)` —
-and draws occupancy vs. survival-weighted (shared `LogNorm`) vs. surviving
-fraction (linear 0–1). The drifting fraction falls with age, most steeply where
+At each horizon `T` (default 30/60/90/180 d), `030` selects the snapshot bin
+*ending* at `T` — `age_bin = T/age_bin_days − 1`, i.e. ages in
+`[T − age_bin_days, T)` — and draws occupancy vs. survival-weighted (shared
+`LogNorm`) vs. surviving fraction (linear 0–1). A snapshot rather than 026's
+cumulative `[0, T)`: being afloat at `T` is an instantaneous state, and a
+survival map accumulated over `[0, T)` is a weighted residence map, which 026
+already draws. The two density columns are in **% of the released drifters**:
+`100 · occ / Σocc` and `100 · surv / Σocc`, with `Σocc` over the bin's rows
+including every origin and the `-1` sentinel, i.e. `N · age_bin_days · 24` —
+the mean share of released drifters present, resp. afloat, in the hex during
+the bin. Per-hex maps sum over `origin_subbasin` and drop the sentinel at the
+key join. The domain-wide drifting-fraction curve `Σsurv / Σocc` per age bin
+keeps the sentinel, so it is the mean surviving fraction of *all* released
+drifters, including those that left the BSH domain (they keep the survival
+they had when they left); dropping it would condition on a population still
+in the domain that shrinks with age. The per-bin table prints `N` and the
+share of samples at `target_hex = -1`. The drifting fraction falls with age, most steeply where
 near-shore residence coincides with onshore waves **over flat shore** — at the
 production `trap_flat = 1`, `trap_wall = 0` the depletion pattern is a
 wave-exposure field multiplied by the substrate's flat fraction, so material
