@@ -1,6 +1,6 @@
 # Visualisations: per-plot rationale
 
-Why each notebook in `020`–`033` shows what it shows, and where
+Why each notebook in `020`–`034` shows what it shows, and where
 styling overrides earn their deviation from
 [../AGENTS.md](../AGENTS.md)'s plotting rules. AGENTS.md states the
 **rules** (no `cmap=`, no `figsize=`, no `color=` literals); this doc
@@ -26,6 +26,7 @@ listed here should be dropped.
 | 031 | Beaching sweep | Per-run (regime + radius + season) | Five statistics across members with interannual bars · where-stranded maps across members |
 | 032 | None — selects, numbers and downscales other notebooks' PNGs | Selection (primary + comparison regime) | One curated reading order over 025–031 |
 | 033 | Hex shoreline-type map + stranding-vs-substrate panels | Per-run (regime + radius + season + member pair) | Flat fraction per hex · coastline length per hex · stranded weight vs. flat fraction for the production and the substrate-inert member |
+| 034 | Bottom-slowdown comparison | Two regimes (`bottom` vs `bottom_vs0p8`) + one year + radius | Area / √area holding 50/90 % of particle-time at 30/60/90/180 d · map pair at 90 d |
 
 ## Cross-cutting choices
 
@@ -97,7 +98,7 @@ where it covers; the coarse grid is blanked inside the fine bbox.
 Override: magenta at `linewidths=0.3` — anti-viridis, hairline so it does
 not read as a second coastline.
 
-**Print-ready figures (025–031, 033).** Every saved figure is one full
+**Print-ready figures (025–031, 033, 034).** Every saved figure is one full
 text-width (180 mm) figure at 300 dpi: `fig.set_size_inches(180/25.4, h)`
 + `savefig(dpi=300)` ⇒ 2125 px wide. Deliberate break from the AGENTS.md
 "no figsize/dpi" rule: these panels are the manuscript figures.
@@ -564,6 +565,32 @@ all and the split is the coastline's own composition as the drift samples it.
 Export: `Exports/033/033_<regime>_<season>_<member>.geojson`, columns `hex_id,
 flat_fraction, coast_len_m, stranded_weight` plus the 024a hex geometry
 (EPSG:4326), matching the 025–029 export convention.
+
+## Notebook 034 — Bottom slowdown (special case)
+
+The one sensitivity illustration for bottom drift: the `bottom` regime against
+`bottom_vs0p8`, the same 010 runs with U and V scaled by 0.8
+([job_scripts.md](job_scripts.md), velocity-scaled variant regimes). The
+variant exists for one release year and one release per month, so **both
+sides are cut to those release doys** (`release_doys_csv`); a doy missing from
+either counts partition raises rather than shrinking one side. Parquet only.
+
+- **Footprint table and CSV** — the area holding `q` ∈ {0.5, 0.9} of the
+  particle-time accumulated by `T` (cumulative `[0, T)`, as in 026): hexes
+  ranked by `n_obs / water_area_m2` descending, zero-water hexes first at zero
+  area, the crossing hex taken fractionally; `length_km = √area_km2`.
+  `Exports/034/034_areas_<year>.csv` carries `regime, horizon_days, q,
+  area_km2, length_km` and the variant-over-reference area and length ratios.
+  Implemented notebook-locally rather than read from 026's areas export,
+  because 026 pools a whole season over every year, not a doy subset.
+- **Length vs. horizon** — one panel per `q`, one line per regime (`hue`), so
+  no line-style override is needed to tell four series apart.
+- **Map pair** at `map_horizon_days` — 026's percentage and dilution rendering
+  (horizontal colorbar under each map), one figure per view, the two regimes
+  side by side under **one shared norm** so the same colour is the same share
+  in both; unlike 026's per-panel norms, the comparison is the point here.
+
+Figures at 180 mm × 300 dpi as above.
 
 ## Cross-references
 

@@ -150,6 +150,10 @@ filename.
   (029) and survival occupancy
   heatmaps (030) for one 024e/024f member, and the rate-model sweep
   across members (031).
+- `notebooks/034_*` — bottom-slowdown illustration: `bottom` against the
+  `bottom_vs0p8` variant (010 at `velocity_scale = 0.8`) on the same
+  release doys of one year, area holding 50/90 % of particle-time per
+  horizon plus a map pair, from the 024 counts store.
 
 ## Data access
 
@@ -321,7 +325,7 @@ kwargs that override defaults until a real need shows up.** Concretely:
 - Prefer xarray's built-in plotting (`.plot`, `.plot.line`, `.plot.scatter`,
   faceting via `col=` / `row=` / `hue=`) over raw matplotlib.
 
-One standing exception: the `025`–`033` map notebooks save print-ready
+One standing exception: the `025`–`034` map notebooks save print-ready
 figures at a fixed 180 mm page width and 300 dpi, because those PNGs *are*
 the manuscript figures — see [docs/visualisations.md](docs/visualisations.md).
 

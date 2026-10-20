@@ -9,7 +9,27 @@ claim is only "how does spread respond to an assumed 20 % slowdown".
 
 ## Status
 
-- Not started.
+- **Step 1 done** (9d0aaac): `velocity_scale` in 010 via
+  `Field.set_scaling_factor` on every nest level's U and V; output regime
+  `<regime>_vs<scale>`; `VELOCITY_SCALE` env through the bottom job script and
+  `submit_010.sh`; 024's zarr-stem regex accepts any regime word. Checked in
+  the production container (Parcels 3.0.6), 2-day / 2-per-cell test: 1.0 is
+  bitwise identical to the pre-change notebook; 0.8 gives a first-hour
+  displacement ratio of 0.800 (median; 0.8007 fine nest, 0.8000 coarse).
+- **Step 2 submitted** (2026-10-20): 010 job **24456827**
+  (`010-bottom-vs0.8-2019-n0_7_12_18_24_31_37_43_49_55_61_67`, 12 tasks,
+  started at once; a 1x bottom release took ~7 h) and 024 counts
+  **24456828** (`afterok:24456827`, writes
+  `HexAgg_counts_r6000m_bottom_vs0p8_2019.parquet`).
+- **Step 3 done**: `notebooks/034_BottomSlowdown.py`, dry-run green with
+  `regime_var = bottom` against symlinked production inputs.
+- **Remaining (step 4):** when 24456828 lands, check 12 zarrs under
+  `Trajectories/bottom_vs0p8/2019/`, then run 034 —
+  `pixi run papermill --cwd notebooks/ notebooks/034_BottomSlowdown.ipynb
+  notebooks_executed/Visualisations/034_BottomSlowdown_2019.ipynb -p
+  output_root /gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs -k
+  python` (seconds, no Dask) — and move this plan to `plans/done/` (docs
+  entries are in `docs/visualisations.md` and `docs/job_scripts.md`).
 
 ## Design
 
