@@ -20,7 +20,7 @@
 # Hex relative-density maps at successive elapsed-time horizons (e.g. 30,
 # 60, 90, 180 days), showing how the dispersal cloud spreads and thins
 # over time, plus the water area that holds a given share of the cloud at
-# each horizon. One regime and one release season per run, pooled over
+# every age-bin edge (a dense series for 035). One regime and one release season per run, pooled over
 # every available release year; no trajectory zarrs, no Dask cluster.
 #
 # Two stores feed this, selected by the `member` parameter, and the value
@@ -85,6 +85,10 @@ max_age_days = 180
 # Elapsed-time horizons to map, in days. Each must be a multiple of
 # age_bin_days and ≤ max_age_days.
 time_horizons_days_csv = "30,60,90,180"
+# Horizons of the area table (Exports/026/026_areas_*.csv), in days: same
+# rules as the map horizons. "" = every age-bin edge up to max_age_days
+# (10, 20, ..., 180 at the defaults), the dense series 035 plots.
+area_horizons_days_csv = ""
 # Shares of the weight whose smallest holding water area is reported per
 # horizon (comma-separated, each in (0, 1]). 0.9 only: the 0.5 area is set by
 # particles stalling in a few coastal hexes (docs/visualisations.md).
@@ -116,10 +120,14 @@ output_root = Path(output_root)
 data_root = Path(data_root)
 store_root = output_root / "HexAggregates"
 time_horizons_days = [int(x) for x in time_horizons_days_csv.split(",") if x]
+area_horizons_days = [int(x) for x in area_horizons_days_csv.split(",") if x] or list(
+    range(age_bin_days, max_age_days + 1, age_bin_days)
+)
 assert max_age_days % age_bin_days == 0, (
     f"max_age_days {max_age_days} d is not a multiple of age_bin_days {age_bin_days} d"
 )
-for h in time_horizons_days:
+for h in [*time_horizons_days, *area_horizons_days]:
+    assert h > 0, f"horizon {h} d holds no age bin"
     assert h % age_bin_days == 0, (
         f"horizon {h} d is not a multiple of age_bin_days {age_bin_days} d; "
         f"it would cut a bin in half"
@@ -523,6 +531,11 @@ for h in time_horizons_days:
 # `pooled` ranks the weights summed over every release year; each year is
 # the same reduction on that year's releases alone, so their min–max is the
 # interannual range (a pooled value need not lie inside it).
+#
+# The table runs at `area_horizons_days` (default: every age-bin edge), not
+# the four map horizons, so 035 can draw it as a time series. Each scope's
+# per-`(target_hex, age_bin)` weights are accumulated over `age_bin` once;
+# horizon `T` is then the column of the last bin starting before `T`.
 
 # %%
 water_area_km2 = key.set_index("hex_id")["water_area_m2"] / 1e6
@@ -549,13 +562,25 @@ def area_to_hold(weight_by_hex, quantiles):
     return out
 
 
+def cumulative_by_hex(binned_df):
+    """Weight per target hex (rows) accumulated over age bins (columns):
+    column ``b`` holds elapsed time in ``[0, (b + 1) · age_bin_days)``."""
+    return (
+        binned_df.groupby(["target_hex", "age_bin"])["weight"].sum()
+        .unstack("age_bin", fill_value=0.0)
+        .reindex(columns=range(n_age_bins), fill_value=0.0)
+        .cumsum(axis=1)
+    )
+
+
+scopes = {"pooled": cumulative_by_hex(binned)}
+for y, g in binned.groupby("release_year"):
+    scopes[str(y)] = cumulative_by_hex(g)
+
 area_rows = []
-for h in time_horizons_days:
-    in_horizon = binned[binned["age_bin"] * age_bin_days < h]
-    scopes = {"pooled": in_horizon.groupby("target_hex")["weight"].sum()}
-    for y, g in in_horizon.groupby("release_year"):
-        scopes[str(y)] = g.groupby("target_hex")["weight"].sum()
-    for scope, weight_by_hex in scopes.items():
+for h in area_horizons_days:
+    for scope, cumulative in scopes.items():
+        weight_by_hex = cumulative[h // age_bin_days - 1]
         for q, a in zip(area_quantiles, area_to_hold(weight_by_hex, area_quantiles)):
             area_rows.append(
                 {"horizon_days": h, "q": q, "scope": scope, "area_km2": a, "length_km": np.sqrt(a)}

@@ -62,6 +62,11 @@ Implements the cross-cutting decisions of
   292 tasks, afterok 024a). Consumers wait for steps 2–4. Don't edit
   `notebooks/024e/f/g*.ipynb` or switch branches while 024efg runs: each
   cell reads the notebook from disk when it starts.
+- Added after step 3: 026 `area_horizons_days_csv` (default every age-bin
+  edge, 10–180 d) makes the D6 area table dense; new 035 draws it as a time
+  series (area and √area vs. T, one line per regime, pooled + per-year
+  band), second wave of the consumer driver, in 032's figure manifest.
+  Bottom-only interim run into production (026 bottom × 5 seasons, 035 × 5).
 
 ## Design decisions
 
@@ -107,7 +112,7 @@ Implements the cross-cutting decisions of
   min–max over years; years lacking the season's releases are dropped and
   reported (as 028 does). Export
   `Exports/026/026_areas_<regime>_<season>_<member|unweighted>.csv`
-  (`horizon_days, q, scope, area_km2, length_km`). No figure yet.
+  (`horizon_days, q, scope, area_km2, length_km`); drawn by 035.
 - **D7. P8 lives in 029.** `afloat(T) = Σweight − Σweight[beach_hex ≥ 0 &
   beach_age_bin < T/10]` per `release_hex → helcom_subbasin`, as % of the
   origin's Σweight (= its released water-seeded drifters, asserted in

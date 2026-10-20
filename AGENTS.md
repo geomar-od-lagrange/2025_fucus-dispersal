@@ -156,6 +156,9 @@ filename.
   `bottom_vs0p8` variant (010 at `velocity_scale = 0.8`) on the same
   release doys of one year, area holding 90 % of particle-time per
   horizon plus a map pair, from the 024 counts store.
+- `notebooks/035_*` — area time series: the area holding 90 % of
+  particle-time against the cumulative horizon, one line per regime with
+  the interannual band, read from 026's area CSVs (so after 026).
 
 ## Data access
 
@@ -327,7 +330,7 @@ kwargs that override defaults until a real need shows up.** Concretely:
 - Prefer xarray's built-in plotting (`.plot`, `.plot.line`, `.plot.scatter`,
   faceting via `col=` / `row=` / `hue=`) over raw matplotlib.
 
-One standing exception: the `025`–`034` map notebooks save print-ready
+One standing exception: the `025`–`035` figure notebooks save print-ready
 figures at a fixed 180 mm page width and 300 dpi, because those PNGs *are*
 the manuscript figures — see [docs/visualisations.md](docs/visualisations.md).
 

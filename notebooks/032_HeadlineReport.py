@@ -831,6 +831,10 @@ figure_specs = [
      f"The same for the comparison regime ({horizons_on_disk(other_regime, figure_season)} d, "
      f"{weighting_phrase(figure_fields['other_tag']) if other_regime else '—'}). Read against the "
      "previous figure."),
+    ("035", "AreaTimeSeries_{pooled}_r{radius}m", "area_time_series_{pooled}",
+     "Table F's area (left) and its square root (right) against the cumulative horizon T (ages in "
+     "[0, T)) at every age-bin edge, one line per regime at its 025/026 weighting: pooled line, "
+     "per-release-year min–max band."),
     ("029", "WhereStranded_{regime}_r{radius}m_{season}_{member}", "where_stranded_{season}",
      f"Stranded within {max_age_days} d, % of the released drifters per hex (log, 4 decades): the "
      "stranding coastline of this season."),

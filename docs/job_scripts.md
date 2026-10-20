@@ -33,6 +33,7 @@ output_root/Figures/
   029/  <view>_<regime>_r<radius>m_<season>_<member>.png
   030/  {SurvivalHeatmaps,SurvivalFraction,DriftingFractionCurve}_<regime>_r<radius>m_<season>_<member>.png
   031/  BeachingSweep{Stats,Maps}_<regime>_r<radius>m_<season>.png
+  035/  AreaTimeSeries_<season>_r<radius>m.png
 ```
 
 `figure_dir` is derived from the `output_root` parameter inside each notebook
@@ -437,6 +438,7 @@ away.
 | `028_SubbasinConnectivityMatrix_job.sh` | `[regime] [hex_radius] [season] [member]` — empty `member` reads the unweighted 024c store, a tag reads 024g |
 | `029_BeachingMaps_job.sh`, `030_SurvivalHeatmaps_job.sh` | `[regime] [hex_radius] [member] [season]` |
 | `031_BeachingSweep_job.sh` | `[regime] [hex_radius] [members_csv] [labels_csv] [baseline_member] [season]` |
+| `035_AreaTimeSeries_job.sh` | `[season] [hex_radius] [member]` — draws `surface_stokes` at 026 tag `member` (default the production member) and `bottom` unweighted, from 026's area CSVs |
 
 Every default is `regime=surface_stokes`, `hex_radius=6000`. `age_bin_days`,
 `max_age_days`, `time_horizons_days_csv`, `disp_bin_km` and the origin/year
@@ -465,8 +467,12 @@ papermill contract and this driver only decides which combinations run:
 | 028 | surface_stokes unweighted + production member, bottom unweighted, × 5 seasons | 15 |
 | 029, 030 | surface_stokes, production member, × 5 seasons | 10 |
 | 031 | surface_stokes × 5 seasons, `members_csv` = every 024e member on disk | 5 |
+| 035 | both regimes in one figure × 5 seasons, second wave | 5 |
 
-`LIST_ONLY=1 bash scripts/025-031_ConsumersAll_job.sh` prints the 80 units;
+The units run as one flat `xargs` pool with no ordering among them, except
+035: it reads the 026 area CSVs of both regimes, so the 035 units form a
+second wave that starts once every other unit has finished.
+`LIST_ONLY=1 bash scripts/025-031_ConsumersAll_job.sh` prints the 85 units;
 `STAGES` / `REGIMES` / `SEASONS` restrict the matrix. The 031 member list is
 read off `HexAggregates/` inside the job, not at submit time — the reducers
 write those stores minutes earlier in the chain below, so any hardcoded list
@@ -480,7 +486,7 @@ measured process-tree peak RSS over ten release years (`surface_stokes`,
 `ALL`, unweighted) is 16.2 GiB for 026, 15.5 for 026b and 12.2 for 025; a
 single season or a 024f member read stays under 3.2 GiB; 027 and 028 are
 0.2 and <0.1 GiB (`sacct`, four years). The shape is generous for the heatmap
-family and stays until 029/030/031 are measured at 180 d. One job at that shape beats ~80
+family and stays until 029/030/031 are measured at 180 d. One job at that shape beats ~85
 one-task allocations queueing independently behind the same dependency for
 work that is minutes long; the price is that the cheap two thirds of the
 matrix book memory they do not need.
@@ -500,7 +506,7 @@ and left alone.
 A  024 + 024b + 024c per (regime, year)   afterany on that pair's 010 job
 B  024d sidecars, surface_stokes          afterany on the surface_stokes 010 jobs
 C  024e/024f/024g reducers                afterok on B
-D  025-031 consumers, 80 units            afterok on every A job and on C
+D  025-031 consumers, 85 units            afterok on every A job and on C
 E  headline regeneration                  afterok on D
 ```
 

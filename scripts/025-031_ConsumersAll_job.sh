@@ -19,8 +19,8 @@
 # scripts/0NN_*_job.sh, launched as its own `srun` step. The per-stage scripts
 # stay the single source of the papermill contract (notebook path, parameter
 # names, `-r` vs `-p`, executed-notebook name); this driver only decides which
-# combinations run. The alternative -- ~80 separate `sbatch` submissions --
-# means 80 allocations queueing independently behind the same dependency, for
+# combinations run. The alternative -- ~85 separate `sbatch` submissions --
+# means 85 allocations queueing independently behind the same dependency, for
 # units that are minutes long.
 #
 # The matrix:
@@ -32,8 +32,13 @@
 #         bottom unweighted)                              x 5 seasons   15
 #   029, 030  surface_stokes, production member           x 5 seasons   10
 #   031  surface_stokes, every 024e member on disk        x 5 seasons    5
+#   035  both regimes in one figure (reads 026's CSVs)    x 5 seasons    5
 #                                                                     ----
-#                                                                       80
+#                                                                       85
+#
+# 035 draws the 026 area exports of both regimes, so the 035 units run as a
+# second wave after every other unit has finished; the first wave is one
+# flat pool with no ordering between its units.
 #
 # `surface` (no Stokes) is not produced further (plans/analysis_wrapup.md §0),
 # and only surface_stokes has 024d sidecars, hence the beaching/survival stages
@@ -84,7 +89,7 @@ hex_radius=${HEX_RADIUS:-6000}
 # The rate-model member the study reports (plans/analysis_wrapup.md §0); the
 # other members only appear in the 031 sweep.
 production_member=${PRODUCTION_MEMBER:-step_wc0p1_ts3_tcinf_tf1_tw0}
-stages=${STAGES:-025 026 026a 026b 027 028 029 030 031}
+stages=${STAGES:-025 026 026a 026b 027 028 029 030 031 035}
 regimes=${REGIMES:-surface_stokes bottom}
 seasons=${SEASONS:-ALL DJF MAM JJA SON}
 logdir=${output_root}/logs/025-031
@@ -143,6 +148,8 @@ run_one() {
         031)  job=scripts/031_BeachingSweep_job.sh
               args=("${regime}" "${hex_radius}" "$(beaching_members_csv)" "" \
                     "${production_member}" "${season}") ;;
+        035)  job=scripts/035_AreaTimeSeries_job.sh
+              args=("${season}" "${hex_radius}" "${member}") ;;
         *)    echo "FAIL ${stage} ${regime} ${season} ${member:-unweighted} (unknown stage)"
               return 0 ;;
     esac
@@ -228,6 +235,12 @@ list_work() {
                 for season in ${seasons}; do
                     echo "031 surface_stokes ${season} -"
                 done ;;
+            035)
+                # Both regimes in one figure: surface_stokes at the production
+                # member's 026 tag, bottom unweighted (fixed in the job script).
+                for season in ${seasons}; do
+                    echo "035 both ${season} ${production_member}"
+                done ;;
             *)  echo "${stage} ? ? -" ;;
         esac
     done
@@ -258,15 +271,18 @@ ls "${output_root}/HexAggregates"/HexAgg_beaching_r"${hex_radius}"m_surface_stok
     >/dev/null 2>&1 \
     || echo "025-031 WARNING: no 024e store for production member ${production_member}"
 
-# `set -e` must not kill the driver when a unit exhausts its retries; run_one
-# already swallows its own status and reports FAIL, and the tally below is the
-# authoritative exit code.
+tally=${logdir}/${SLURM_JOB_NAME}_${SLURM_JOB_ID}.tally
+# `set -e` must not kill the driver when a unit exhausts its retries (or when
+# a wave's grep selects nothing); run_one already swallows its own status and
+# reports FAIL, and the tally below is the authoritative exit code.
+# Two waves: 035 reads what 026 writes for both regimes.
 set +e
-list_work | xargs -P "${SLURM_NTASKS}" -L1 bash -c 'run_one "$@"' _ \
-    | tee "${logdir}/${SLURM_JOB_NAME}_${SLURM_JOB_ID}.tally"
+list_work | grep -v "^035 " | xargs -r -P "${SLURM_NTASKS}" -L1 bash -c 'run_one "$@"' _ \
+    | tee "${tally}"
+list_work | grep "^035 " | xargs -r -P "${SLURM_NTASKS}" -L1 bash -c 'run_one "$@"' _ \
+    | tee -a "${tally}"
 set -e
 
-tally=${logdir}/${SLURM_JOB_NAME}_${SLURM_JOB_ID}.tally
 nok=$(grep -c '^OK ' "${tally}" || true)
 nfail=$(grep -c '^FAIL ' "${tally}" || true)
 echo "025-031 done: ${nok} OK, ${nfail} FAIL of ${njobs}"

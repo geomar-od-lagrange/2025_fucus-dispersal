@@ -1,6 +1,6 @@
 # Visualisations: per-plot rationale
 
-Why each notebook in `020`–`034` shows what it shows, and where
+Why each notebook in `020`–`035` shows what it shows, and where
 styling overrides earn their deviation from
 [../AGENTS.md](../AGENTS.md)'s plotting rules. AGENTS.md states the
 **rules** (no `cmap=`, no `figsize=`, no `color=` literals); this doc
@@ -16,7 +16,7 @@ listed here should be dropped.
 | 022 | Distance vs. time | Overlaid (`hue="regime"`) | Global · Per subbasin · German waters · Per quarter |
 | 023 | Density + mean-age maps | Per-run (papermill regime) | Whole Baltic · Per subbasin · German waters · Per quarter |
 | 025 | Hex relative-density maps | Per-run (regime + season + radius + member) | Baltic percentage+dilution · German-waters zoom · per origin subbasin |
-| 026 | Hex time-horizon relative-density maps | Per-run (regime + season + radius + member) | Cumulative elapsed-time horizons (30/60/90/180 d), all release years pooled · area holding 90 % of the cloud (CSV) |
+| 026 | Hex time-horizon relative-density maps | Per-run (regime + season + radius + member) | Cumulative elapsed-time horizons (30/60/90/180 d), all release years pooled · area holding 90 % of the cloud at every age-bin edge (CSV) |
 | 026a | 026 per origin subbasin | Per-run (regime + season + radius + member) | One percentage and one dilution figure per origin (HELCOM) subbasin |
 | 026b | 026a per origin subbasin and year | Per-run (regime + season + radius + member) | One percentage and one dilution figure per (origin subbasin, release year) |
 | 027 | Hex distance-quantile maps | Per-run (regime + radius + season) | One 1xN panel row, one panel per quantile (0.1/0.5/0.9), the season's releases pooled across years |
@@ -27,6 +27,7 @@ listed here should be dropped.
 | 032 | None — selects, numbers and downscales other notebooks' PNGs | Selection (primary + comparison regime) | Tables A–G · one curated reading order over 025–031 |
 | 033 | Hex shoreline-type map + stranding-vs-substrate panels | Per-run (regime + radius + season + member pair) | Flat fraction per hex · coastline length per hex · stranded weight vs. flat fraction for the production and the substrate-inert member |
 | 034 | Bottom-slowdown comparison | Two regimes (`bottom` vs `bottom_vs0p8`) + one year + radius | Area / √area holding 90 % of particle-time at 30/60/90/180 d · map pair at 90 d |
+| 035 | Area time series | Overlaid (one line per regime, each at its 026 weighting tag) + season | Area / √area holding 90 % of particle-time vs. cumulative horizon, every age-bin edge, pooled line + per-year min–max band |
 
 ## Cross-cutting choices
 
@@ -58,7 +59,7 @@ beyond useful inspection density.
 **Interannual spread is the error bar, not a product.** Where a figure
 shows one scalar per horizon or per member, the per-release-year min–max of the
 same reduction — grouped by the release year parsed from the partition
-filename — is drawn as a shaded band (029, 030), a lo–hi bar (031), a
+filename — is drawn as a shaded band (029, 030, 035), a lo–hi bar (031), a
 CSV column (028) or per-year CSV rows (026 areas). Drawn as an explicit
 range rather than a symmetric
 `yerr`, because a pooled value need not lie inside it: `beach_hexes` pools
@@ -159,7 +160,7 @@ where it covers; the coarse grid is blanked inside the fine bbox.
 Override: magenta at `linewidths=0.3` — anti-viridis, hairline so it does
 not read as a second coastline.
 
-**Print-ready figures (025–031, 033, 034).** Every saved figure is one full
+**Print-ready figures (025–031, 033–035).** Every saved figure is one full
 text-width (180 mm) figure at 300 dpi: `fig.set_size_inches(180/25.4, h)`
 + `savefig(dpi=300)` ⇒ 2125 px wide. Deliberate break from the AGENTS.md
 "no figsize/dpi" rule: these panels are the manuscript figures.
@@ -240,7 +241,10 @@ at 180 mm. Horizons must be whole multiples of the store's `age_bin_days`
 and ≤ `max_age_days` — a tighter snapshot means rebuilding 024, not a
 different plot.
 
-**Area holding a share of the cloud.** Per horizon `T` and share
+**Area holding a share of the cloud.** Per horizon `T` in
+`area_horizons_days_csv` — default `""`, every age-bin edge up to
+`max_age_days` (10, 20, …, 180 d), so 035 can draw it as a time series;
+the maps keep `time_horizons_days_csv` — and share
 `q` (`area_quantiles_csv`, default 0.9 only): hexes ranked by density
 `weight / water_area_m2` descending, weight accumulated until it reaches
 `q`, and their water area summed — the smallest water area holding a share
@@ -258,8 +262,11 @@ particle-time, so the area measures concentration, not spread: where
 drifters accumulate in few hexes (coastal trapping), later horizons add
 weight there and the area can shrink as `T` grows. Only `q = 0.9` is
 reported: under advection-only physics the 0.5 area is dominated by particles
-stalling in a few coastal hexes and is hard to interpret. No figure: the CSV
-feeds 032 (table F, which filters the CSV to its own `area_quantile`).
+stalling in a few coastal hexes and is hard to interpret. Each scope's
+per-`(target_hex, age_bin)` weights are accumulated over `age_bin` once, so a
+dense horizon set costs one ranking per horizon, not one regrouping. No
+figure here: the CSV feeds 035 (the time series) and 032 (table F, which
+filters the CSV to its own `area_quantile`).
 
 ## Notebook 026a — per origin subbasin (special case)
 
@@ -591,7 +598,7 @@ tag can extend another (`step_wc0p1_ts3_tcinf` →
 `step_wc0p1_ts3_tcinf_tf1_tw0`), so a missing figure would silently resolve
 to a different member's. The map entries use the `figure_season` parameter
 and the curve/sweep entries the year-pooled season, so the manifest is one
-reading order rather than eleven hardcoded names. Captions take their
+reading order rather than twelve hardcoded names. Captions take their
 horizons and windows from the parameters, the store attrs and the 026
 exports on disk. An entry that resolves to nothing is recorded in a "Gaps"
 section of `HEADLINE.md` rather than raising: a partially-run consumer
@@ -737,6 +744,40 @@ either counts partition raises rather than shrinking one side. Parquet only.
   in both; unlike 026's per-panel norms, the comparison is the point here.
 
 Figures at 180 mm × 300 dpi as above.
+
+## Notebook 035 — Area time series (special case)
+
+[`035_AreaTimeSeries`](../notebooks/035_AreaTimeSeries.py) draws 026's area
+exports `Exports/026/026_areas_<regime>_<season>_<tag>.csv` for several
+regimes on shared axes — R1's "how much water holds the cloud by T". No
+parquet; it runs after 026 for every regime it draws.
+
+| parameter | default | |
+|---|---|---|
+| `regimes_csv`, `tags_csv` | `surface_stokes,bottom`, `<production member>,unweighted` | one 026 weighting tag per regime, position by position (D3) |
+| `season` | `ALL` | one release season per figure |
+| `area_quantile` | 0.9 | must be a `q` the CSV holds, else it raises |
+| `hex_radius` | 6000 | labels the figure only; the CSV names carry no radius |
+
+- **Two panels**, area (km²) and √area (km), against the cumulative horizon
+  `T` (ages in `[0, T)`, every age-bin edge 026 exported), y from zero so the
+  regimes compare as ratios.
+- **One colour per regime** from the default cycle, indexed by its position
+  in `regimes_csv` so a regime keeps its colour when another is missing; the
+  pooled value is a line with markers (one per exported horizon), the
+  per-release-year min–max a band in the same colour at `alpha=0.3`. The
+  pooled value can sit outside the band — it ranks the summed weights, which
+  spread over more hexes than any one year's.
+- **Missing export** — a regime whose CSV is absent is printed as `MISSING:`
+  and left out (the figure draws what exists, so a one-regime interim works);
+  no CSV at all raises.
+- A computed table of the plotted values (pooled, per-year min and max, both
+  quantities) is printed; no export of its own — the numbers are 026's.
+
+`output_root/Figures/035/AreaTimeSeries_<season>_r<radius>m.png`, 180 mm ×
+300 dpi; 032 picks the year-pooled season's figure. Considered drawing the
+series inside 026; rejected, 026 runs one regime at a time and the
+comparison is the point.
 
 ## Cross-references
 
