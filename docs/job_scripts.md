@@ -24,10 +24,10 @@ executed notebook:
 
 ```
 output_root/Figures/
-  025/  HexRelativeDensity[DE|ByOrigin]_<regime>_<season>_r<radius>m[_part<n>].png
-  026/  TimeHorizonMaps_<regime>_<season>_r<radius>m_<percentage|dilution>.png
-  026a/ OriginSubbasinTimeHorizonMaps_<regime>_<season>_r<radius>m_<subbasin>_<column>.png
-  026b/ OriginSubbasinYearTimeHorizonMaps_<regime>_<season>_r<radius>m_<subbasin>_<year>_<column>.png
+  025/  HexRelativeDensity[DE|ByOrigin]_<regime>_<season>_r<radius>m_<member-or-unweighted>[_part<n>].png
+  026/  TimeHorizonMaps_<regime>_<season>_r<radius>m_<member-or-unweighted>_<percentage|dilution>.png
+  026a/ OriginSubbasinTimeHorizonMaps_<regime>_<season>_r<radius>m_<member-or-unweighted>_<subbasin>_<column>.png
+  026b/ OriginSubbasinYearTimeHorizonMaps_<regime>_<season>_r<radius>m_<member-or-unweighted>_<subbasin>_<year>_<column>.png
   027/  DistanceQuantiles_<regime>_r<radius>m_<season>.png
   028/  connectivity_<regime>_<season>_<member-or-unweighted>_*.png
   029/  <view>_<regime>_r<radius>m_<season>_<member>.png
@@ -44,7 +44,8 @@ the manuscript figure, not a preview (rationale in
 `025`–`028` additionally write machine-readable exports under
 `output_root/Exports/<stage>/`: GeoJSON (hex geometry, EPSG:4326) for the map
 products of `025`/`026`/`026a`/`026b`/`027`, long-form CSV for `028`'s
-connectivity matrices.
+connectivity matrices and `026`'s area-holding-a-share table
+(`026_areas_<regime>_<season>_<member-or-unweighted>.csv`).
 
 ## The 2D-field preprocessor (003)
 
@@ -412,7 +413,7 @@ extra `sbatch` args through, so chaining it behind the sidecar build is
 `scripts/submit_024efg.sh --dependency=afterok:<024d job id>`.
 Reducers are CPU-light but decompress one sidecar's `(trajectory, obs)`
 arrays over the whole window at once, so memory scales with `max_age_days`:
-`--mem-per-cpu=12G`, `--cpus-per-task=2` (24 GB per cell) against measured
+`--mem-per-cpu=8G`, `--cpus-per-task=2` (16 GB per cell) against measured
 peaks of 8.6 / 11.1 / 10.9 GB (024e / 024f / 024g, one 2019-01 cell at 180 d).
 The 12 h limit is slack, not an estimate.
 
@@ -429,15 +430,16 @@ away.
 | script | positional args |
 |---|---|
 | `024c_BuildHexConnectivity_job.sh` | `[regime] [year] [hex_radius]` (reads the 024 counts store, writes connectivity) |
-| `025_HexHeatmaps_job.sh`, `026*_job.sh` | `[regime] [season] [hex_radius]` (also pass `-p data_root ${repo_root}/data` for the BSH H0 isobath) |
+| `025_HexHeatmaps_job.sh`, `026*_job.sh` | `[regime] [season] [hex_radius] [member]` — empty `member` reads the unweighted 024 counts store, a tag reads 024f (also pass `-p data_root ${repo_root}/data` for the BSH H0 isobath) |
 | `027_HexDistanceQuantiles_job.sh` | `[regime] [hex_radius] [season]` |
 | `028_SubbasinConnectivityMatrix_job.sh` | `[regime] [hex_radius] [season] [member]` — empty `member` reads the unweighted 024c store, a tag reads 024g |
 | `029_BeachingMaps_job.sh`, `030_SurvivalHeatmaps_job.sh` | `[regime] [hex_radius] [member] [season]` |
 | `031_BeachingSweep_job.sh` | `[regime] [hex_radius] [members_csv] [labels_csv] [baseline_member] [season]` |
 
 Every default is `regime=surface_stokes`, `hex_radius=6000`. `age_bin_days`,
-`time_horizons_days_csv`, `disp_bin_km` and the origin/year filters fall back
-to the notebook defaults and must match what the corresponding builder wrote.
+`max_age_days`, `time_horizons_days_csv`, `disp_bin_km` and the origin/year
+filters fall back to the notebook defaults and must match what the
+corresponding builder wrote.
 Each ends in `jobinfo || true`: the accounting tool is the last command, so
 without that its status, not papermill's, would be the job's — and an
 `afterok` dependency would fire on a figure that was never drawn. Same reason
@@ -453,7 +455,8 @@ papermill contract and this driver only decides which combinations run:
 
 | stages | coverage | units |
 |---|---|---|
-| 025, 026, 026a, 026b, 027 | {surface_stokes, bottom} × 5 seasons | 50 |
+| 025, 026, 026a, 026b | surface_stokes production member + bottom unweighted, × 5 seasons | 40 |
+| 027 | {surface_stokes, bottom} × 5 seasons | 10 |
 | 028 | surface_stokes unweighted + production member, bottom unweighted, × 5 seasons | 15 |
 | 029, 030 | surface_stokes, production member, × 5 seasons | 10 |
 | 031 | surface_stokes × 5 seasons, `members_csv` = every 024e member on disk | 5 |

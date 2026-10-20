@@ -6,7 +6,7 @@
 # so a small grid books a small allocation.
 #SBATCH --ntasks=292
 #SBATCH --cpus-per-task=2
-#SBATCH --mem-per-cpu=12G
+#SBATCH --mem-per-cpu=8G
 #SBATCH --time=12:00:00
 #SBATCH --distribution=cyclic
 # Do not abort the whole allocation when one node dies (see 024d job script):
@@ -25,7 +25,7 @@
 # (`xargs -P ${SLURM_NTASKS}`), independent of the work-list length, so the
 # same script can be resubmitted throttled.
 #
-# Memory: 12G x 2 cpu = 24 GB/task. These reducers touch only the compact
+# Memory: 8G x 2 cpu = 16 GB/task, ~45 % over the measured peak. These reducers touch only the compact
 # sidecar and the key parquet, but each decompresses one sidecar's
 # (trajectory, obs) arrays over the whole window (~57 k drifters x 4320 h at
 # max_age_days=180). Measured peak RSS for a 2019-01 cell at 180 d: 8.6 GB

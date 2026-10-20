@@ -77,7 +77,7 @@ Implements the cross-cutting decisions of
   list"; new table F (P3 areas) and G (P8 afloat by origin); captions
   derive horizons and window from parameters and store attrs, nothing
   hardcoded.
-- **D10. Resources.** 024efg at `--mem-per-cpu=12G` (arrays grow ~3× for
+- **D10. Resources.** 024efg at `--mem-per-cpu=8G` (16 GB per task; measured peak 11.1 GB) (arrays grow ~3× for
   024e, ~1.5× for 024f/g at 180 d).
 
 Deferred: P2's two-regime side-by-side figure (needs a two-regime loader;
