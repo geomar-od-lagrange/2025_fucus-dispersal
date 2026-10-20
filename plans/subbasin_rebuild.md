@@ -5,6 +5,10 @@ snap instead of centroid-within (rule and rationale:
 [../docs/hexbinning_and_connectivity.md](../docs/hexbinning_and_connectivity.md)).
 The change is committed; **nothing downstream has been rebuilt**.
 
+**Folded into [horizons_and_weighting.md](horizons_and_weighting.md)
+step 5**, which runs this rebuild on SLURM together with the 180 d
+reducer rerun. The node-local recipe below is kept for SLURM outages.
+
 ## Everything below is STALE on NESH right now
 
 | artefact | why |

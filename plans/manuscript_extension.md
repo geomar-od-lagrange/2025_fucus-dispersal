@@ -21,6 +21,9 @@ Annotate inline with `> **WR:** …` under any item; open choices are marked
   pushed to Overleaf; the superproject gitlink moves only after that push.
 - Phases B and C decided yes; cross-cutting decisions recorded under Phase B.
   Phase D open: P1, P5 grouping, P7 mean age.
+- Cross-cutting decisions + P3/P8/P9 are being implemented per
+  [horizons_and_weighting.md](horizons_and_weighting.md), which also
+  carries the subbasin rebuild.
 - **Blocking every subbasin-keyed item (P2, P5, P6):** the subbasin rebuild
   in [subbasin_rebuild.md](subbasin_rebuild.md). The 024c/024g stores and
   026a/026b/028/029 figures on NESH are stale until it runs.
