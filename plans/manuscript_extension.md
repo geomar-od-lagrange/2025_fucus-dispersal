@@ -22,7 +22,7 @@ Annotate inline with `> **WR:** …` under any item; open choices are marked
 - Phases B and C decided yes; cross-cutting decisions recorded under Phase B.
   Phase C skeleton in `paper/` (`5a960a0`): R1–R5 with slots and
   definition-only FACTS; numbers follow the rebuild.
-  Phase D open: P1, P5 grouping, P7 mean age.
+  Phase D open: P5 grouping (P1, P7 decided 2026-10-20, in progress).
 - Cross-cutting decisions + P3/P8/P9 implemented per
   [horizons_and_weighting.md](done/horizons_and_weighting.md), together with
   the subbasin rebuild ([subbasin_rebuild.md](done/subbasin_rebuild.md));
@@ -115,7 +115,10 @@ Each item: what the note asks, what exists, what is proposed.
 - Proposed: one map of the 872 REDLIST cells coloured by HELCOM subbasin,
   marking the ~35 % land-seeded share. Small new consumer, or a panel of
   033.
-- **Decide:** ours, or the bio side's map?
+- **Decided (WR, 2026-10-20): ours.** New notebook `036_SeedingMap`: the
+  872 REDLIST release cells coloured by HELCOM subbasin (shoreward rule,
+  024a key), land-seeded share per cell marked; print-ready; goes into the
+  paper's Data section.
 
 ### P2. Surface vs. bottom spread over time (notes Q1, Fig 2)
 
@@ -179,7 +182,11 @@ Each item: what the note asks, what exists, what is proposed.
   as supplement. Notes Fig 4 shows **mean age** per cell, not density —
   computable per hex from the counts `age_bin` axis. The post-reproduction
   biomass loss argues for foregrounding SON.
-- **Decide:** mean-age maps wanted?
+- **Decided (WR, 2026-10-20): yes.** Mean particle age per hex,
+  weight-weighted over ages in `[0, max_age_days)` (`Σ age·w / Σ w`, age at
+  the bin centre), drawn by 026 from the same per-(age_bin, target_hex)
+  reduction: surface_stokes survival-weighted, bottom unweighted, per
+  season. Goes into R1.
 
 ### P8. What does not beach (notes Q6, Fig 7)
 
