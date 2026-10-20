@@ -85,6 +85,14 @@ Implements the cross-cutting decisions of
   land in Gaps). Production `Figures/`/`Exports/` currently hold only bottom
   026 + 035; everything else is a gap until step 5.4 runs. Smoke test: 029
   `-r contrast_member ""`, 030 comment; 033 job `${5-…}` + quoted.
+- Step 5.4/5.5 submitted 2026-10-20 ~10:20 after the step 4 fixes:
+  consumers `24458341` (driver, 85 units, two waves), 033 × 5 seasons
+  `24458342`–`24458346`, 032 headline `24458347` (afterany, so a failed
+  unit shows up as a Gap). Pre-180 d outputs moved to
+  `output_root/archive_pre180d_20261020/` beforehand. Remaining after it:
+  refresh `docs/beaching.md` result tables and the paper FACTS from
+  `Headline/HEADLINE.md`, then move this plan and subbasin_rebuild.md to
+  `plans/done/`.
 
 ## Design decisions
 
