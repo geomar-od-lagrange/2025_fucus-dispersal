@@ -272,8 +272,8 @@ parameters cell, not the filename.
 
 **Format.** New notebooks use `py:percent,md,ipynb` with the `.py` as the
 source of truth (edit the `.py`, then `jupytext --sync`). The notebooks
-that predate this and still have no `.py` twin are `000`, `010`, `020`,
-`021`, `022`, `023` and `024`; they stay `md,ipynb` until
+that predate this and still have no `.py` twin are `000`, `020`,
+`021`, `022` and `023`; they stay `md,ipynb` until
 otherwise touched. Commit **every** paired form — for new notebooks that's `.py`,
 `.md`, and the code-only `.ipynb`; never commit executed notebooks into
 `notebooks/` (full sync/strip/execute workflow in the jupytext skill

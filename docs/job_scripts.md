@@ -90,6 +90,7 @@ single-process papermill run per release (`xargs -P ${SLURM_NTASKS}` over `srun
 | `$1` | `2019` | release year |
 | `$2` | `73` | number of releases to run, taken from the front of the schedule |
 | `RELEASE_NS` (env) | unset | run exactly these release indices instead of a prefix |
+| `VELOCITY_SCALE` (env, bottom only) | `1.0` | 010's `velocity_scale`: uniform factor on U and V |
 
 Releases sit at `doy = 1 + 5n`, `n ∈ [0, n_releases-1]` — 73 per full year, doys
 1…361, the same regardless of leap year. Each run integrates `simulation_days=220`
@@ -120,6 +121,26 @@ controller timeout that creates the job anyway is adopted rather than queued
 twice. The job name is the idempotency key and names the work —
 `010-<regime>-<year>`, or `010-<regime>-<year>-n<i>_<j>` for a refill — so
 rerunning the same command after a failed submit adopts instead of duplicating.
+
+### Velocity-scaled variant regimes
+
+`VELOCITY_SCALE` runs the bottom 2D fields with Parcels'
+`Field.set_scaling_factor` on U and V of both nest levels; the kernel stays
+plain `AdvectionRK4`. Off 1.0 the run writes under its own regime,
+`<regime>_vs<scale>` with `.` spelled `p` — `0.8` → `bottom_vs0p8`, in the
+directory name and the zarr stem — so every downstream stage keys on it like
+any other regime. A uniform factor in a time-varying flow is not a slowed
+replay of the 1× trajectories, so a variant needs its own runs. The scale goes
+into the job name (`010-bottom-vs0.8-<year>…`), so a scaled run neither adopts
+nor blocks the 1× one; `submit_010.sh` refuses `VELOCITY_SCALE` for a job
+script that does not read it. At 1.0 the trajectories are bitwise identical to
+a run without the factor (multiplying by one is exact).
+
+```bash
+# 2019, one release per month (doys 1, 36, …, 336), at 0.8x
+RELEASE_NS=0,7,12,18,24,31,37,43,49,55,61,67 VELOCITY_SCALE=0.8 \
+    scripts/submit_010.sh bottom 2019
+```
 
 ### Refilling lost releases
 

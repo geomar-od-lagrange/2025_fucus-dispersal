@@ -19,6 +19,12 @@
 #   scripts/submit_010.sh surface_stokes 2025 29       # partial year, 29 tasks
 #   scripts/submit_010.sh bottom 2023 73 --dependency=afterok:12345
 #   RELEASE_NS=1,19 scripts/submit_010.sh surface_stokes 2022   # 2 tasks
+#
+# `VELOCITY_SCALE` (bottom only) runs the bottom fields at a uniform velocity
+# factor, written under its own regime (0.8 -> `bottom_vs0p8`); it goes into
+# the job name so a scaled run never adopts or blocks the 1x one.
+#
+#   RELEASE_NS=0,7,12 VELOCITY_SCALE=0.8 scripts/submit_010.sh bottom 2019
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/slurm_submit.sh
@@ -30,6 +36,10 @@ shift $(( $# < 3 ? $# : 3 ))
 
 job=scripts/010_FucusDispersal_${regime}_job.sh
 [ -f "${job}" ] || { echo "no such regime: ${regime} (${job})" >&2; exit 1; }
+# A job script that never reads VELOCITY_SCALE would run 1x under a scaled name.
+if [ -n "${VELOCITY_SCALE:-}" ] && ! grep -q VELOCITY_SCALE "${job}"; then
+    echo "${job} does not take VELOCITY_SCALE" >&2; exit 1
+fi
 
 # The job name is robust_sbatch's idempotency key, so it has to name the work,
 # not the attempt: a rerun of the same releases after a controller timeout must
@@ -41,13 +51,13 @@ if [ -n "${RELEASE_NS:-}" ]; then
             || { echo "release index must be 0..72, got ${n}" >&2; exit 1; }
     done
     ntasks=$(wc -w <<< "${release_ns}")
-    name=010-${regime}-${year}-n${release_ns// /_}
+    name=010-${regime}${VELOCITY_SCALE:+-vs${VELOCITY_SCALE}}-${year}-n${release_ns// /_}
     selection="releases=[${release_ns}]"
 else
     [ "${n_releases}" -ge 1 ] && [ "${n_releases}" -le 73 ] \
         || { echo "n_releases must be 1..73, got ${n_releases}" >&2; exit 1; }
     ntasks=${n_releases}
-    name=010-${regime}-${year}
+    name=010-${regime}${VELOCITY_SCALE:+-vs${VELOCITY_SCALE}}-${year}
     selection="n_releases=${n_releases}"
 fi
 
@@ -59,12 +69,15 @@ exclude=$(sed 's/#.*//' scripts/node-blacklist.txt | tr -d '[:blank:]' \
 # submission, same as scripts/submit_downstream_chain.sh's logroot mkdir.
 mkdir -p /gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs/logs/010
 
-echo "regime=${regime} year=${year} ${selection} ntasks=${ntasks}" \
+echo "regime=${regime} velocity_scale=${VELOCITY_SCALE:-1.0} year=${year} ${selection} ntasks=${ntasks}" \
      "excluding: ${exclude:-<none>}"
 
-# RELEASE_NS reaches the job script through the environment sbatch propagates;
-# naming it in --export alongside ALL keeps that explicit rather than implied.
+# RELEASE_NS and VELOCITY_SCALE reach the job script through the environment
+# sbatch propagates; naming them in --export alongside ALL keeps that explicit
+# rather than implied. Names only, no `=value`: --export splits on commas, so
+# a RELEASE_NS value of "1,19" would be cut at its first comma.
+export_vars=ALL${RELEASE_NS:+,RELEASE_NS}${VELOCITY_SCALE:+,VELOCITY_SCALE}
 robust_sbatch --job-name="${name}" --ntasks="${ntasks}" \
-    ${RELEASE_NS:+--export=ALL,RELEASE_NS="${release_ns// /,}"} \
+    --export="${export_vars}" \
     ${exclude:+--exclude="${exclude}"} "$@" \
     "${job}" "${year}" "${n_releases}"

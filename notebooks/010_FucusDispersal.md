@@ -1,7 +1,7 @@
 ---
 jupyter:
   jupytext:
-    formats: md,ipynb
+    formats: py:percent,md,ipynb
     text_representation:
       extension: .md
       format_name: markdown
@@ -57,6 +57,13 @@ end_time = "2019-01-11"
 # output_root/2d_fields/ the fieldset reads from.
 regime = "surface"
 
+# Uniform factor on the U and V the kernel samples, at every nest level.
+# 1.0 is the model current as given. Anything else is a sensitivity variant
+# (e.g. 0.8 for an assumed 20 % bottom slowdown) and writes under its own
+# regime name, `<regime>_vs<scale>` with "." spelled "p" (`bottom_vs0p8`),
+# so it never mixes with the 1x trajectories downstream.
+velocity_scale = 1.0
+
 # Internal RK4 timestep in minutes; particle position is integrated at
 # this resolution.
 calc_dt_mins = 5
@@ -100,6 +107,13 @@ output_root = Path(output_root)
 path_2d_fields = output_root / "2d_fields"
 path_trajectories = output_root / "Trajectories"
 
+# The name every downstream stage keys on (Trajectories/<output_regime>/).
+# `regime` alone still picks the 2D-field set the fieldset reads.
+output_regime = (
+    regime if velocity_scale == 1.0
+    else f"{regime}_vs{velocity_scale:g}".replace(".", "p")
+)
+
 start_time = datetime.fromisoformat(start_time)
 end_time = datetime.fromisoformat(end_time)
 release_time_str = start_time.strftime("%Y%m%dT%H%M%S")
@@ -108,6 +122,7 @@ calc_dt = timedelta(minutes=calc_dt_mins)
 output_dt = timedelta(minutes=output_dt_mins)
 
 print(f"start: {start_time} | end: {end_time}")
+print(f"forcing: {regime} | velocity_scale: {velocity_scale} | output regime: {output_regime}")
 ```
 
 # Load 2D velocity fields
@@ -214,6 +229,21 @@ V_nested_field = NestedField("V", [current_fieldset_fine.V, current_fieldset_coa
 nested_fieldset = FieldSet(U_nested_field, V_nested_field)
 ```
 
+# Velocity scale
+
+`Field.set_scaling_factor` multiplies the field data as each time chunk is
+loaded (`rescale_and_set_minmax` in `FieldSet.computeTimeChunk`, after the
+NaN-to-zero fill), so the kernel samples scaled U and V. It is set on the
+member fields of each nest level: those are the Field objects the per-level
+C-grid VectorFields wrap and the chunk loader visits. The C-grid
+interpolation is linear in U and V, so the sampled velocity scales by
+exactly the factor. 1.0 multiplies by one, which is exact in floating point.
+
+```python
+for field in [*U_nested_field, *V_nested_field]:
+    field.set_scaling_factor(velocity_scale)
+```
+
 # Release locations
 
 ```python
@@ -279,11 +309,14 @@ pset = ParticleSet(
 ```
 
 ```python
-# Output layout: output_root/Trajectories/<regime>/<release_year>/<filename>.
+# Output layout: output_root/Trajectories/<output_regime>/<release_year>/<filename>.
 # Downstream notebooks (020-025) discover regimes by iterdir on the
 # Trajectories directory and load all zarrs underneath each regime.
-output_filename = f"Fucus_BSH_{release_time_str}_{regime}_dt{output_dt_mins}min_seed{RNG_seed}.zarr"
-output_path = path_trajectories / regime / str(start_time.year) / output_filename
+output_filename = (
+    f"Fucus_BSH_{release_time_str}_{output_regime}"
+    f"_dt{output_dt_mins}min_seed{RNG_seed}.zarr"
+)
+output_path = path_trajectories / output_regime / str(start_time.year) / output_filename
 print(f"Output path: {output_path}")
 
 memory_store = MemoryStore()
