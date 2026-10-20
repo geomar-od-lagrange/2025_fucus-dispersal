@@ -18,8 +18,8 @@
 # written by 024d_BuildBeachingForcing plus the 024a key, writes one survocc
 # parquet per (regime, release_year, release_month, rate-model member). Same
 # rate model as 024e_BuildBeaching, but accumulates residence weighted by the
-# surviving (un-beached) fraction S = exp(-A) over a longer horizon
-# (OCCUPANCY_MAX_DAYS, notebook default 120 d).
+# surviving (un-beached) fraction S = exp(-A), keyed by origin subbasin and
+# target hex, over the same reduction window (MAX_AGE_DAYS).
 #
 # Usage: sbatch scripts/024f_BuildSurvivalOccupancy_job.sh [regime] [hex_radius] [stagger_max_s]
 #
@@ -33,8 +33,8 @@
 #   TRAP_FLAT, TRAP_WALL  strong-wave rate factor on fully flat /
 #               fully walled shore; the realised factor is
 #               TRAP_WALL + (TRAP_FLAT - TRAP_WALL)*ff/100
-#   BAND_M, OCCUPANCY_MAX_DAYS  the occupancy horizon is this reducer's
-#                               analogue of 024e's MAX_FLOAT_DAYS
+#   BAND_M, MAX_AGE_DAYS  reduction window over the sidecar obs axis (d),
+#                         the same for 024e/024f/024g
 #
 # 024a_BuildHexKey_job.sh and 024d_BuildBeachingForcing_job.sh must have run
 # first for the matching hex_radius / (regime, year); the (year, month) grid is
@@ -79,7 +79,7 @@ DELTA="${DELTA:-0.0}"
 BAND_M="${BAND_M:-2000.0}"
 TRAP_FLAT="${TRAP_FLAT:-1.0}"
 TRAP_WALL="${TRAP_WALL:-0.0}"
-OCCUPANCY_MAX_DAYS="${OCCUPANCY_MAX_DAYS:-120}"
+MAX_AGE_DAYS="${MAX_AGE_DAYS:-180}"
 
 # Executed-notebook names carry the same member tag the notebook builds for the
 # store filename, so a notebook and the parquet it wrote are matched by eye.
@@ -103,7 +103,7 @@ stagger_max_s="${3:-15}"
 export output_root regime hex_radius stagger_max_s member
 export W_C TAU_STRONG_HOURS TAU_CALM_DAYS DELTA
 export TRAP_FLAT TRAP_WALL
-export BAND_M OCCUPANCY_MAX_DAYS
+export BAND_M MAX_AGE_DAYS
 
 mkdir -p notebooks_executed/Visualisations/
 
@@ -139,7 +139,7 @@ list_cells | tr '\n' '\0' | xargs -0 -P "${SLURM_NTASKS}" -n 1 bash -c '
             -p band_m ${BAND_M} \
             -p trap_flat ${TRAP_FLAT} \
             -p trap_wall ${TRAP_WALL} \
-            -p occupancy_max_days ${OCCUPANCY_MAX_DAYS} \
+            -p max_age_days ${MAX_AGE_DAYS} \
             -k python
         rc=$?
         [ ${rc} -eq 0 ] && break

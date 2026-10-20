@@ -361,9 +361,9 @@ parquet — seconds per zarr, ~3 min for a whole month — so they are CPU-bound
 not GPFS-bound: small `--ntasks` (12), no `--spread-job`, no `--constraint`.
 All three take `[regime] [hex_radius] [stagger_max_s]` positionally and the
 rate-model member from the environment (`W_C`, `TAU_STRONG_HOURS`,
-`TAU_CALM_DAYS`, `DELTA`, `BAND_M`, plus `MAX_FLOAT_DAYS` for 024e,
-`OCCUPANCY_MAX_DAYS` for 024f and `CONNECTIVITY_MAX_DAYS` for 024g — which
-must cover the largest age horizon 028 asks for),
+`TAU_CALM_DAYS`, `DELTA`, `TRAP_FLAT`, `TRAP_WALL`, `BAND_M`, and
+`MAX_AGE_DAYS`, the reduction window shared by all three, default 180 d,
+which must cover the largest age horizon any consumer asks for),
 so a sweep is a loop of submissions differing only in an export; each
 reconstructs the member tag the notebook builds, so an executed notebook and
 the parquet it wrote match by eye. The kernel-race retry and the per-cell
@@ -381,13 +381,19 @@ table in the script rather than an environment sweep, so the exact set is read
 off the source, and the tag each cell produces is rebuilt there exactly as the
 notebooks build it (including the `_tf{}_tw{}` suffix a shore-type-sensitive
 member carries). `tau_calm_days = 0` is how the notebooks spell an infinite
-calm timescale; it tags as `tcinf`. `scripts/submit_024efg.sh` mirrors
+calm timescale; it tags as `tcinf`. The reduction window is one variable,
+`max_age_days=180`, passed to every cell — the parquets record it in their
+attrs, so a partial rerun at another window is detectable downstream.
+`scripts/submit_024efg.sh` mirrors
 `submit_024d.sh` — it expands the node blacklist into `--exclude`, sizes
 `--ntasks` from the cell count (capped at `MAX_TASKS`, default 292) and passes
 extra `sbatch` args through, so chaining it behind the sidecar build is
 `scripts/submit_024efg.sh --dependency=afterok:<024d job id>`.
-Reducers are light (`--mem-per-cpu=6G`, `--cpus-per-task=2`), so the 12 h limit
-is slack, not an estimate.
+Reducers are CPU-light but decompress one sidecar's `(trajectory, obs)`
+arrays over the whole window at once, so memory scales with `max_age_days`:
+`--mem-per-cpu=12G`, `--cpus-per-task=2` (24 GB per cell) against measured
+peaks of 8.6 / 11.1 / 10.9 GB (024e / 024f / 024g, one 2019-01 cell at 180 d).
+The 12 h limit is slack, not an estimate.
 
 ## Parquet-only consumers
 

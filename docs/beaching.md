@@ -7,9 +7,10 @@ coastal hex each step and leaves the drifting pool, the rest drifting on. This
 **weighted / fractional** deposition is the deterministic expectation of a
 per-step first-stranding process: releases carry only ~100 particles per seeding
 cell, too few for a random-strand rule to resolve the high-age tail where the
-free-drifting/beached split is decided. It composes multiplicatively with a
-Fucus **lifetime** `L(t)` — survival is `exp(−∫dt/τ)·L(t)`, today's
-`max_float_days` being a step-function `L`. It runs after the physics as a
+free-drifting/beached split is decided. **No lifetime is applied**:
+`max_age_days` is a reduction window over the sidecar's `obs` axis, and the
+store stays resolved per `beach_age_bin`, so a biological survival `L(t)` can
+be multiplied in downstream without a rebuild. It runs after the physics as a
 re-runnable reduction, the "aggregate once, consume cheaply" split the
 [hex store](hexbinning_and_connectivity.md) uses, so the rate parameters sweep
 without touching the runs.
@@ -50,7 +51,7 @@ source trajectory and obs counts, `builder`, `git_sha`); chunks are `(10000, nob
 every array written with `numcodecs.Zstd(level=5)`.
 
 All five are **parameter-free with respect to the rate model** — `τ`, the band
-width, the viability window, the trap weights and the binning are reductions
+width, the reduction window, the trap weights and the binning are reductions
 over them — so a member costs ~2.5 s per zarr against the ~90 s a re-read of the
 trajectories and the raw wave field costs. ~110 MB per zarr at
 `window_days = 220` (~74 GB for `surface_stokes` 2016–2025), ~94 s per zarr to build, single-process numpy, no
@@ -99,12 +100,12 @@ the window is the never-beached residual.
 | `delta` | linear edge width around `w_c` | 0 (hard step) by default; `≈0.02` checks against nearest-hour / nearest-cell sampling noise |
 | `trap_flat`, `trap_wall` | strong-wave rate factor on a fully flat / fully walled cell; the realised factor is `trap_wall + (trap_flat − trap_wall)·ff/100` | **1.0 / 0.0** at the production point: the rate is proportional to the substrate's flat fraction and pure-wall shore retains nothing. `1.0 / 1.0` keeps the term inert (the wave field alone sets the rate); every member with a weight ≠ 1 names both in its tag |
 | `band_m` | near-shore band width (m), ≤ the sidecar's `band_max_m` | 2000; quantised by the mask — on the 5 km coarse grid 1–4 km all select the same first cell ring, so sweep it coarsely and report fine nest and coarse regions apart |
-| `max_float_days` | viability window (d); slices the sidecar's `obs` axis | 60; a step-function `L(t)` |
+| `max_age_days` | reduction window (d): the half-open `[0, max_age_days)` hours of the sidecar's `obs` axis; one value for 024e/024f/024g | 180, ≤ the sidecar's `window_days` (220); not a lifetime — weight still drifting at its end is the residual |
 | `age_bin_days`, `disp_bin_km` | store axis granularity | 10 d, 10 km |
 
 Once `τ_strong` ≪ strong-wave event duration the model degenerates gracefully
 into a **substrate-weighted exposure model**: the beached fraction is the share
-of particles ever in band during a strong-wave hour inside the viability
+of particles ever in band during a strong-wave hour inside the reduction
 window, each such encounter counted at its `trap` factor, and the stranding map
 is coastal residence × strong-wave climatology × flat fraction. At the inert
 weights the trap factor drops out and exposure alone sets the total; at the
@@ -206,17 +207,30 @@ in the parquet — pass `029`/`031` the value `024e` built with, exactly as
 `distance_bin_km` works in the distance store
 ([hexbinning_and_connectivity.md](hexbinning_and_connectivity.md)).
 
+Each partition carries its build parameters as `df.attrs`, which pandas writes
+into the parquet metadata and `pd.read_parquet` restores: `builder`, `regime`,
+`release_year`, `release_month`, `hex_radius`, `member`, `max_age_days`,
+`age_bin_days`, `disp_bin_km`, `output_dt_hours`, the rate-model parameters
+(`w_c`, `tau_strong_hours`, `tau_calm_days`, `delta`, `trap_flat`,
+`trap_wall`, `band_m`), `git_sha` and `slurm_job_id` (empty outside SLURM).
+024f and 024g write the same set minus `disp_bin_km`. A consumer pooling
+partitions can assert they share a window instead of trusting filenames;
+considered encoding the window in the filename, rejected because consumers'
+member regexes would absorb it.
+
 ## Production setting
 
 The reducer defaults: `w_c = 0.10` m/s, `τ_strong = 3 h`, `τ_calm = ∞`,
 `δ = 0`, **`trap_flat = 1`, `trap_wall = 0`**, `band_m = 2000`,
-`max_float_days = 60` — member tag `step_wc0p1_ts3_tcinf_tf1_tw0`.
+`max_age_days = 180` — member tag `step_wc0p1_ts3_tcinf_tf1_tw0`.
 `w_c = 0.10` is the p93 of onshore Stokes over in-band hours, so 3.9 % of
 in-band hours are strong-wave hours; `trap = ff/100` then decides how much of
 each such hour a given shore can convert into stranding. Pooled over
 `surface_stokes` release years 2016–2025 (38.94 M real drifters), with the
 substrate-inert member (`trap_flat = trap_wall = 1`, tag
 `step_wc0p1_ts3_tcinf`) beside it for scale:
+
+*Measured with a 60 d window; refreshed after the 180 d rebuild ([horizons_and_weighting.md](../plans/horizons_and_weighting.md) step 5).*
 
 | quantity | production `…_tf1_tw0` | substrate inert |
 |---|---|---|
@@ -247,10 +261,14 @@ constraint on either in this study — so both are reported as ranges below.
 Release season still orders the beached fraction, but it no longer dominates
 it (beached %, releases pooled over years / months):
 
+*Measured with a 60 d window; refreshed after the 180 d rebuild ([horizons_and_weighting.md](../plans/horizons_and_weighting.md) step 5).*
+
 | release month | Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | Dec |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | production `…_tf1_tw0` | 41 | 40 | 39 | 38 | 39 | 39 | 39 | 41 | 46 | 45 | 46 | 46 |
 | substrate inert | 71 | 71 | 72 | 66 | 69 | 71 | 75 | 85 | 90 | 89 | 88 | 81 |
+
+*Measured with a 60 d window; refreshed after the 180 d rebuild ([horizons_and_weighting.md](../plans/horizons_and_weighting.md) step 5).*
 
 | release year | 2016 | 2017 | 2018 | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -259,6 +277,8 @@ it (beached %, releases pooled over years / months):
 
 Cumulative beached fraction by 60 d per release season, pooled 2016–2025,
 with the per-release-year min–max in brackets:
+
+*Measured with a 60 d window; refreshed after the 180 d rebuild ([horizons_and_weighting.md](../plans/horizons_and_weighting.md) step 5).*
 
 | season | production `…_tf1_tw0` | substrate inert |
 |---|---|---|
@@ -273,7 +293,7 @@ weights the seasonal spread is 20 points (MAM 69 % → SON 89 %) against ~5
 points of interannual spread, which is why the seasonal split is the primary
 product. At the production point the spread is 7 points (39 % → 46 %) and the
 interannual min–max *within* a season is as wide or wider (SON 39–53). Autumn
-still meets the strong-wave season inside the viability window, but the extra
+still meets the strong-wave season inside the 60 d window, but the extra
 exposure falls largely on shore the trap term does not let strand, so the
 **total** is no longer a strongly seasonal quantity. The seasonal split stays
 the primary product for *where* material strands — that is a map question, not
@@ -295,6 +315,8 @@ table would compare members that differ in two knobs at once.
 against the inert `w_c = 0.10` member over the union of receiving hexes. Gini
 is over hexes that receive weight (see Production setting above); it rises with
 `w_c` because a higher threshold keeps only the wave-exposed shores:
+
+*Measured with a 60 d window; refreshed after the 180 d rebuild ([horizons_and_weighting.md](../plans/horizons_and_weighting.md) step 5).*
 
 | member | beached % | Gini | hexes | Spearman |
 |---|---|---|---|---|
@@ -324,6 +346,8 @@ is over hexes that receive weight (see Production setting above); it rises with
 strong-wave rate, pure-wall shore traps at a fraction of it. Spearman and the
 top-100 overlap are per `beach_hex` stranded weight against the **production**
 member, over the union of receiving hexes (n = 1 824):
+
+*Measured with a 60 d window; refreshed after the 180 d rebuild ([horizons_and_weighting.md](../plans/horizons_and_weighting.md) step 5).*
 
 | member | beached, ALL | beached, SON | hexes | Spearman | top-100 shared |
 |---|---|---|---|---|---|

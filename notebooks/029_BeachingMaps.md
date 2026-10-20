@@ -31,7 +31,7 @@ labels every figure; this notebook never parses the tag. Draws:
    `beach_hex` (log scale), with the *Fucus* release sites overlaid so the
    map reads as a source→sink picture rather than a deposition field alone.
 2. **Beached fraction per source hex** — of the drifters released in each
-   hex, what fraction strands within the viability window (linear 0–1).
+   hex, what fraction strands within the reduction window (linear 0–1).
 3. **Beaching age horizons** — cumulative where-stranded density for
    strandings at age ≤ T (the beaching analogue of `026`'s horizons).
 4. **Cumulative beached fraction vs. age** — the stranding time course,
@@ -556,7 +556,7 @@ for tag, w in strand_by_hex.items():
 # Beached fraction per source hex
 
 Of the drifters released in each source hex, the fraction that strands
-within the viability window (linear 0–1). Highlights which source regions
+within the reduction window (linear 0–1). Highlights which source regions
 lose most of their propagules to the coast.
 
 No release-site overlay here: this panel's coloured hexes *are* the release

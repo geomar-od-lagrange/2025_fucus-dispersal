@@ -222,8 +222,8 @@ pixi run papermill notebooks/027_HexDistanceQuantiles.ipynb \
 # 024d is capped to one zarr and a 1 d window; the 4 h smoke run has 5 hourly
 # obs, so the sidecar is padded, not truncated. Two constraints tie the stages
 # together:
-#   * the reducer windows (max_float_days / occupancy_max_days, both 1 d here)
-#     must stay <= 024d's window_days, and band_m <= its band_max_m;
+#   * the reducer window (max_age_days, 1 d here for 024e/024f/024g) must
+#     stay <= 024d's window_days, and band_m <= its band_max_m;
 #   * every downstream age bin and horizon must be consistent with
 #     age_bin_days. With a 1 d window, age_bin_days must be 1 d (the default
 #     10 d would put the whole window in a partial bin), so 029/030/031 are
@@ -255,7 +255,7 @@ pixi run papermill notebooks/024e_BuildBeaching.ipynb \
     -p regime surface_stokes \
     -p release_year 2020 \
     -p release_month 1 \
-    -p max_float_days 1 \
+    -p max_age_days 1 \
     -p age_bin_days 1 \
     -p disp_bin_km 10 \
     --cwd notebooks/
@@ -268,7 +268,7 @@ pixi run papermill notebooks/024f_BuildSurvivalOccupancy.ipynb \
     -p regime surface_stokes \
     -p release_year 2020 \
     -p release_month 1 \
-    -p occupancy_max_days 1 \
+    -p max_age_days 1 \
     -p age_bin_days 1 \
     --cwd notebooks/
 
@@ -280,7 +280,7 @@ pixi run papermill notebooks/024g_BuildSurvivalConnectivity.ipynb \
     -p regime surface_stokes \
     -p release_year 2020 \
     -p release_month 1 \
-    -p connectivity_max_days 1 \
+    -p max_age_days 1 \
     -p age_bin_days 1 \
     --cwd notebooks/
 

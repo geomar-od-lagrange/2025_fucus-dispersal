@@ -36,8 +36,9 @@ set -euo pipefail
 #   TRAP_FLAT, TRAP_WALL  strong-wave rate factor on fully flat /
 #               fully walled shore; the realised factor is
 #               TRAP_WALL + (TRAP_FLAT - TRAP_WALL)*ff/100
-#   BAND_M, CONNECTIVITY_MAX_DAYS  the connectivity horizon must cover the
-#                                  largest matrix horizon 028 asks for
+#   BAND_M, MAX_AGE_DAYS  reduction window over the sidecar obs axis (d),
+#                         the same for 024e/024f/024g; must cover the
+#                         largest matrix horizon 028 asks for
 #
 # 024a_BuildHexKey_job.sh and 024d_BuildBeachingForcing_job.sh must have run
 # first for the matching hex_radius / (regime, year); the (year, month) grid is
@@ -82,7 +83,7 @@ DELTA="${DELTA:-0.0}"
 BAND_M="${BAND_M:-2000.0}"
 TRAP_FLAT="${TRAP_FLAT:-1.0}"
 TRAP_WALL="${TRAP_WALL:-0.0}"
-CONNECTIVITY_MAX_DAYS="${CONNECTIVITY_MAX_DAYS:-120}"
+MAX_AGE_DAYS="${MAX_AGE_DAYS:-180}"
 
 # Executed-notebook names carry the same member tag the notebook builds for the
 # store filename, so a notebook and the parquet it wrote are matched by eye.
@@ -106,7 +107,7 @@ stagger_max_s="${3:-15}"
 export output_root regime hex_radius stagger_max_s member
 export W_C TAU_STRONG_HOURS TAU_CALM_DAYS DELTA
 export TRAP_FLAT TRAP_WALL
-export BAND_M CONNECTIVITY_MAX_DAYS
+export BAND_M MAX_AGE_DAYS
 
 mkdir -p notebooks_executed/Visualisations/
 
@@ -145,7 +146,7 @@ list_cells | tr '\n' '\0' | xargs -0 -P "${SLURM_NTASKS}" -n 1 bash -c '
             -p band_m ${BAND_M} \
             -p trap_flat ${TRAP_FLAT} \
             -p trap_wall ${TRAP_WALL} \
-            -p connectivity_max_days ${CONNECTIVITY_MAX_DAYS} \
+            -p max_age_days ${MAX_AGE_DAYS} \
             -k python
         rc=$?
         [ ${rc} -eq 0 ] && break

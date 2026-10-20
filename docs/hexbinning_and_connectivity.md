@@ -132,7 +132,7 @@ output_root/HexAggregates/
 | `origin_subbasin` | subbasin of `release_hex`; `-1` = unnamed, as in 024c |
 | `target_subbasin` | subbasin of the hourly position; `-1` = unnamed |
 | `release_doy` | release day-of-year of the originating zarr |
-| `age_bin` | `floor(age_days / age_bin_days)`, capped at `connectivity_max_days` |
+| `age_bin` | `floor(age_days / age_bin_days)`, within the reduction window `max_age_days` |
 | `n_obs` | unweighted particle-timesteps |
 | `w_obs` | survival-weighted particle-timesteps (`Σ exp(−A)`) |
 
@@ -145,6 +145,10 @@ unweighted comparison self-consistent. Build gates: `w_obs <= n_obs`
 everywhere, the `n_obs` total equals every `(trajectory, obs)` sample in the
 window (nothing dropped — `-1` targets are kept), and age bin 0 holds exactly
 `released real drifters × age_bin_days × 24` samples.
+Each partition records its window, binning and rate-model point as `df.attrs`
+in the parquet metadata (`max_age_days`, `age_bin_days`, `member`, the rate
+parameters, `git_sha`, `slurm_job_id`; full list in
+[survival_occupancy.md](survival_occupancy.md)).
 
 ## Connectivity views (028)
 

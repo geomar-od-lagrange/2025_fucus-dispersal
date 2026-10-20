@@ -34,9 +34,12 @@ the high-age tail exactly where the free-drifting/beached split matters.
 The weighted deposit `dep[t,h] = S(t,h)·(1−e^{−Δt/τ})` equals the
 probability that a first-stranding process strands at step `h`
 (`S` = survival), so summed over the ensemble it reproduces the stranding
-field as a smooth expectation. It also composes multiplicatively with a
-Fucus **lifetime** `L(t)` — survival is `exp(−∫dt/τ)·L(t)`, today's
-`max_float_days` being a step-function `L`.
+field as a smooth expectation.
+
+**No lifetime is applied.** `max_age_days` is a reduction window over the
+sidecar's `obs` axis, not a viability cutoff: the store stays resolved per
+`beach_age_bin`, so a biological survival `L(t)` can be multiplied in
+downstream without rebuilding it.
 
 **This notebook does no I/O beyond the sidecar and the key.** The
 per-(particle, hour) ingredients of the rate — onshore Stokes `w_on`,
@@ -58,13 +61,15 @@ wave, so a shape parameter is pure nuisance; the step is the limit of any
 such form and its one knob, `w_c`, means what it says. Once
 `τ_strong ≪` strong-wave-episode duration the model degenerates gracefully
 into an **exposure model**: the beached fraction is the share of particles
-ever in band during a strong-wave hour inside the viability window.
+ever in band during a strong-wave hour inside the reduction window.
 
 **Land-seeded particles** never enter: the sidecar holds water-seeded
 ("real") drifters only.
 
 ```python
+import os
 import re
+import subprocess
 import time
 from pathlib import Path
 
@@ -133,13 +138,12 @@ band_m = 2000.0
 trap_flat = 1.0
 trap_wall = 0.0
 
-# Viability / float window: cap each trajectory's contributing age (days)
-# before scoring beaching (Rothäusler et al. 2019: weeks to a few months).
-# A step-function lifetime; a smooth L(t) would multiply the survival. Must
-# be ≤ the sidecar's `window_days`. The scored window is the half-open
-# `[0, max_float_days)` in hours — the same convention as 024f's
-# `occupancy_max_days`, so the last age bin is never a one-hour sliver.
-max_float_days = 60
+# Reduction window (days): the half-open `[0, max_age_days)` hours of the
+# sidecar's `obs` axis that are scored — the same window and convention as
+# 024f/024g, so the last age bin is never a one-hour sliver. Not a lifetime:
+# weight still drifting at the window's end is the residual. Must be ≤ the
+# sidecar's `window_days`.
+max_age_days = 180
 # Age-bin granularity for the deposition age (days); matches the counts store.
 age_bin_days = 10
 # Crow-flies displacement bin width (km) for the `disp_bin` axis.
@@ -183,6 +187,18 @@ beaching_path = (
 print(f"beaching → {beaching_path}")
 
 sidecar_dir = output_root / f"BeachingForcing/{regime}/{release_year}"
+
+# Provenance for the store attrs: which commit and which allocation wrote it.
+# Empty slurm_job_id outside SLURM.
+try:
+    git_sha = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+except Exception:
+    git_sha = "unknown"
+slurm_job_id = os.environ.get("SLURM_JOB_ID", "")
+print(f"git_sha={git_sha}, slurm_job_id={slurm_job_id or '-'}")
 ```
 
 # Sidecar → beaching deposition
@@ -237,7 +253,7 @@ def beaching_exponent(w_on, dist, ff):
 # Exposure statistics, one entry per sidecar; the deposited weight per hour is
 # accumulated across sidecars so the stranding-age median is hour-resolved.
 EXPOSURE = []
-DEP_BY_HOUR = np.zeros(max_float_days * 24, dtype=np.float64)
+DEP_BY_HOUR = np.zeros(max_age_days * 24, dtype=np.float64)
 QS = [10, 25, 50, 75, 90, 95, 99, 99.9, 100]
 TOP_DISP_BIN = 255 // disp_bin_km
 
@@ -245,16 +261,17 @@ TOP_DISP_BIN = 255 // disp_bin_km
 def deposit_one_sidecar(path, release_doy):
     sc = xr.open_zarr(path)
     assert sc.attrs["band_max_m"] >= band_m, (sc.attrs["band_max_m"], band_m)
-    assert sc.attrs["window_days"] >= max_float_days, (
-        sc.attrs["window_days"], max_float_days
+    assert sc.attrs["window_days"] >= max_age_days, (
+        sc.attrs["window_days"], max_age_days
     )
     assert sc.attrs["hex_radius"] == hex_radius, (sc.attrs["hex_radius"], hex_radius)
-    assert sc.sizes["obs"] >= max_float_days * 24, (
-        sc.sizes["obs"], max_float_days * 24
+    assert sc.sizes["obs"] >= max_age_days * 24, (
+        sc.sizes["obs"], max_age_days * 24
     )
-    # Half-open window [0, max_float_days) in hours, as in 024f: an inclusive
-    # end hour would open a one-hour age bin `max_float_days // age_bin_days`.
-    sc = sc.isel(obs=slice(0, max_float_days * 24))
+    # Half-open window [0, max_age_days) in hours, as in 024f/024g: an
+    # inclusive end hour would open a one-hour age bin
+    # `max_age_days // age_bin_days`.
+    sc = sc.isel(obs=slice(0, max_age_days * 24))
     w_on = sc.w_on.values
     dist = sc.dist.values
     ff = sc.ff.values
@@ -396,7 +413,7 @@ median_age_h = (
     int(np.searchsorted(cum, 0.5 * cum[-1])) if cum[-1] > 0 else -1
 )
 print(f"exposure statistics [member={member}, band_m={band_m:g}, "
-      f"max_float_days={max_float_days}]")
+      f"max_age_days={max_age_days}]")
 print(f"  {'in-band strong-wave hours (r > 0)':42s} {100 * strong_share:8.2f} %")
 print(f"  {'particles ever in band, strong wave':42s} {100 * ever_share:8.2f} %")
 print(f"  {'beached fraction':42s} {100 * beached_frac:8.2f} %")
@@ -463,7 +480,34 @@ print(f"Σweight per release_hex conserves the released drifter count "
       f"{rel_err.max() if len(rel_err) else 0:.2e}).")
 ```
 
+# Write
+
+The window, the binning and the rate-model point travel with the partition
+as `df.attrs` (pandas stores them in the parquet metadata), so a consumer
+pooling partitions can assert they agree instead of trusting filenames.
+
 ```python
+beaching.attrs = {
+    "builder": "024e_BuildBeaching",
+    "regime": regime,
+    "release_year": int(release_year),
+    "release_month": int(release_month),
+    "hex_radius": int(hex_radius),
+    "member": member,
+    "max_age_days": int(max_age_days),
+    "age_bin_days": int(age_bin_days),
+    "disp_bin_km": int(disp_bin_km),
+    "output_dt_hours": int(output_dt_hours),
+    "w_c": float(w_c),
+    "tau_strong_hours": float(tau_strong_hours),
+    "tau_calm_days": float(tau_calm_days),
+    "delta": float(delta),
+    "trap_flat": float(trap_flat),
+    "trap_wall": float(trap_wall),
+    "band_m": float(band_m),
+    "git_sha": git_sha,
+    "slurm_job_id": slurm_job_id,
+}
 beaching.to_parquet(beaching_path)
 print(f"wrote {beaching_path} ({beaching_path.stat().st_size / 1e6:.2f} MB)")
 ```
@@ -474,7 +518,7 @@ beached = float(beaching.loc[beaching["beach_hex"] >= 0, "weight"].sum())
 print(f"regime={regime}, release_year={release_year}"
       + (f", month={release_month}" if release_month else "")
       + f", hex_radius={hex_radius} m, member={member}")
-print(f"  params: max_float_days={max_float_days}, band_m={band_m:g}, "
+print(f"  params: max_age_days={max_age_days}, band_m={band_m:g}, "
       f"w_c={w_c:g}, tau_strong_hours={tau_strong_hours:g}, "
       f"tau_calm_days={tau_calm_days:g}, delta={delta:g}, "
       f"trap_flat/wall={trap_flat:g}/{trap_wall:g}")

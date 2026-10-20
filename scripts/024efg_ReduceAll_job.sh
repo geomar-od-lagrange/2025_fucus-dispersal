@@ -6,7 +6,7 @@
 # so a small grid books a small allocation.
 #SBATCH --ntasks=292
 #SBATCH --cpus-per-task=2
-#SBATCH --mem-per-cpu=6G
+#SBATCH --mem-per-cpu=12G
 #SBATCH --time=12:00:00
 #SBATCH --distribution=cyclic
 # Do not abort the whole allocation when one node dies (see 024d job script):
@@ -25,9 +25,11 @@
 # (`xargs -P ${SLURM_NTASKS}`), independent of the work-list length, so the
 # same script can be resubmitted throttled.
 #
-# Memory: 6G x 2 cpu = 12 GB/task. The single-member 024e/024f/024g jobs ran
-# at 8G x 2 = 16 GB with room to spare; these reducers touch only the compact
-# sidecar (~30 MB/zarr) and the key parquet.
+# Memory: 12G x 2 cpu = 24 GB/task. These reducers touch only the compact
+# sidecar and the key parquet, but each decompresses one sidecar's
+# (trajectory, obs) arrays over the whole window (~57 k drifters x 4320 h at
+# max_age_days=180). Measured peak RSS for a 2019-01 cell at 180 d: 8.6 GB
+# (024e), 11.1 GB (024f), 10.9 GB (024g).
 #
 # Submit through scripts/submit_024efg.sh: it expands
 # scripts/node-blacklist.txt into `sbatch --exclude=` (an #SBATCH directive
@@ -53,9 +55,9 @@ output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
 regime=surface_stokes
 hex_radius=6000
 band_m=2000.0
-max_float_days=60
-occupancy_max_days=120
-connectivity_max_days=120
+# Reduction window (d) over the sidecar obs axis, one value for all three
+# reducers; must be <= the sidecars' window_days (220).
+max_age_days=180
 logdir=${output_root}/logs/024efg
 mkdir -p "${logdir}/executed"
 
@@ -111,7 +113,7 @@ exclude=$(sed "s/#.*//" scripts/node-blacklist.txt | tr -d "[:blank:]" \
           | grep -v "^$" | paste -sd,)
 
 export output_root regime hex_radius band_m logdir exclude
-export max_float_days occupancy_max_days connectivity_max_days
+export max_age_days
 
 # awk's %g is printf's %g is Python's :g, so this reproduces the notebook's
 # member tag character for character.
@@ -138,12 +140,9 @@ run_one() {
     ms=$(printf "m%02d" "${month}")
 
     case "${reducer}" in
-        024e) nb=notebooks/024e_BuildBeaching.ipynb
-              horizon=(-p max_float_days "${max_float_days}") ;;
-        024f) nb=notebooks/024f_BuildSurvivalOccupancy.ipynb
-              horizon=(-p occupancy_max_days "${occupancy_max_days}") ;;
-        024g) nb=notebooks/024g_BuildSurvivalConnectivity.ipynb
-              horizon=(-p connectivity_max_days "${connectivity_max_days}") ;;
+        024e) nb=notebooks/024e_BuildBeaching.ipynb ;;
+        024f) nb=notebooks/024f_BuildSurvivalOccupancy.ipynb ;;
+        024g) nb=notebooks/024g_BuildSurvivalConnectivity.ipynb ;;
         *)    echo "FAIL ${reducer} ? ${year} ${month} (unknown reducer)"; return 0 ;;
     esac
 
@@ -180,7 +179,7 @@ run_one() {
                 -p trap_flat "${tf}" \
                 -p trap_wall "${tw}" \
                 -p band_m "${band_m}" \
-                "${horizon[@]}" \
+                -p max_age_days "${max_age_days}" \
                 -k python && { rc=0; break; }
         rc=$?
         echo "attempt ${attempt} failed (rc=${rc}) ${reducer} ${tag} ${year} ${month}" >&2
@@ -233,8 +232,9 @@ fi
 
 ncells=$(list_cells | wc -l)
 njobs=$(list_work | wc -l)
-# Provenance header: the store parquets carry git_sha + slurm_job_id as attrs,
-# and this pins what that job was, in the .out next to the OK/FAIL tally.
+# Provenance header: the store parquets carry git_sha + slurm_job_id (and the
+# window, binning and rate-model point) as attrs, and this pins what that job
+# was, in the .out next to the OK/FAIL tally.
 echo "024efg provenance: git $(git rev-parse HEAD)"
 if [ -n "$(git status --porcelain)" ]; then
     echo "024efg WARNING: dirty working tree, this run maps to no commit"
@@ -247,6 +247,7 @@ echo "${MEMBERS}" | while read -r reducer w_c ts tc delta tf tw; do
 done
 echo "024efg: ${njobs} cells (${ncells} (year, month) cells per member)," \
      "${SLURM_NTASKS} concurrent, regime=${regime}, hex_radius=${hex_radius},"\
+     "max_age_days=${max_age_days},"\
      "years $(list_cells | cut -d' ' -f1 | uniq | paste -sd,), logs -> ${logdir}"
 
 # `set -e` must not kill the driver when a task exhausts its retries; run_one

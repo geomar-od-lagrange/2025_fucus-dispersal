@@ -36,7 +36,7 @@
 # default `window_days = 220` that is the whole Parcels simulation.
 #
 # Every one of these is **parameter-free with respect to the rate model**:
-# `τ`, the functional form of `s(w)`, the band width, the viability window,
+# `τ`, the functional form of `s(w)`, the band width, the reduction window,
 # the trap weights and the age binning are all reductions over these arrays,
 # which is what makes a rate-model sweep a seconds-per-zarr numpy pass
 # instead of a re-read of the trajectories and the raw wave field.
@@ -140,7 +140,7 @@ band_max_m = 5000.0
 
 # Hours cached per trajectory, as the half-open [0, window_days*24) in hours
 # — the same convention the reducers slice with. 220 d is the full Parcels
-# simulation (obs=5280 at dt60min); shorter viability windows are a slice of
+# simulation (obs=5280 at dt60min); shorter reduction windows are a slice of
 # the `obs` axis in the reducers.
 window_days = 220
 

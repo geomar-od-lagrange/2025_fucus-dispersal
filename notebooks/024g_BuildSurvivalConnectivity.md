@@ -51,7 +51,9 @@ particle set; `n_obs` here is the unweighted count over the real drifters
 alone, which is why it is emitted rather than read back from 024c.
 
 ```python
+import os
 import re
+import subprocess
 import time
 from pathlib import Path
 
@@ -91,10 +93,11 @@ release_month = 8
 
 hex_radius = 6000
 
-# Connectivity horizon (days): how far along each trajectory to accumulate
-# residence. Must be ≥ the largest matrix horizon in 028 and ≤ the sidecar's
+# Reduction window (days): the half-open `[0, max_age_days)` hours of the
+# sidecar's `obs` axis that are accumulated — the same window as 024e/024f.
+# Must be ≥ the largest matrix horizon in 028 and ≤ the sidecar's
 # `window_days`.
-connectivity_max_days = 120
+max_age_days = 180
 # Age-bin granularity (days); matches the counts / 024c store.
 age_bin_days = 10
 # Sidecar cadence (hours).
@@ -194,11 +197,11 @@ assert output_dt_hours == 1, (
     f"output_dt_hours={output_dt_hours}: the obs↔time conversion here is "
     f"hardcoded hourly"
 )
-assert connectivity_max_days >= age_bin_days, (
-    f"connectivity_max_days={connectivity_max_days} d is shorter than one age "
+assert max_age_days >= age_bin_days, (
+    f"max_age_days={max_age_days} d is shorter than one age "
     f"bin ({age_bin_days} d)"
 )
-n_agebin = -(-connectivity_max_days // age_bin_days)
+n_agebin = -(-max_age_days // age_bin_days)
 print(f"{n_sub} subbasin slots (incl. -1 sentinel), {n_agebin} age bins "
       f"× {age_bin_days} d")
 
@@ -209,6 +212,19 @@ def to_subidx(hex_values):
     """Map `024a` hex ids to the contiguous subbasin index; unknown → 0 (-1)."""
     idx = hexid_to_subidx.reindex(np.asarray(hex_values).ravel()).to_numpy()
     return np.where(np.isnan(idx), 0, idx).astype(np.int64)
+
+
+# Provenance for the store attrs: which commit and which allocation wrote it.
+# Empty slurm_job_id outside SLURM.
+try:
+    git_sha = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+except Exception:
+    git_sha = "unknown"
+slurm_job_id = os.environ.get("SLURM_JOB_ID", "")
+print(f"git_sha={git_sha}, slurm_job_id={slurm_job_id or '-'}")
 ```
 
 # Sidecar → survival-weighted connectivity
@@ -251,14 +267,14 @@ def beaching_exponent(w_on, dist, ff):
 def connectivity_one_sidecar(path, release_doy):
     sc = xr.open_zarr(path)
     assert sc.attrs["band_max_m"] >= band_m, (sc.attrs["band_max_m"], band_m)
-    assert sc.attrs["window_days"] >= connectivity_max_days, (
-        sc.attrs["window_days"], connectivity_max_days
+    assert sc.attrs["window_days"] >= max_age_days, (
+        sc.attrs["window_days"], max_age_days
     )
     assert sc.attrs["hex_radius"] == hex_radius, (sc.attrs["hex_radius"], hex_radius)
-    assert sc.sizes["obs"] >= connectivity_max_days * 24, (
-        sc.sizes["obs"], connectivity_max_days * 24
+    assert sc.sizes["obs"] >= max_age_days * 24, (
+        sc.sizes["obs"], max_age_days * 24
     )
-    sc = sc.isel(obs=slice(0, connectivity_max_days * 24))
+    sc = sc.isel(obs=slice(0, max_age_days * 24))
     w_on = sc.w_on.values
     dist = sc.dist.values
     ff = sc.ff.values
@@ -389,7 +405,33 @@ print(
 )
 ```
 
+# Write
+
+The window, the binning and the rate-model point travel with the partition
+as `df.attrs` (pandas stores them in the parquet metadata), so a consumer
+pooling partitions can assert they agree instead of trusting filenames.
+
 ```python
+survconn.attrs = {
+    "builder": "024g_BuildSurvivalConnectivity",
+    "regime": regime,
+    "release_year": int(release_year),
+    "release_month": int(release_month),
+    "hex_radius": int(hex_radius),
+    "member": member,
+    "max_age_days": int(max_age_days),
+    "age_bin_days": int(age_bin_days),
+    "output_dt_hours": int(output_dt_hours),
+    "w_c": float(w_c),
+    "tau_strong_hours": float(tau_strong_hours),
+    "tau_calm_days": float(tau_calm_days),
+    "delta": float(delta),
+    "trap_flat": float(trap_flat),
+    "trap_wall": float(trap_wall),
+    "band_m": float(band_m),
+    "git_sha": git_sha,
+    "slurm_job_id": slurm_job_id,
+}
 survconn.to_parquet(survconn_path)
 print(f"wrote {survconn_path} ({survconn_path.stat().st_size / 1e6:.2f} MB)")
 ```
@@ -398,7 +440,7 @@ print(f"wrote {survconn_path} ({survconn_path.stat().st_size / 1e6:.2f} MB)")
 print(f"regime={regime}, release_year={release_year}"
       + (f", month={release_month}" if release_month else "")
       + f", hex_radius={hex_radius} m, member={member}")
-print(f"  params: connectivity_max_days={connectivity_max_days}, "
+print(f"  params: max_age_days={max_age_days}, "
       f"band_m={band_m:g}, w_c={w_c:g}, "
       f"tau_strong_hours={tau_strong_hours:g}, "
       f"tau_calm_days={tau_calm_days:g}, delta={delta:g}, "

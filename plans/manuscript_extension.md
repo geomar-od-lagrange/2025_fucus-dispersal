@@ -45,7 +45,8 @@ Pure fact maintenance, no decisions. One commit inside `paper/`.
   equations already show — production member
   `step_wc0p1_ts3_tcinf_tf1_tw0` (`w_c` = 0.10 m/s, `tau_strong` = 3 h,
   `tau_calm` = ∞, `trap_flat`/`trap_wall` = 1/0), `band_m` 2000,
-  `max_float_days` 60. [docs/beaching.md]
+  `max_age_days` 60 (180 after the
+  [horizons_and_weighting.md](horizons_and_weighting.md) rebuild). [docs/beaching.md]
 - A4. Coastline-classification `[FACTS]`: the numbers the prose asks for
   ("GIVE A FEW NUMBERS ON FLAT, STEEP, MIXED FRACTION") from the shoreclass
   table and 033. [docs/beaching.md, notebooks/033]
@@ -79,8 +80,8 @@ decisions that follow from it:
   age bin, so the bio part can multiply in any `L(t)` it argues for. A step
   `L` at 60 d would make the 90/180 d horizons copies of 60 d; a smooth `L`
   needs a curve someone can defend. Consequence: beaching is integrated to
-  180 d — 024e's `max_float_days`, 024f's `occupancy_max_days` and 024g's
-  `connectivity_max_days` all go to 180 (cheap reducer reruns).
+  180 d — the 024e/024f/024g reduction windows become one `max_age_days`
+  = 180 (cheap reducer reruns; [horizons_and_weighting.md](horizons_and_weighting.md) D1).
 - **Count only what floated.** `surface_stokes` heatmaps and connectivity
   read the survival-weighted stores (024f, 024g), not the raw counts.
   `bottom` stays unweighted (nothing strands); R1 states that it compares

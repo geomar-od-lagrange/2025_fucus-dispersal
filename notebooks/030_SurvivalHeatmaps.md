@@ -78,7 +78,7 @@ season = "ALL"
 member = "step_wc0p1_ts3_tcinf_tf1_tw0"
 
 # Elapsed-time horizons to map (days); each a multiple of age_bin_days and
-# within the store's occupancy_max_days.
+# within the store's max_age_days.
 time_horizons_days_csv = "20,50,100"
 
 # Map extent (degrees). The 024a key tiles the whole BSH domain including the
@@ -188,15 +188,15 @@ print(f"season {season} (months {season_months}); release years {release_years}"
 print(f"survocc rows: {len(survocc):,}")
 
 # The store's age axis is the upper bound on the horizons: 024f wrote bins
-# 0..occupancy_max_days/age_bin_days − 1, and a horizon past the last bin
+# 0..max_age_days/age_bin_days − 1, and a horizon past the last bin
 # selects nothing at all.
-occupancy_max_days = (int(survocc["age_bin"].max()) + 1) * age_bin_days
+max_age_days = (int(survocc["age_bin"].max()) + 1) * age_bin_days
 for h in time_horizons_days:
-    assert h <= occupancy_max_days, (
-        f"horizon {h} d is past the store's occupancy window "
-        f"({occupancy_max_days} d) — rebuild 024f or lower the horizon"
+    assert h <= max_age_days, (
+        f"horizon {h} d is past the store's reduction window "
+        f"({max_age_days} d) — rebuild 024f or lower the horizon"
     )
-print(f"store occupancy window: {occupancy_max_days} d")
+print(f"store reduction window: {max_age_days} d")
 ```
 
 # Rendering helpers
