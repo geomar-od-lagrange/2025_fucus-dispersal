@@ -22,8 +22,8 @@ Annotate inline with `> **WR:** …` under any item; open choices are marked
 - Phases B and C decided yes; cross-cutting decisions recorded under Phase B.
   Phase C skeleton in `paper/` (`5a960a0`): R1–R5 with slots and
   definition-only FACTS; numbers follow the rebuild.
-  Phase D open: P5 grouping. P1, P7 done (`cbc29c8`), run into production
-  2026-10-20 ([visualisations.md](../docs/visualisations.md) 026 / 036).
+  Phase D: P5 decided (keep 17 × 17). P1, P7 done (`cbc29c8`), run into production
+  2026-10-20 ([visualisations.md](../docs/visualisations.md) 026 / 036). Bottom 0.8× comparison (034) in R1.
 - Cross-cutting decisions + P3/P8/P9 implemented per
   [horizons_and_weighting.md](done/horizons_and_weighting.md), together with
   the subbasin rebuild ([subbasin_rebuild.md](done/subbasin_rebuild.md));
@@ -163,8 +163,8 @@ Each item: what the note asks, what exists, what is proposed.
   Proposed: an origin-subbasin → stranding-subbasin matrix of beached weight
   per age horizon (30/60/90/180 d; 028's view 2 pattern on the 024e store), on a grouped
   axis of ~6–8 regions for the main text; full 17 in supplement + CSV.
-- **Decide:** grouping of the 17 HELCOM level-2 subbasins (proposal to
-  follow as a table if adopted).
+- **Decided (WR, 2026-10-20): keep 17 × 17 for now** in the main text;
+  a coarser grouping can be revisited later.
 - Substrate map ("stones vs. sand"): 033, supplement.
 
 ### P6. Connectivity by season (notes Q5, Fig 6)

@@ -1,6 +1,11 @@
+> Implemented: see [docs/visualisations.md](../../docs/visualisations.md) §034 and
+> [docs/job_scripts.md](../../docs/job_scripts.md) (velocity-scaled variant regimes).
+> Result (2019, 12 releases): 0.8x bottom velocity shrinks the 90 % footprint
+> length sqrt(area) by 2-3 % at 30-180 d (`Exports/034/034_areas_2019.csv`).
+
 # Bottom slowdown illustration: 0.8× bottom velocity
 
-Replaces the deferred sweep in [analysis_wrapup.md](analysis_wrapup.md) §7
+Replaces the deferred sweep in [analysis_wrapup.md](../analysis_wrapup.md) §7
 with one illustrative variant (WR, 2026-10-20): the `bottom` regime at
 **0.8×** the BSH bottom-cell velocity, **one release year (2019), one
 release per month** (the first `doy = 1 + 5n` in each month: 1, 36, 61,
@@ -45,7 +50,7 @@ claim is only "how does spread respond to an assumed 20 % slowdown".
 - **Comparison** in a new notebook `034_BottomSlowdown`: 1× `bottom` vs
   `bottom_vs0p8` on the **same 12 release doys of 2019**, area holding
   50 % / 90 % of particle-time and `sqrt(area)` at 30 / 60 / 90 / 180 d —
-  the R1 metric of [horizons_and_weighting.md](done/horizons_and_weighting.md)
+  the R1 metric of [horizons_and_weighting.md](horizons_and_weighting.md)
   D6, reimplemented notebook-locally. Plus one map pair at 90 d. Export
   CSV under `Exports/034/`.
 
