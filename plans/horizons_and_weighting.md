@@ -71,6 +71,20 @@ Implements the cross-cutting decisions of
   filenames before any read; production 026 bottom × 5 and 035 × 5 rerun
   (per-year rows 2016–2024; ALL q = 0.9 at 180 d 134 428 km², years
   119 488–135 106).
+- Step 4 review findings fixed (0f046b6, 5adb6a6). 031 reduces each 024e
+  partition on read (released Σweight + stranded weight per (year,
+  beach_hex, beach_age_bin, disp_bin)); JJA × 3 members identical to the old
+  path to 4 decimals, peak RSS 5.8 → 1.3 GiB; production ALL × 14 members
+  6.2 GiB, Σweight 37 296 957 per member (2016–2024), stranded 54.3–99.6 %,
+  equal to 032 table B. 032: a product older than the newest release_years
+  partition of its stores (or the 024a key) is a gap; 035 checked through its
+  026 CSVs; table F at `area_horizons_csv` (30/60/90/180), `q` out of the
+  key, caption says pooled can lie outside the per-year range; paired figure
+  captions conditional; tables D/E survive all-gap inputs. Verified on a
+  scratch root over production (a back-dated bottom 026 figure and areas CSV
+  land in Gaps). Production `Figures/`/`Exports/` currently hold only bottom
+  026 + 035; everything else is a gap until step 5.4 runs. Smoke test: 029
+  `-r contrast_member ""`, 030 comment; 033 job `${5-…}` + quoted.
 
 ## Design decisions
 
