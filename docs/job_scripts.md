@@ -468,10 +468,14 @@ write those stores minutes earlier in the chain below, so any hardcoded list
 would be stale by construction.
 
 Per-task shape is `8 cpu × 16G = 128 GB`, sized from the heaviest unit rather
-than the median: measured `sacct` MaxRSS over four release years is 56.3 GiB
-for 026, 49.6 for 026b, 40.2 for 026a, 32.8 for 025 against 0.2 for 027 and
-<0.1 for 028. The counts-store consumers hold the pooled store in memory, so
-their peak grows with the release-year count. One job at that shape beats ~80
+than the median. The counts-store consumers reduce one release-year partition
+at a time with the season and the `max_age_days` window pushed into the
+parquet read, so their peak is one partition's read, not the pooled store:
+measured process-tree peak RSS over ten release years (`surface_stokes`,
+`ALL`, unweighted) is 16.2 GiB for 026, 15.5 for 026b and 12.2 for 025; a
+single season or a 024f member read stays under 3.2 GiB; 027 and 028 are
+0.2 and <0.1 GiB (`sacct`, four years). The shape is generous for the heatmap
+family and stays until 029/030/031 are measured at 180 d. One job at that shape beats ~80
 one-task allocations queueing independently behind the same dependency for
 work that is minutes long; the price is that the cheap two thirds of the
 matrix book memory they do not need.

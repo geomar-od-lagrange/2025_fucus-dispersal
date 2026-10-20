@@ -25,7 +25,9 @@
 #
 # The matrix:
 #
-#   025, 026, 026a, 026b, 027  x {surface_stokes, bottom} x 5 seasons   50
+#   025, 026, 026a, 026b  (surface_stokes production member,
+#         bottom unweighted)                              x 5 seasons   40
+#   027  x {surface_stokes, bottom}                       x 5 seasons   10
 #   028  (surface_stokes unweighted, surface_stokes production member,
 #         bottom unweighted)                              x 5 seasons   15
 #   029, 030  surface_stokes, production member           x 5 seasons   10
@@ -35,21 +37,25 @@
 #
 # `surface` (no Stokes) is not produced further (plans/analysis_wrapup.md §0),
 # and only surface_stokes has 024d sidecars, hence the beaching/survival stages
-# and the weighted 028 are Stokes-only.
+# and the weighted 025/026/026a/026b/028 are Stokes-only; the heatmap family
+# shows surface_stokes survival-weighted (024f) and bottom unweighted (024
+# counts), both over the same max_age_days window.
 #
 # Nothing here names a release year: every consumer pools whatever release
 # years the HexAggregates store holds, so the figures span the years that
 # landed, and a release year that failed upstream is simply absent.
 #
-# Memory: 8 cpu x 16G = 128 GB/task, the shape 026/026a/026b already ask for
-# standalone, and the reason the whole bundle is not sized like the cheap
-# stages. Measured `sacct` MaxRSS over the four-release-year stores:
-# 026 56.3 GiB, 026b 49.6 GiB, 026a 40.2 GiB, 025 32.8 GiB, 027 0.2 GiB,
-# 028 <0.1 GiB -- the counts-store consumers hold the pooled store in memory,
-# so their peak grows with the release-year count (four years there, up to ten
-# here). 128 GB/task is that peak x ~2.3 and still one task per 192 GB node.
-# If a unit OOMs, the fix is `--mem-per-cpu=24G --ntasks=8`, not a bigger
-# default: the cheap two thirds of the matrix would pay for it.
+# Memory: 8 cpu x 16G = 128 GB/task, the shape 026/026a/026b ask for
+# standalone. The counts-store consumers reduce one release-year partition at
+# a time, with the season and the max_age_days window pushed into the parquet
+# read, so their peak is one partition's read (~10^8 rows), not the pooled
+# store. Measured process-tree peak RSS, ten release years, surface_stokes
+# ALL unweighted (the heaviest units): 026 16.2 GiB, 026b 15.5 GiB, 025
+# 12.2 GiB; a season or a 024f member read stays under 3.2 GiB. Earlier
+# `sacct` MaxRSS of the pooled-in-memory readers over four years: 026 56.3,
+# 026b 49.6, 026a 40.2, 025 32.8, 027 0.2, 028 <0.1 GiB. 128 GB/task is thus
+# generous for the heatmap family; it is kept until 029/030/031 are measured
+# at 180 d.
 #
 # Usage:
 #   sbatch scripts/025-031_ConsumersAll_job.sh
@@ -65,8 +71,8 @@
 #   grep "^FAIL " <tally> | sed "s/^FAIL //; s/ unweighted$/ -/" > units.txt
 #
 # The 024/024b/024c stores, the 024a key and (for 029/030/031 and the weighted
-# 028) the 024e/024f/024g stores must exist for the matching hex_radius --
-# scripts/submit_downstream_chain.sh is what wires that ordering.
+# 025/026/026a/026b/028) the 024e/024f/024g stores must exist for the matching
+# hex_radius -- scripts/submit_downstream_chain.sh is what wires that ordering.
 
 set -euo pipefail
 
@@ -113,19 +119,19 @@ export -f beaching_members_csv
 run_one() {
     stage=$1 regime=$2 season=$3 member=$4
     t0=${SECONDS}
-    # "-" is how the work list spells "this stage takes no member"; 028 reads
-    # the unweighted 024c store for an empty member, so the two are distinct.
+    # "-" is how the work list spells "no member": 025/026/026a/026b read the
+    # unweighted 024 counts store and 028 the unweighted 024c store for it.
     [ "${member}" = "-" ] && member=""
 
     case "${stage}" in
         025)  job=scripts/025_HexHeatmaps_job.sh
-              args=("${regime}" "${season}" "${hex_radius}") ;;
+              args=("${regime}" "${season}" "${hex_radius}" "${member}") ;;
         026)  job=scripts/026_TimeHorizonMaps_job.sh
-              args=("${regime}" "${season}" "${hex_radius}") ;;
+              args=("${regime}" "${season}" "${hex_radius}" "${member}") ;;
         026a) job=scripts/026a_OriginSubbasinTimeHorizonMaps_job.sh
-              args=("${regime}" "${season}" "${hex_radius}") ;;
+              args=("${regime}" "${season}" "${hex_radius}" "${member}") ;;
         026b) job=scripts/026b_OriginSubbasinYearTimeHorizonMaps_job.sh
-              args=("${regime}" "${season}" "${hex_radius}") ;;
+              args=("${regime}" "${season}" "${hex_radius}" "${member}") ;;
         027)  job=scripts/027_HexDistanceQuantiles_job.sh
               args=("${regime}" "${hex_radius}" "${season}") ;;
         028)  job=scripts/028_SubbasinConnectivityMatrix_job.sh
@@ -183,14 +189,24 @@ export -f run_one
 # member. $STAGES / $REGIMES / $SEASONS restrict the matrix; $WORK_LIST
 # replaces it wholesale.
 list_work() {
-    local stage regime season
+    local stage regime season member
     if [ -n "${WORK_LIST:-}" ]; then
         grep -v "^[[:blank:]]*\(#\|$\)" "${WORK_LIST}"
         return
     fi
     for stage in ${stages}; do
         case "${stage}" in
-            025|026|026a|026b|027)
+            025|026|026a|026b)
+                for regime in ${regimes}; do
+                    # Survival-weighted where 024d sidecars exist, unweighted
+                    # otherwise (only surface_stokes has them).
+                    member=-
+                    [ "${regime}" = surface_stokes ] && member=${production_member}
+                    for season in ${seasons}; do
+                        echo "${stage} ${regime} ${season} ${member}"
+                    done
+                done ;;
+            027)
                 for regime in ${regimes}; do
                     for season in ${seasons}; do
                         echo "${stage} ${regime} ${season} -"

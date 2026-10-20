@@ -17,14 +17,22 @@
 # %% [markdown]
 # # Hex relative-density maps
 #
-# Relative particle-density maps on the hex-aggregated dispersal store
-# built by notebooks 024a (key) and 024 (counts). Reads one key file plus
-# every release-year counts partition of one regime; no trajectory zarrs,
-# no Dask cluster.
+# Relative particle-density maps on the hex-aggregated dispersal store.
+# Reads the 024a key plus every release-year partition of one regime; no
+# trajectory zarrs, no Dask cluster. Two stores feed this, selected by the
+# `member` parameter, and the value read from either is called `weight`
+# from then on:
+#
+# | `member` | store | `weight` |
+# |---|---|---|
+# | `""` | 024 counts (`HexAgg_counts_*`) | `n_obs`, every sample counts 1 |
+# | rate-model tag | 024f survocc (`HexAgg_survocc_*_<member>`) | `surv`, each sample weighted by its un-beached fraction `exp(−A)` |
+#
+# Both are read over the same age window `[0, max_age_days)`.
 #
 # Density is reported in **relative** units, not raw particle counts:
 #
-# - `percentage` — 100 · n_obs(hex) / Σ n_obs over the selected release
+# - `percentage` — 100 · weight(hex) / Σ weight over the selected release
 #   set (regime, season, all release years pooled): the share of
 #   particle-time the cloud spends in each hex. Linear colour scale.
 # - `dilution` — `percentage` per km² of hex **water** area
@@ -62,17 +70,27 @@ from cartopy.io.shapereader import natural_earth
 # %% tags=["parameters"]
 # Read root of the data twin (HELCOM polygons, BSH static H0).
 data_root = "../data"
-# Read root of the hex-aggregate stores built by 024a/024, and write root
-# for figures and exports.
+# Read root of the hex-aggregate stores built by 024a/024/024f, and write
+# root for figures and exports.
 output_root = "../output"
-# Which regime's counts partitions to read; one regime per run.
+# Which regime's partitions to read; one regime per run.
 regime = "surface_stokes"
+# Rate-model member tag. "" reads the unweighted 024 counts store (n_obs);
+# any other string reads the 024f survocc store for that member and maps its
+# survival-weighted `surv`. Opaque — never parsed.
+member = ""
 # Release season: DJF, MAM, JJA, SON or ALL (every month).
 season = "ALL"
 # Hex radius of the aggregate store (built by 024). One radius covers
 # the whole BSH domain; the DE figure is a viewport clip, not a separate
 # store.
 hex_radius = 6000
+# Age-bin granularity of the store (must match 024 / 024f).
+age_bin_days = 10
+# Reduction window (days): only ages in [0, max_age_days) are mapped. Cuts the
+# uncapped counts store to the window 024f was built with, so weighted and
+# unweighted maps cover the same ages. A multiple of age_bin_days.
+max_age_days = 180
 
 # Baltic-wide map extent (degrees E / degrees N).
 baltic_lon_min = 5
@@ -116,6 +134,13 @@ data_root = Path(data_root)
 output_root = Path(output_root)
 store_root = output_root / "HexAggregates"
 
+assert max_age_days % age_bin_days == 0, (
+    f"max_age_days {max_age_days} d is not a multiple of age_bin_days {age_bin_days} d"
+)
+n_age_bins = max_age_days // age_bin_days
+member_tag = member or "unweighted"
+print(f"regime={regime}, season={season}, member={member_tag}, window [0, {max_age_days}) d")
+
 # Print-ready output: every saved figure is one full text-width (180 mm)
 # page-width figure at 300 dpi, so panels land in the manuscript at their
 # final size. This is the deliberate figsize/dpi override for this
@@ -145,8 +170,9 @@ def _slug(name):
 #
 # Layout: flat files under ``output_root/HexAggregates/`` —
 # ``HexAgg_key_r<radius>m.parquet`` (+ a ``.json`` sidecar carrying the
-# subbasin id→name map) and
-# ``HexAgg_counts_r<radius>m_<regime>_<year>.parquet``.
+# subbasin id→name map), the counts partitions
+# ``HexAgg_counts_r<radius>m_<regime>_<year>.parquet`` and the survocc
+# partitions ``HexAgg_survocc_r<radius>m_<regime>_<year>[_mMM]_<member>.parquet``.
 
 # %%
 key_path = store_root / f"HexAgg_key_r{hex_radius}m.parquet"
@@ -158,71 +184,139 @@ subbasin_id_to_name = {
 print(f"key: {len(key):,} hexes")
 
 # %% [markdown]
-# # Pool the counts across release years
+# # Pool the store across release years
 #
-# Every year partition of the regime is read and reduced immediately to
-# per-`(origin_subbasin, target_hex)` sums — the store is O(10^8) rows per
-# year, the reduction O(10^5). The season month set is pushed into the
-# parquet read as a `release_doy` filter, built per partition year so the
-# month↔doy mapping is leap-correct.
+# Every partition of the regime is read and reduced immediately to
+# per-`(origin_subbasin, target_hex)` sums — a counts partition is O(10^8)
+# rows, the reduction O(10^5). The season's release days and the age window
+# are pushed into the parquet read as filters; the doy set is built per
+# partition year so the month↔doy mapping is leap-correct, and a monthly
+# survocc partition outside the season is not opened at all.
 #
-# Origin subbasin is the `helcom_subbasin` of each `release_hex` (024a
-# attaches it as an integer id). The `-1` sentinel in either hex column
-# marks land-seeded particles and obs that left the BSH domain; those rows
-# carry no geometry and are excluded from the maps — from the numerator
-# *and* from the normalisation denominator — and accounted for below.
+# Origin subbasin: 024f carries it as `origin_subbasin`; for the counts
+# store it is the key's `helcom_subbasin` of each `release_hex`. Either way
+# `-1` means a release hex outside every named HELCOM polygon (or absent
+# from the key) — such releases stay in the basin-wide maps and are left
+# out of the per-origin panels.
+#
+# Sentinels: `target_hex = -1` (no in-key position — the drifter left the
+# BSH domain) in both stores, plus `release_hex = -1` (land-seeded
+# particles) in the counts store; 024f holds water-seeded drifters only.
+# Those rows carry no geometry and are excluded from the maps — from the
+# numerator *and* from the normalisation denominator — and accounted for
+# below.
 
 # %%
-_COUNTS_RE = re.compile(rf"HexAgg_counts_r{hex_radius}m_{regime}_(\d{{4}})\.parquet$")
-counts_files = sorted(
-    store_root.glob(f"HexAgg_counts_r{hex_radius}m_{regime}_[0-9][0-9][0-9][0-9].parquet")
-)
-if not counts_files:
-    raise FileNotFoundError(
-        f"no counts partitions for regime {regime!r} at {store_root} — run 024."
+# The glob is loose and the regex selects: it pins exactly four year digits
+# after the regime (so `surface` does not also take `surface_stokes_*`) and,
+# for a member, the whole tag after the optional month.
+if member:
+    store_glob = f"HexAgg_survocc_r{hex_radius}m_{regime}_*_{member}.parquet"
+    part_re = re.compile(
+        rf"HexAgg_survocc_r{hex_radius}m_{regime}_(?P<year>\d{{4}})(?:_m(?P<month>\d{{2}}))?"
+        rf"_{re.escape(member)}\.parquet$"
     )
+else:
+    store_glob = f"HexAgg_counts_r{hex_radius}m_{regime}_*.parquet"
+    part_re = re.compile(rf"HexAgg_counts_r{hex_radius}m_{regime}_(?P<year>\d{{4}})\.parquet$")
+
+partitions = []
+for f in sorted(store_root.glob(store_glob)):
+    m = part_re.search(f.name)
+    if m is not None:
+        month = m.groupdict().get("month")
+        partitions.append((f, int(m["year"]), None if month is None else int(month)))
+if not partitions:
+    raise FileNotFoundError(
+        f"no partitions matching {store_glob!r} at {store_root} — "
+        + ("run 024f." if member else "run 024.")
+    )
+# A whole-year partition next to monthly ones of the same year covers the
+# same releases twice.
+mixed = sorted(
+    year for f, year, month in partitions
+    if month is None and sum(y == year for _, y, _ in partitions) > 1
+)
+if mixed:
+    raise ValueError(f"years {mixed} carry both a whole-year and monthly partitions")
 
 subbasin_of_hex = key.set_index("hex_id")["helcom_subbasin"]
 
 parts = []
-n_obs_total_raw = 0
-n_obs_sentinel = 0
-for f in counts_files:
-    year = int(_COUNTS_RE.search(f.name).group(1))
+store_attrs = []
+pooled_years = set()
+weight_raw = 0.0
+weight_sentinel = 0.0
+for f, year, month in partitions:
+    if month is not None and month not in season_months:
+        continue
     days = pd.date_range(f"{year}-01-01", f"{year}-12-31")
     season_doys = set(days[days.month.isin(season_months)].dayofyear.tolist())
-    df = pd.read_parquet(
-        f,
-        columns=["release_hex", "target_hex", "n_obs"],
-        filters=[("release_doy", "in", season_doys)],
-    )
-    n_obs_total_raw += int(df["n_obs"].sum())
-    valid = (df["release_hex"] >= 0) & (df["target_hex"] >= 0)
-    n_obs_sentinel += int(df.loc[~valid, "n_obs"].sum())
-    df = df[valid]
-    df["origin_subbasin"] = subbasin_of_hex.reindex(df["release_hex"].values).to_numpy()
-    parts.append(
-        df.groupby(["origin_subbasin", "target_hex"], as_index=False, dropna=False)["n_obs"].sum()
-    )
+    filters = [("release_doy", "in", season_doys), ("age_bin", "<", n_age_bins)]
+    if member:
+        df = pd.read_parquet(
+            f, columns=["origin_subbasin", "target_hex", "surv"], filters=filters
+        )
+        store_attrs.append(df.attrs)
+        df = df.rename(columns={"surv": "weight"})
+        sentinel = df["target_hex"] < 0
+    else:
+        df = pd.read_parquet(f, columns=["release_hex", "target_hex", "n_obs"], filters=filters)
+        df = df.rename(columns={"n_obs": "weight"})
+        sentinel = (df["release_hex"] < 0) | (df["target_hex"] < 0)
+    weight_raw += float(df["weight"].sum())
+    weight_sentinel += float(df.loc[sentinel, "weight"].sum())
+    df = df[~sentinel]
+    if not member:
+        df["origin_subbasin"] = (
+            subbasin_of_hex.reindex(df["release_hex"].to_numpy())
+            .fillna(-1).astype("int64").to_numpy()
+        )
+    parts.append(df.groupby(["origin_subbasin", "target_hex"], as_index=False)["weight"].sum())
+    if len(df):
+        pooled_years.add(year)
     print(f"  {f.name}: {len(df):,} in-season valid rows")
-    del df
-counts = (
+    del df, sentinel
+if not parts:
+    raise ValueError(f"no {season} partitions among {len(partitions)} on disk")
+binned = (
     pd.concat(parts, ignore_index=True)
-    .groupby(["origin_subbasin", "target_hex"], as_index=False, dropna=False)["n_obs"]
+    .groupby(["origin_subbasin", "target_hex"], as_index=False)["weight"]
     .sum()
 )
 del parts
-print(f"season {season} (months {season_months}): {len(counts):,} (origin, target) pairs")
+
+# A pooled store must be one reduction window, at least as long as the one
+# mapped here.
+if member:
+    windows = {(a["max_age_days"], a["age_bin_days"]) for a in store_attrs}
+    assert len(windows) == 1, (
+        f"pooled survocc partitions disagree on (max_age_days, age_bin_days): "
+        f"{sorted(windows)} — rebuild 024f"
+    )
+    store_max_age_days, store_age_bin_days = windows.pop()
+    assert store_age_bin_days == age_bin_days, (
+        f"store age_bin_days {store_age_bin_days} != {age_bin_days}"
+    )
+    assert store_max_age_days >= max_age_days, (
+        f"store window {store_max_age_days} d < max_age_days {max_age_days} d — "
+        f"rebuild 024f or lower max_age_days"
+    )
+    print(f"024f window: {store_max_age_days} d in {store_age_bin_days} d bins")
+
+pooled_years = sorted(pooled_years)
+print(f"season {season} (months {season_months}): release years {pooled_years}, "
+      f"{len(binned):,} (origin, target) pairs")
 print(
-    f"sentinel (-1) hexes excluded: {n_obs_sentinel:,} of {n_obs_total_raw:,} n_obs "
-    f"({100 * n_obs_sentinel / n_obs_total_raw:.4f} %)"
+    f"sentinel (-1) hexes excluded: {weight_sentinel:,.0f} of {weight_raw:,.0f} weight "
+    f"({100 * weight_sentinel / weight_raw:.4f} %)"
 )
 
 
 # %% [markdown]
 # # Relative density
 #
-# `to_hex_gdf` sums `n_obs` per target hex over a selected release set,
+# `to_hex_gdf` sums `weight` per target hex over a selected release set,
 # joins the key geometry, and derives both relative views. The
 # normalisation is over whatever subset is passed in, so a per-origin panel
 # reads as that origin's own share of particle-time.
@@ -232,19 +326,19 @@ print(
 # fell inside it) get no `dilution`; they still carry a `percentage`.
 
 # %%
-def to_hex_gdf(counts_df, key_df):
+def to_hex_gdf(binned_df, key_df):
     """Per-target-hex relative density as a GeoDataFrame. ``percentage``
     is the share of the passed-in release set's particle-time; ``dilution``
     is that share per km² of hex water area."""
     gdf = (
-        counts_df.groupby("target_hex", as_index=False)["n_obs"].sum()
+        binned_df.groupby("target_hex", as_index=False)["weight"].sum()
         .merge(
             key_df[["hex_id", "geometry", "water_area_m2"]],
             left_on="target_hex", right_on="hex_id",
         )
         .pipe(gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326")
     )
-    gdf["percentage"] = 100 * gdf["n_obs"] / gdf["n_obs"].sum()
+    gdf["percentage"] = 100 * gdf["weight"] / gdf["weight"].sum()
     gdf["dilution"] = gdf["percentage"] / (
         gdf["water_area_m2"].where(gdf["water_area_m2"] > 0) / 1e6
     )
@@ -395,7 +489,7 @@ def hex_map(gdf, column, ax, extent, norm, coast, title=None, cbar_label=True):
 def export_geojson(gdf, name, **extra_columns):
     """Write one map product as GeoJSON for collaborators (EPSG:4326, hex
     geometry + the value columns)."""
-    out = gdf[["hex_id", "geometry", "n_obs", "percentage", "dilution"]].assign(**extra_columns)
+    out = gdf[["hex_id", "geometry", "weight", "percentage", "dilution"]].assign(**extra_columns)
     path = export_dir / f"{name}.geojson"
     out.to_file(path, driver="GeoJSON")
     print(f"wrote {path}")
@@ -405,7 +499,7 @@ def export_geojson(gdf, name, **extra_columns):
 # # Baltic-wide relative density
 
 # %%
-gdf_full = to_hex_gdf(counts, key)
+gdf_full = to_hex_gdf(binned, key)
 
 fig, axes = map_grid(1, 2, baltic_extent)
 hex_map(
@@ -416,13 +510,13 @@ hex_map(
     gdf_full, "dilution", axes[0, 1], baltic_extent,
     dilution_norm(gdf_full), coast_baltic, title="dilution",
 )
-fig_path = figure_dir / f"HexRelativeDensity_{regime}_{season}_r{hex_radius}m.png"
+fig_path = figure_dir / f"HexRelativeDensity_{regime}_{season}_r{hex_radius}m_{member_tag}.png"
 # Print-ready: full 180 mm page width at 300 dpi (see the parse cell).
 fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
 plt.show()
 
-export_geojson(gdf_full, f"025_{regime}_{season}")
+export_geojson(gdf_full, f"025_{regime}_{season}_{member_tag}")
 
 # %% [markdown]
 # # German waters
@@ -441,7 +535,9 @@ hex_map(
     gdf_full, "dilution", axes[0, 1], de_extent,
     dilution_norm(gdf_full), coast_de, title="dilution",
 )
-fig_path = figure_dir / f"HexRelativeDensityDE_{regime}_{season}_r{hex_radius}m.png"
+fig_path = (
+    figure_dir / f"HexRelativeDensityDE_{regime}_{season}_r{hex_radius}m_{member_tag}.png"
+)
 # Print-ready: full 180 mm page width at 300 dpi.
 fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
@@ -458,15 +554,19 @@ plt.show()
 
 # %%
 origin_codes = sorted(
-    int(c) for c in counts["origin_subbasin"].dropna().unique() if c >= 0
+    int(c) for c in binned["origin_subbasin"].unique() if c >= 0
 )
 print(
     f"origin subbasins with releases ({len(origin_codes)}): "
     f"{', '.join(subbasin_id_to_name[c] for c in origin_codes)}"
 )
+print(
+    f"origin -1 (no named subbasin), basin-wide maps only: "
+    f"{binned.loc[binned['origin_subbasin'] < 0, 'weight'].sum():,.0f} weight"
+)
 
 origin_gdfs = {
-    code: to_hex_gdf(counts[counts["origin_subbasin"] == code], key)
+    code: to_hex_gdf(binned[binned["origin_subbasin"] == code], key)
     for code in origin_codes
 }
 ncols = 3
@@ -488,7 +588,7 @@ for i in range(0, len(origin_codes), max_panels_per_figure):
     part = i // max_panels_per_figure + 1
     fig_path = (
         figure_dir
-        / f"HexRelativeDensityByOrigin_{regime}_{season}_r{hex_radius}m_part{part}.png"
+        / f"HexRelativeDensityByOrigin_{regime}_{season}_r{hex_radius}m_{member_tag}_part{part}.png"
     )
     # Print-ready: full 180 mm page width at 300 dpi.
     fig.savefig(fig_path, dpi=FIGURE_DPI)
@@ -498,7 +598,7 @@ for i in range(0, len(origin_codes), max_panels_per_figure):
 for code in origin_codes:
     export_geojson(
         origin_gdfs[code],
-        f"025_{regime}_{season}_{_slug(subbasin_id_to_name[code])}",
+        f"025_{regime}_{season}_{member_tag}_{_slug(subbasin_id_to_name[code])}",
         origin_subbasin=subbasin_id_to_name[code],
     )
 
@@ -507,12 +607,12 @@ for code in origin_codes:
 
 # %%
 print(f"regime={regime}, season={season} {season_months}, hex_radius={hex_radius} m")
-print(f"release-year partitions pooled: {len(counts_files)}")
-print(f"  mapped n_obs: {int(gdf_full['n_obs'].sum()):,}")
+print(f"member={member_tag}, age window [0, {max_age_days}) d, release years {pooled_years}")
+print(f"  mapped weight: {gdf_full['weight'].sum():,.0f}")
 print(f"  occupied target hexes: {len(gdf_full):,}")
 print(
-    f"  sentinel (-1) share of raw n_obs: "
-    f"{100 * n_obs_sentinel / n_obs_total_raw:.4f} %"
+    f"  sentinel (-1) share of raw weight: "
+    f"{100 * weight_sentinel / weight_raw:.4f} %"
 )
 print(
     f"  hexes without water area (no dilution): "

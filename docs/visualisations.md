@@ -15,10 +15,10 @@ listed here should be dropped.
 | 021 | Time-series stats | Overlaid | Global only |
 | 022 | Distance vs. time | Overlaid (`hue="regime"`) | Global · Per subbasin · German waters · Per quarter |
 | 023 | Density + mean-age maps | Per-run (papermill regime) | Whole Baltic · Per subbasin · German waters · Per quarter |
-| 025 | Hex relative-density maps | Per-run (regime + season + radius) | Baltic percentage+dilution · German-waters zoom · per origin subbasin |
-| 026 | Hex time-horizon relative-density maps | Per-run (regime + season + radius) | Cumulative elapsed-time horizons (10/20/50/100 d), all release years pooled |
-| 026a | 026 per origin subbasin | Per-run (regime + season + radius) | One percentage and one dilution figure per origin (HELCOM) subbasin |
-| 026b | 026a per origin subbasin and year | Per-run (regime + season + radius) | One percentage and one dilution figure per (origin subbasin, release year) |
+| 025 | Hex relative-density maps | Per-run (regime + season + radius + member) | Baltic percentage+dilution · German-waters zoom · per origin subbasin |
+| 026 | Hex time-horizon relative-density maps | Per-run (regime + season + radius + member) | Cumulative elapsed-time horizons (30/60/90/180 d), all release years pooled · area holding 50/90 % of the cloud (CSV) |
+| 026a | 026 per origin subbasin | Per-run (regime + season + radius + member) | One percentage and one dilution figure per origin (HELCOM) subbasin |
+| 026b | 026a per origin subbasin and year | Per-run (regime + season + radius + member) | One percentage and one dilution figure per (origin subbasin, release year) |
 | 027 | Hex distance-quantile maps | Per-run (regime + radius + season) | One 1xN panel row, one panel per quantile (0.1/0.5/0.9), the season's releases pooled across years |
 | 028 | Subbasin connectivity matrices | Per-run (regime + radius + season + member) | Raw residence · emission fraction per age horizon · interannual range |
 | 029 | Beaching maps | Per-run (regime + radius + member + season) | Where-stranded with the release sites overlaid · source/sink substrate contrast · beached fraction per source hex · age horizons (10/20/50 d) · beached-fraction curve with interannual band · displacement at stranding |
@@ -58,16 +58,35 @@ beyond useful inspection density.
 **Interannual spread is the error bar, not a product.** Where a figure
 shows one scalar per horizon or per member, the per-release-year min–max of the
 same reduction — grouped by the release year parsed from the partition
-filename — is drawn as a shaded band (029, 030), a lo–hi bar (031) or a
-CSV column (028). Drawn as an explicit range rather than a symmetric
+filename — is drawn as a shaded band (029, 030), a lo–hi bar (031), a
+CSV column (028) or per-year CSV rows (026 areas). Drawn as an explicit
+range rather than a symmetric
 `yerr`, because a pooled value need not lie inside it: `beach_hexes` pools
 as a union of hexes and exceeds every single year's count. Maps stay
 pooled.
 
+**Weighted or unweighted (025/026 family).** One `member` parameter picks
+the store, and the notebook calls the value it reads `weight` from then on:
+`""` reads the 024 counts store (`n_obs`, every hourly sample counts 1), a
+rate-model tag reads that member's 024f survocc store (`surv`, each sample
+weighted by its un-beached fraction `exp(−A)`, see
+[survival_occupancy.md](survival_occupancy.md)). Both are cut to the same
+age window `[0, max_age_days)` (180 d): the counts store is uncapped (220 d),
+so without the cut a weighted and an unweighted map would cover different
+ages. A survocc read asserts that every pooled partition's
+`df.attrs["max_age_days"]` agrees and covers the consumer's window. Origin
+subbasin is the key's `helcom_subbasin` of `release_hex` for counts and the
+store's own `origin_subbasin` for survocc — the same assignment, `-1` for
+a release hex outside every named polygon. Every figure and export stem
+carries the member tag or the literal `unweighted`. Considered a separate
+weighted notebook family; rejected, the maps, norms and exports are
+identical code over a different value column.
+
 **Relative density, not counts (025/026 family).** `percentage` =
-100 · n_obs(hex) / Σ n_obs over the selected release set (regime, season,
+100 · weight(hex) / Σ weight over the selected release set (regime, season,
 years, and the age horizon or facet the panel covers) — the share of
-particle-time. `dilution` = that share per km² of hex water area
+particle-time (survival-weighted particle-time for a member). `dilution` =
+that share per km² of hex water area
 (`water_area_m2` from the 024a key), so a hex that is mostly land is not
 credited with a whole hex of dilution volume. Percentage is linear,
 dilution log. Absolute counts are dropped from the headline maps — a count
@@ -82,7 +101,10 @@ argument at the other end.
 **Sentinel rows.** `release_hex` or `target_hex` of -1 (land-seeded
 particles, obs that left the BSH domain) carry no geometry and are dropped
 from numerator and denominator. Each notebook prints the excluded share
-(~34.9 % of raw `n_obs` in production — land-seeded releases dominate it).
+(~34.9 % of raw `n_obs` in production — land-seeded releases dominate it;
+024f holds water-seeded drifters only, so a survocc read drops just the
+`target_hex = -1` rows). Origin `-1` releases stay in the basin-wide maps
+and are left out of the per-origin panels.
 The land-seeded mask itself is the same `(diff lon at obs=0 == 0) & (diff
 lat at obs=0 == 0)` test in every viz; rationale and edge cases in
 [distance_calculation.md](distance_calculation.md).
@@ -176,7 +198,27 @@ cloud's shape fills in; the concentration trend is read off the colorbars
 and the closing quantile-function plot (each hex's share, log y).
 Percentage and dilution go to separate figures so each map stays readable
 at 180 mm. Horizons must be whole multiples of the store's `age_bin_days`
-— a tighter snapshot means rebuilding 024, not a different plot.
+and ≤ `max_age_days` — a tighter snapshot means rebuilding 024, not a
+different plot.
+
+**Area holding a share of the cloud.** Per horizon `T` and share
+`q ∈ {0.5, 0.9}` (`area_quantiles_csv`): hexes ranked by density
+`weight / water_area_m2` descending, weight accumulated until it reaches
+`q`, and their water area summed — the smallest water area holding a share
+`q` of the cumulative weight. The hex that crosses `q` counts only the
+fraction of its area needed (a 6 km hex is 93.5 km² of water, so whole
+hexes would quantise small-T areas); hexes with weight but no water area
+rank first at zero area. `length_km = sqrt(area_km2)` is the side of the
+equal-area square, a length scale rather than a distance travelled.
+`pooled` ranks the summed weights of every release year; each year is the
+same reduction on its own releases, so the per-year rows give the
+interannual range (a pooled value need not lie inside it). A year whose
+partitions hold no release in the season (the partial last release year
+has no JJA or SON) is dropped and reported. The ranking is over cumulative
+particle-time, so the area measures concentration, not spread: where
+drifters accumulate in few hexes (coastal trapping), later horizons add
+weight there and the area can shrink as `T` grows. No figure: the CSV
+feeds 032.
 
 ## Notebook 026a — per origin subbasin (special case)
 
@@ -196,18 +238,25 @@ exposing the interannual variability 026a hides by pooling. Every panel of
 an origin divides by that origin's all-year particle-time at the same
 horizon, and one norm spans the origin's years and horizons, so a faint
 year is a genuinely weaker year and the release years sum to 100 % at a given
-horizon (each carries an equal share — release counts are equal by
-construction, so the interannual signal is spatial). GeoJSON exported at
+horizon. Unweighted, each year carries an equal share (release counts are
+equal by construction, so the interannual signal is spatial); weighted, a
+year's share also carries its survival. GeoJSON exported at
 the longest horizon only, where the release year rather than the horizon
 is the product's axis.
 
 ## Exports (025 / 026 / 026a / 026b)
 
 GeoJSON (EPSG:4326, hex geometry) under `output_root/Exports/<nb>/`, named
-`<nb>_<regime>_<season>[_T<horizon>d][_<origin>][_<year>].geojson`,
-columns `hex_id, n_obs, percentage, dilution` plus `origin_subbasin` /
+`<nb>_<regime>_<season>_<member|unweighted>[_T<horizon>d][_<origin>][_<year>].geojson`,
+columns `hex_id, weight, percentage, dilution` plus `origin_subbasin` /
 `release_year` where faceted. GeoJSON over GeoTIFF because the hex
-tessellation is vector.
+tessellation is vector. 026 also writes
+`026_areas_<regime>_<season>_<member|unweighted>.csv` with columns
+`horizon_days, q, scope, area_km2, length_km`, `scope` = `pooled` or a
+release year. Figures follow the same rule —
+`<Name>_<regime>_<season>_r<radius>m_<member|unweighted>[_<facet>…].png`:
+the member tag follows the run identity and precedes the per-figure facets
+(column, origin, year, part).
 
 ## Notebook 027 — Hex distance-quantile maps (special case)
 
