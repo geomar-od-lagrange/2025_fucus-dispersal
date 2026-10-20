@@ -53,7 +53,9 @@ Implements the cross-cutting decisions of
   this one), Table E/F pick `<member>` or `unweighted` per regime from the
   024f partitions on disk; smoke test's 028 survconn run gains
   `-p max_age_days 1`. Out of scope (024 lock): the 024g comment at
-  ~392–394.
+  ~392–394. Folded in after (e9cb195): area metric q = 0.9 only — 026
+  `area_quantiles_csv` and 034 `quantiles_csv` default "0.9", 032 table F
+  filters the CSV to its `area_quantile` parameter.
 - Step 5 stores submitted 2026-10-20 (step 1 reviewed: bit-identical to
   the old stores on the shared window): 024a `24456829`; 024c
   `24456830`–`24456853` (24, afterok 024a); 024efg `24456854` (2825 cells,
