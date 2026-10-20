@@ -67,6 +67,10 @@ Implements the cross-cutting decisions of
   series (area and √area vs. T, one line per regime, pooled + per-year
   band), second wave of the consumer driver, in 032's figure manifest.
   Bottom-only interim run into production (026 bottom × 5 seasons, 035 × 5).
+- D11 done (7871001): `release_years = "2016-2024"` in 025–033, filtered on
+  filenames before any read; production 026 bottom × 5 and 035 × 5 rerun
+  (per-year rows 2016–2024; ALL q = 0.9 at 180 d 134 428 km², years
+  119 488–135 106).
 
 ## Design decisions
 
