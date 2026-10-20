@@ -2,7 +2,7 @@
 jupyter:
   jupytext:
     cell_metadata_filter: tags,-all
-    formats: md,ipynb
+    formats: py:percent,md,ipynb
     text_representation:
       extension: .md
       format_name: markdown
@@ -50,6 +50,13 @@ output_root = "../output"
 # Hex radius (corner-to-centre distance) in metres. Sweep this via
 # papermill to build keys at multiple radii.
 hex_radius = 6000
+
+# Shoreward snap distance for the HELCOM subbasin assignment, in hex
+# radii. A hex that overlaps no subbasin polygon but carries land takes
+# the nearest subbasin within this distance; 0 disables the snap and
+# leaves the assignment on overlap alone. Expressed in radii rather than
+# metres so the cap follows `hex_radius` through a sweep.
+subbasin_snap_hex_radii = 1.0
 ```
 
 # Derived layout
@@ -62,8 +69,10 @@ store_root.mkdir(parents=True, exist_ok=True)
 
 key_path = store_root / f"HexAgg_key_r{hex_radius}m.parquet"
 meta_path = key_path.with_suffix(".json")
+subbasin_snap_m = subbasin_snap_hex_radii * hex_radius
 print(f"key:  {key_path}")
 print(f"meta: {meta_path}")
+print(f"subbasin shoreward snap: {subbasin_snap_m:,.0f} m")
 ```
 
 # Static inputs
@@ -224,14 +233,46 @@ key["dist_to_coast_m"] = (
     .astype(np.float32).values
 )
 
-# HELCOM subbasin by centroid (in 4326).
-joined = gpd.sjoin(
-    gpd.GeoDataFrame({"hex_id": key["hex_id"]}, geometry=key.geometry.centroid, crs=4326),
-    subbasins[["geometry", "subbasin"]],
-    how="left", predicate="within",
-).drop_duplicates(subset="hex_id").set_index("hex_id")
+# HELCOM subbasin per hex, shoreward-extended. The polygons are a marine
+# delineation digitised against the coastline, so they stop short of the
+# shore: a hex that fronts a basin has most of its water in that basin
+# but its centroid on land or in an archipelago gap. Two steps, in
+# EPSG:3035 so both the areas and the snap distance are metric.
+#
+# 1. Largest overlap — the basin holding the most of the hex polygon.
+# 2. Shoreward snap — a hex overlapping no basin takes the nearest basin
+#    within `subbasin_snap_m`, but only if it carries land. That land
+#    test is what keeps the extension landward: the HELCOM outer boundary
+#    (Kattegat → Skagerrak, and the whole North Sea side of the BSH
+#    domain) runs through open water, so a hex beyond it is all water and
+#    never snaps, while a shoreward hex the polygons missed always holds
+#    some of the coast that stopped them.
+subbasins_3035 = subbasins[["geometry", "subbasin"]].to_crs(3035)
+hexes_3035 = gpd.GeoDataFrame({"hex_id": key["hex_id"]}, geometry=geom_3035, crs=3035)
+
+overlap = gpd.overlay(
+    hexes_3035, subbasins_3035, how="intersection", keep_geom_type=True
+)
+largest_overlap = (
+    overlap.assign(overlap_m2=overlap.area)
+    .sort_values("overlap_m2")
+    .groupby("hex_id")["subbasin"].last()
+)
+
+carries_land = (key["water_area_m2"] < key["area_m2"]).to_numpy()
+snap_pool = hexes_3035[~hexes_3035["hex_id"].isin(largest_overlap.index) & carries_land]
+snapped = (
+    gpd.sjoin_nearest(
+        snap_pool, subbasins_3035, how="inner",
+        max_distance=subbasin_snap_m, distance_col="snap_m",
+    )
+    .sort_values("snap_m")
+    .groupby("hex_id")["subbasin"].first()
+)
+
 key["helcom_subbasin"] = (
-    key["hex_id"].map(joined["subbasin"].map(subbasin_name_to_id))
+    key["hex_id"]
+    .map(largest_overlap.combine_first(snapped).map(subbasin_name_to_id))
     .fillna(-1).astype(np.int8)
 )
 
@@ -252,6 +293,8 @@ meta = {
     },
     "area_crs": "EPSG:3035",
     "subbasin_id_to_name": {str(k): v for k, v in subbasin_id_to_name.items()},
+    "subbasin_rule": "largest_overlap+shoreward_snap",
+    "subbasin_snap_m": subbasin_snap_m,
 }
 meta_path.write_text(json.dumps(meta, indent=2))
 
@@ -267,5 +310,36 @@ print(f"  with H0 coverage:   {key['mean_depth_m'].notna().sum():,}")
 print(f"  with water area:    {(key['water_area_m2'] > 0).sum():,}")
 print(f"  with Fucus area:    {(key['fucus_area_m2'] > 0).sum():,}")
 print(f"  inside a subbasin:  {(key['helcom_subbasin'] >= 0).sum():,}")
+print(f"    by overlap:       {len(largest_overlap):,}")
+print(f"    by shoreward snap:{len(snapped):,}")
 print(f"geometry valid:       {key.geometry.is_valid.all()}")
+```
+
+The residual `-1` class after the shoreward extension is what the HELCOM
+polygons genuinely do not cover: the North Sea and Skagerrak side of the
+BSH domain, plus inland hexes. It is reported split by whether the hex
+holds any model water, because only those can ever carry a particle.
+
+```python
+outside = key["helcom_subbasin"] < 0
+print(f"outside (-1):         {int(outside.sum()):,}")
+print(f"  with water area:    {int((outside & (key['water_area_m2'] > 0)).sum()):,}")
+print(f"  lon range:          {key.loc[outside & (key['water_area_m2'] > 0)].geometry.centroid.x.min():.2f} "
+      f"… {key.loc[outside & (key['water_area_m2'] > 0)].geometry.centroid.x.max():.2f}")
+```
+
+Snap-cap sensitivity: how many further hexes each alternative cap would
+take, over the same land-bearing pool the rule above is restricted to.
+
+```python
+unassigned_pool = hexes_3035[
+    ~hexes_3035["hex_id"].isin(largest_overlap.index) & carries_land
+]
+snap_reach = gpd.sjoin_nearest(
+    unassigned_pool, subbasins_3035, how="inner", distance_col="snap_m"
+).sort_values("snap_m").drop_duplicates("hex_id")
+for radii in (0.5, 1.0, 2.0, 4.0):
+    cap = radii * hex_radius
+    print(f"  snap ≤ {radii:>3}×r ({cap:>6,.0f} m): "
+          f"{int((snap_reach['snap_m'] <= cap).sum()):,} hexes")
 ```

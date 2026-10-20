@@ -11,7 +11,8 @@ repo_root=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
 
 cd ${repo_root}
+# No --end-date: each product runs to the last day it covers (capped at
+# yesterday, so the NRT forecast tail is not ingested as analysis).
 pixi run python notebooks/002_download_stokes.py \
     --output-root ${output_root} \
-    --start-year 2016 \
-    --end-year 2025
+    --start-date 2016-01-01

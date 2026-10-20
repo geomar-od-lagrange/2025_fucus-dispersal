@@ -21,7 +21,9 @@ sister of the multi-TB raw zarrs. The counts store is the substrate behind
 (density at a selected `age_bin`); the distance store is the substrate
 behind `notebooks/027_HexDistanceQuantiles.md`. `notebooks/024c_BuildHexConnectivity.py`
 re-aggregates the counts store a third way, into a subbasin→subbasin
-connectivity table read by `notebooks/028_SubbasinConnectivityMatrix.py`.
+connectivity table read by `notebooks/028_SubbasinConnectivityMatrix.py`;
+`notebooks/024g_BuildSurvivalConnectivity.py` builds the survival-weighted
+counterpart from the 024d sidecar.
 Raw zarrs stay the source of truth for per-trajectory diagnostics.
 
 ## Counts schema
@@ -85,15 +87,15 @@ output_root/HexAggregates/
 
 | column            | meaning                                                 |
 |-------------------|----------------------------------------------------------|
-| `origin_subbasin` | HELCOM subbasin id of `release_hex`'s centroid; `-1` = unnamed |
-| `target_subbasin` | HELCOM subbasin id of `target_hex`'s centroid; `-1` = unnamed |
+| `origin_subbasin` | HELCOM subbasin id of `release_hex`; `-1` = unnamed |
+| `target_subbasin` | HELCOM subbasin id of `target_hex`; `-1` = unnamed |
 | `release_doy`     | release day-of-year of the originating zarr (kept axis)   |
 | `age_bin`         | `age_bin` carried over unchanged from counts (kept axis)  |
 | `n_obs`           | summed `(trajectory, obs)` particle-timesteps             |
 
 `origin_subbasin`/`target_subbasin` come from the key's `helcom_subbasin`
 column via `release_hex`/`target_hex` — each hex maps to exactly **one**
-centroid subbasin, so the `groupby` is a pure re-partition of `n_obs`, not a
+subbasin, so the `groupby` is a pure re-partition of `n_obs`, not a
 re-aggregation: no counts row is dropped or duplicated, so the sum is
 conserved and checked as the build's validation gate
 (`conn["n_obs"].sum() == counts["n_obs"].sum()`). Two distinct unnamed
@@ -107,9 +109,76 @@ Connectivity here means **residence** (particle-time spent in the target
 subbasin), not particle flux (a deduped first-arrival count) — the latter
 needs trajectory identity, which the counts store has already collapsed, so
 it would require a fresh pass over the zarrs rather than a re-partition of
-counts. `notebooks/028_SubbasinConnectivityMatrix.py` is the consumer: it
-pools years and two release-month scopes (all-year, Aug/Sep), reports the
-`-1`-dropped fraction, and prints/plots the named-subbasin matrix.
+counts.
+
+## Survival-weighted connectivity schema
+
+`notebooks/024g_BuildSurvivalConnectivity.py` is the same origin→target table
+with beaching progressively removed: each `(trajectory, obs)` sample is
+weighted by the surviving un-beached fraction `S = exp(−A)` at that age, the
+rate model of [beaching.md](beaching.md) and
+[survival_occupancy.md](survival_occupancy.md). It reduces the `024d`
+beaching-forcing sidecar (never the counts store), mapping the hourly `hex`
+and the per-trajectory `release_hex` through the key's `helcom_subbasin`
+column, and is partitioned per `(regime, year, month, rate-model member)`:
+
+```
+output_root/HexAggregates/
+  HexAgg_survconn_r<radius>m_<regime>_<year>_mMM_<member>.parquet
+```
+
+| column | meaning |
+|--------|---------|
+| `origin_subbasin` | subbasin of `release_hex`; `-1` = unnamed, as in 024c |
+| `target_subbasin` | subbasin of the hourly position; `-1` = unnamed |
+| `release_doy` | release day-of-year of the originating zarr |
+| `age_bin` | `floor(age_days / age_bin_days)`, within the reduction window `max_age_days` |
+| `n_obs` | unweighted particle-timesteps |
+| `w_obs` | survival-weighted particle-timesteps (`Σ exp(−A)`) |
+
+`n_obs` is emitted alongside `w_obs` — not read back from 024c — because the
+two stores describe **different populations**: the sidecar holds water-seeded
+("real") drifters only (024d drops the zero-first-step-displacement
+particles), while 024/024c keep land-seeded particles as `-1` sentinel rows.
+Carrying both weights over the same rows is what makes 028's weighted vs.
+unweighted comparison self-consistent. Build gates: `w_obs <= n_obs`
+everywhere, the `n_obs` total equals every `(trajectory, obs)` sample in the
+window (nothing dropped — `-1` targets are kept), and age bin 0 holds exactly
+`released real drifters × age_bin_days × 24` samples.
+Each partition records its window, binning and rate-model point as `df.attrs`
+in the parquet metadata (`max_age_days`, `age_bin_days`, `member`, the rate
+parameters, `git_sha`, `slurm_job_id`; full list in
+[survival_occupancy.md](survival_occupancy.md)).
+
+## Connectivity views (028)
+
+`notebooks/028_SubbasinConnectivityMatrix.py` consumes either store, selected
+by its `member` parameter: `""` reads the 024c partitions and plots `n_obs`;
+a rate-model tag reads the 024g partitions and plots `w_obs`. It pools the
+release years, restricts to one release `season` (DJF/MAM/JJA/SON/ALL — the
+contract lives in [visualisations.md](visualisations.md)), drops `-1` rows
+from the matrix and reports the dropped fraction. Three views:
+
+- **Raw residence matrix**, log scale, pooled over the reduction window.
+- **Emission fraction** `x / x.sum(axis=1)` — the share of an origin's
+  cumulative particle-time that sits in each target, one figure per age
+  horizon `T`. Cumulative and half-open: ages `< T` days, i.e.
+  `age_bin * age_bin_days < T`. Row-normalising is what makes origins
+  comparable; raw rows differ by orders of magnitude with release count.
+- **Interannual range** — the emission fraction recomputed per release year,
+  reduced to mean / min / max per (origin, target, horizon).
+
+Both stores are cut to one window, ages `< max_age_days` (a 028 parameter,
+default 180 d; horizons default 30/60/90/180 d): 024g records its own window
+in each partition's `df.attrs` and 028 asserts that every pooled partition
+agrees on it and on the rate-model point and that it covers `max_age_days`,
+while 024c is uncapped (220 d) and is cut — otherwise the weighted and the
+unweighted raw matrix would cover different ages.
+
+Exports land under `output_root/Exports/028/` as long-form CSV,
+`connectivity_<regime>_<season>_<member-or-unweighted>_T<horizon>d_` +
+`{n_obs, emission_fraction, emission_fraction_by_year}.csv`; figures under
+`output_root/Figures/028/` with the same tags in the filename.
 
 ## Key file (geoparquet, one row per hex)
 
@@ -122,10 +191,42 @@ pools years and two release-month scopes (all-year, Aug/Sep), reports the
 | `mean_depth_m`    | float32          | mean over `H0 > 0` cells inside the hex        |
 | `dist_to_coast_m` | float32          | centroid → always-wet coast (m, EPSG:3035)    |
 | `fucus_area_m2`   | float32          | intersection with REDLIST `F_vesiculo != 0`    |
-| `helcom_subbasin` | int8 (nullable)  | HELCOM level-2 ID by centroid; -1 = outside    |
+| `helcom_subbasin` | int8 (nullable)  | HELCOM level-2 ID, largest overlap + shoreward snap; -1 = outside |
 
 Schema is additive — new attributes mean rebuilding the key with a
 bumped version field; counts files don't move.
+
+### Subbasin assignment: largest overlap, extended shoreward
+
+The HELCOM level-2 polygons are a **marine** delineation, digitised
+against the coastline, so they stop short of the shore and do not tile
+the land. A `centroid within polygon` test therefore fails for exactly
+the hexes the study is about: a hex that fronts a basin has its water in
+that basin but its centroid on land or in an archipelago gap. The rule
+`024a` applies instead, in EPSG:3035 so the areas and the cap are metric:
+
+1. **Largest overlap** — the basin holding the most of the hex polygon.
+2. **Shoreward snap** — a hex overlapping no basin takes the nearest
+   basin within `subbasin_snap_m` (`subbasin_snap_hex_radii × hex_radius`,
+   default one radius), **only if it carries land**
+   (`water_area_m2 < area_m2`).
+
+The land test is how the extension is kept landward-only. The HELCOM
+outer boundary — Kattegat → Skagerrak, and the whole North Sea side of
+the BSH domain — runs through open water, so a hex seaward of it is all
+water, fails the test and stays `-1`; a shoreward hex the polygons missed
+always holds some of the coast that stopped them. A correct result still
+has an `_outside` class: the North Sea and Skagerrak, plus inland hexes.
+Considered a plain nearest-polygon snap with no land test; rejected
+because it absorbs Skagerrak water that is legitimately not Baltic.
+
+Centroid-within left 39,145 of 43,601 hexes at `-1`, including 1,855 of
+the 2,604 hexes that carry BSH coastline (71 % of the domain's coast
+length) and 614 of the 1,207 hexes that ever receive stranded weight —
+49.2 % of the stranded weight of `step_wc0p1_ts3_tcinf_tf1_tw0` and
+52.0 % of the inert `step_wc0p1_ts3_tcinf`. That is not an outside class,
+it is a processing error, and it made every subbasin-level product a
+subset of its own population.
 
 ## Sidecar metadata
 
@@ -137,6 +238,8 @@ bumped version field; counts files don't move.
 - `area_crs` — `"EPSG:3035"`, the projection used for all area columns.
 - `subbasin_id_to_name` — int → name lookup for the `helcom_subbasin`
   column. Keys are JSON strings (cast to int on load).
+- `subbasin_rule` — `"largest_overlap+shoreward_snap"`, and
+  `subbasin_snap_m`, the realised snap cap in metres.
 
 Sidecar instead of parquet schema metadata so the layer that writes
 the parquet (`GeoDataFrame.to_parquet`, `dask.dataframe.to_parquet`)

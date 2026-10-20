@@ -58,6 +58,31 @@ three boundary rows/columns after hygiene (lat row 0: V-roll boundary
 zero; lat row -1 and lon col -1: edge land mask) so particles fall
 through to the coarse grid via `NestedField` rather than stalling.
 
+## Known gaps (2025)
+
+2016–2024 are complete: 8760 files per common year, 8784 per leap year
+(4 timestamps/day x 2 resolutions x 3 variants). 2025 holds 8655, i.e. 105
+missing files at 35 timestamp/resolution stems, and none of them is fixable
+from this repo:
+
+- **25 stems are unreadable in the BSH archive.** `xarray.open_dataset`
+  fails with `OSError: [Errno -101] NetCDF: HDF error`, and the files are
+  1–50 MB against the 50–96 MB of their neighbours — truncated writes, not
+  a reader problem. `c_file_coarse_2025` at `022406`, `030906`, `070318`,
+  `072212`, `072618`, `081100`, `081418`, `082418`, `082500`;
+  `c_file_fine_2025` at `011212`, `011506`, `012918`, `031106`, `042100`,
+  `052718`, `062412`, `070412`, `072800`, `080906`, `091112`, `091806`,
+  `092006`, `110306`, `120806`, `122700`.
+- **5 timestamps are absent from the archive** in both resolutions:
+  `2025072412`, `2025072418`, `2025072500`, `2025102218`, `2025123118`.
+
+Both need a re-fetch from BSH into
+`/gxfs_work/geomar/smomw400/bsh_operationalmodel_data`; re-running 003 only
+reproduces the read error. `MISSING_ONLY=1 YEARS=2025` in
+[job_scripts.md](job_scripts.md) regenerates the list at any time, and 010
+interpolates straight across a hole rather than raising, so the gaps travel
+silently into a run window that spans them.
+
 ## Cross-references
 
 - [stokes_drift.md](stokes_drift.md) — `surface_stokes` recipe.
