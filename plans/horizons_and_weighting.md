@@ -132,6 +132,13 @@ Implements the cross-cutting decisions of
 - **D10. Resources.** 024efg at `--mem-per-cpu=8G` (16 GB per task; measured peak 11.1 GB) (arrays grow ~3× for
   024e, ~1.5× for 024f/g at 180 d).
 
+- **D11. Release years 2016–2024** (WR, 2026-10-20, in the manuscript).
+  The partial 2025 (Jan–May releases only) is hard to interpret and pulls
+  every per-year band down. Every consumer 025–035 and 032 takes one
+  primitive `release_years = "2016-2024"` (inclusive range) and pools /
+  bands only those partitions; the reducers and stores keep 2025 on disk
+  (no rebuild). A full 2025 joins once 2026 forcing exists.
+
 Deferred: P2's two-regime side-by-side figure (needs a two-regime loader;
 after the rebuild), P7 mean age, P5 grouping (open decisions).
 
