@@ -31,8 +31,8 @@ Pure fact maintenance, no decisions. One commit inside `paper/`.
 
 - A1. Header: replace "current as of `f8a7996` on `wr/beaching-trapterm`"
   with the current commit on `wr/analysis-wrapup`.
-- A2. Release span 2016–2019 → 2016–2025 (2025 partial, 29 releases; 612
-  releases per regime). [plans/run_extension_2020_2025.md]
+- A2. Release span 2016–2019 → 2016–2025 (2025 partial, 29 releases; 686
+  releases per regime = 9 × 73 + 29). [plans/run_extension_2020_2025.md]
 - A3. Beaching `[FACTS]`: drop the `tau0` / `w_half` / `s(w)` rate model and
   the "trap ships inert" note; replace with the step model the prose
   equations already show — production member
