@@ -68,8 +68,10 @@ regime_var = "bottom_vs0p8"
 time_horizons_days_csv = "30,60,90,180"
 # Age-bin granularity of the counts store (must match 024).
 age_bin_days = 10
-# Shares of particle-time whose holding area is reported.
-quantiles_csv = "0.5,0.9"
+# Shares of particle-time whose holding area is reported. 0.9 only: the 0.5
+# area is set by particles stalling in a few coastal hexes
+# (docs/visualisations.md).
+quantiles_csv = "0.9"
 # Horizon of the map pair; a multiple of age_bin_days.
 map_horizon_days = 90
 # Isobath to overlay on the maps, in metres of BSH H0 (floor position, see

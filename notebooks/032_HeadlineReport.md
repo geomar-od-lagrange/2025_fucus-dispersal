@@ -85,6 +85,9 @@ connectivity_horizons_csv = "30,60,90,180"
 top_horizon_days = 60
 # Hex mean depth (m) below which a hex counts as within the Fucus viable band.
 viable_depth_m = 3.0
+# Share q of the cumulative particle-time whose holding area table F reports;
+# the 026 areas CSV rows at other q are filtered out.
+area_quantile = 0.9
 # Number of largest emitters per season in table C's top-target comparison.
 n_top_origins = 4
 # Release season the map figures are shown for.
@@ -635,7 +638,10 @@ generically: `scope` splits pooled from per-year rows, every float column
 other than `q` is a reported value (`area_km2`, `length_km`), and every
 remaining column is a row key — so a key column the export gains later
 (an origin subbasin, say) becomes a row of this table without an edit
-here. A cell is the pooled value with the per-year min–max in brackets.
+here. Only the rows at `area_quantile` are reported — an export written
+with more shares still carries the others, and they are filtered, not
+assumed absent. A cell is the pooled value with the per-year min–max in
+brackets.
 
 ```python
 area_rows = []
@@ -651,6 +657,10 @@ for regime in regimes:
             )
         )
 areas = pd.concat(area_rows, ignore_index=True) if area_rows else pd.DataFrame()
+if not areas.empty:
+    areas = areas[np.isclose(areas.q, area_quantile)]
+    if areas.empty:
+        gaps.append(f"table F: no rows at q = {area_quantile:g} in the 026 areas exports")
 
 table_f_md = {}
 if not areas.empty:
@@ -1053,7 +1063,8 @@ sections += [
     "## Table F — area holding a share of the cloud",
     "",
     "From `Exports/026/026_areas_<regime>_<season>_<weighting>.csv`: the smallest water area "
-    "holding a share `q` of the cumulative particle-time at ages < each horizon (hexes ranked by "
+    f"holding a share q = {area_quantile:g} of the cumulative particle-time at ages < each "
+    "horizon (hexes ranked by "
     "density, the crossing hex taken fractionally); `length_km` = √area. Pooled over the release "
     "years, per-release-year min–max in brackets. It ranks cumulative particle-time, so it "
     "measures concentration, not spread: where drifters accumulate in few hexes the area can "

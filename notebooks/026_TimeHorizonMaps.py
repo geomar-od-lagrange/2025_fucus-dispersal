@@ -86,8 +86,9 @@ max_age_days = 180
 # age_bin_days and ≤ max_age_days.
 time_horizons_days_csv = "30,60,90,180"
 # Shares of the weight whose smallest holding water area is reported per
-# horizon (comma-separated, each in (0, 1]).
-area_quantiles_csv = "0.5,0.9"
+# horizon (comma-separated, each in (0, 1]). 0.9 only: the 0.5 area is set by
+# particles stalling in a few coastal hexes (docs/visualisations.md).
+area_quantiles_csv = "0.9"
 
 # Isobath to overlay on every panel, in metres of BSH H0 (floor position,
 # see docs/h0_semantics.md). Fucus vesiculosus no longer grows below ~3 m.

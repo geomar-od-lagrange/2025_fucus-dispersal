@@ -16,7 +16,7 @@ listed here should be dropped.
 | 022 | Distance vs. time | Overlaid (`hue="regime"`) | Global · Per subbasin · German waters · Per quarter |
 | 023 | Density + mean-age maps | Per-run (papermill regime) | Whole Baltic · Per subbasin · German waters · Per quarter |
 | 025 | Hex relative-density maps | Per-run (regime + season + radius + member) | Baltic percentage+dilution · German-waters zoom · per origin subbasin |
-| 026 | Hex time-horizon relative-density maps | Per-run (regime + season + radius + member) | Cumulative elapsed-time horizons (30/60/90/180 d), all release years pooled · area holding 50/90 % of the cloud (CSV) |
+| 026 | Hex time-horizon relative-density maps | Per-run (regime + season + radius + member) | Cumulative elapsed-time horizons (30/60/90/180 d), all release years pooled · area holding 90 % of the cloud (CSV) |
 | 026a | 026 per origin subbasin | Per-run (regime + season + radius + member) | One percentage and one dilution figure per origin (HELCOM) subbasin |
 | 026b | 026a per origin subbasin and year | Per-run (regime + season + radius + member) | One percentage and one dilution figure per (origin subbasin, release year) |
 | 027 | Hex distance-quantile maps | Per-run (regime + radius + season) | One 1xN panel row, one panel per quantile (0.1/0.5/0.9), the season's releases pooled across years |
@@ -26,7 +26,7 @@ listed here should be dropped.
 | 031 | Beaching sweep | Per-run (regime + radius + season) | Five statistics across members with interannual bars · where-stranded maps across members |
 | 032 | None — selects, numbers and downscales other notebooks' PNGs | Selection (primary + comparison regime) | Tables A–G · one curated reading order over 025–031 |
 | 033 | Hex shoreline-type map + stranding-vs-substrate panels | Per-run (regime + radius + season + member pair) | Flat fraction per hex · coastline length per hex · stranded weight vs. flat fraction for the production and the substrate-inert member |
-| 034 | Bottom-slowdown comparison | Two regimes (`bottom` vs `bottom_vs0p8`) + one year + radius | Area / √area holding 50/90 % of particle-time at 30/60/90/180 d · map pair at 90 d |
+| 034 | Bottom-slowdown comparison | Two regimes (`bottom` vs `bottom_vs0p8`) + one year + radius | Area / √area holding 90 % of particle-time at 30/60/90/180 d · map pair at 90 d |
 
 ## Cross-cutting choices
 
@@ -241,7 +241,7 @@ and ≤ `max_age_days` — a tighter snapshot means rebuilding 024, not a
 different plot.
 
 **Area holding a share of the cloud.** Per horizon `T` and share
-`q ∈ {0.5, 0.9}` (`area_quantiles_csv`): hexes ranked by density
+`q` (`area_quantiles_csv`, default 0.9 only): hexes ranked by density
 `weight / water_area_m2` descending, weight accumulated until it reaches
 `q`, and their water area summed — the smallest water area holding a share
 `q` of the cumulative weight. The hex that crosses `q` counts only the
@@ -256,8 +256,10 @@ partitions hold no release in the season (the partial last release year
 has no JJA or SON) is dropped and reported. The ranking is over cumulative
 particle-time, so the area measures concentration, not spread: where
 drifters accumulate in few hexes (coastal trapping), later horizons add
-weight there and the area can shrink as `T` grows. No figure: the CSV
-feeds 032.
+weight there and the area can shrink as `T` grows. Only `q = 0.9` is
+reported: under advection-only physics the 0.5 area is dominated by particles
+stalling in a few coastal hexes and is hard to interpret. No figure: the CSV
+feeds 032 (table F, which filters the CSV to its own `area_quantile`).
 
 ## Notebook 026a — per origin subbasin (special case)
 
@@ -548,7 +550,7 @@ Every number is **recomputed**, never transcribed:
 | C | `Σw_obs/Σn_obs` per season and cumulative horizon (`connectivity_horizons_csv`, 30/60/90/180 d), plus the top-target comparison at `top_horizon_days` (60 d) | `HexAgg_survconn_*`, `Exports/028/*.csv` |
 | D | median over source hexes of each displacement quantile | `Exports/027/*.geojson` |
 | E | concentration and viable-band share at `horizon_days` (180 d) | `Exports/026/026_<regime>_<season>_<weighting>_T<h>d.geojson` + the 024a key |
-| F | water area (and its √) holding `q` of the cumulative particle-time per horizon, pooled [per-year min–max] | `Exports/026/026_areas_<regime>_<season>_<weighting>.csv` |
+| F | water area (and its √) holding `area_quantile` (0.9) of the cumulative particle-time per horizon, pooled [per-year min–max]; CSV rows at other `q` are filtered out | `Exports/026/026_areas_<regime>_<season>_<weighting>.csv` |
 | G | afloat % per origin subbasin per horizon, pooled [per-year min–max], plus the basin-wide row per season | `Exports/029/afloat_by_origin_<regime>_<season>_<member>.csv` |
 
 `<weighting>` is the regime's 025/026 tag: the production member where the
@@ -717,7 +719,9 @@ variant exists for one release year and one release per month, so **both
 sides are cut to those release doys** (`release_doys_csv`); a doy missing from
 either counts partition raises rather than shrinking one side. Parquet only.
 
-- **Footprint table and CSV** — the area holding `q` ∈ {0.5, 0.9} of the
+- **Footprint table and CSV** — the area holding `q` (default 0.9 only, as
+  in 026: the 0.5 area is dominated by particles stalling in a few coastal
+  hexes) of the
   particle-time accumulated by `T` (cumulative `[0, T)`, as in 026): hexes
   ranked by `n_obs / water_area_m2` descending, zero-water hexes first at zero
   area, the crossing hex taken fractionally; `length_km = √area_km2`.

@@ -142,7 +142,7 @@ filename.
   release season per run with every release year pooled, from the 024
   counts (unweighted) or 024f (survival-weighted, via the `member`
   parameter) store (025), the same at cumulative elapsed-time horizons via
-  the `age_bin` axis plus the water area holding 50/90 % of the cloud
+  the `age_bin` axis plus the water area holding 90 % of the cloud
   (026), split per origin subbasin (026a) and per origin subbasin ×
   release year (026b), per-source-hex crow-flies distance
   quantiles via the 024b store (027), the subbasin connectivity views from
@@ -154,7 +154,7 @@ filename.
   across members (031).
 - `notebooks/034_*` — bottom-slowdown illustration: `bottom` against the
   `bottom_vs0p8` variant (010 at `velocity_scale = 0.8`) on the same
-  release doys of one year, area holding 50/90 % of particle-time per
+  release doys of one year, area holding 90 % of particle-time per
   horizon plus a map pair, from the 024 counts store.
 
 ## Data access
