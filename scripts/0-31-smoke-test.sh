@@ -228,9 +228,9 @@ pixi run papermill notebooks/027_HexDistanceQuantiles.ipynb \
 #     age_bin_days. With a 1 d window, age_bin_days must be 1 d (the default
 #     10 d would put the whole window in a partial bin), so 029/030/031 are
 #     run at age_bin_days 1 too: 029's horizons are cumulative-to-T
-#     (beach_age_bin < h // age_bin_days) and so must be >= 1 d, while 030's
-#     are snapshots (age_bin == h // age_bin_days) and 0 d is the only bin a
-#     1 d window populates.
+#     (beach_age_bin < h // age_bin_days) and 030's are the snapshot bin
+#     ending at T (age_bin == h // age_bin_days - 1), so 1 d is the one
+#     horizon a 1 d window populates for both.
 # Rate-model member: the notebook defaults, whose tag is step_wc0p1_ts3_tcinf_tf1_tw0.
 SMOKE_MEMBER="step_wc0p1_ts3_tcinf_tf1_tw0"
 
@@ -320,8 +320,10 @@ pixi run papermill notebooks/028_SubbasinConnectivityMatrix.ipynb \
 # 029/030 pool the monthly partitions of one member for one season, at the
 # reducers' age_bin_days of 1 d. Only age bin 0 exists in a 4 h run, so both
 # take the "1 d" horizon: 029 cumulatively (strandings in bins before 1 d) and
-# 030 as the snapshot bin ending at 1 d (ages in [0, 1) d). 031 sweeps a
-# one-member list.
+# 030 as the snapshot bin ending at 1 d (ages in [0, 1) d). 029's
+# substrate-inert contrast member was not built here, so it is switched off
+# with contrast_member "" (-r, as for 028's member). 031 sweeps a one-member
+# list.
 echo
 echo "==== 029 BeachingMaps (surface_stokes) ===="
 pixi run papermill notebooks/029_BeachingMaps.ipynb \
@@ -330,6 +332,7 @@ pixi run papermill notebooks/029_BeachingMaps.ipynb \
     -p regime surface_stokes \
     -r season ALL \
     -p member "${SMOKE_MEMBER}" \
+    -r contrast_member "" \
     -p age_bin_days 1 \
     -r time_horizons_days_csv "1" \
     --cwd notebooks/
@@ -355,8 +358,8 @@ pixi run papermill notebooks/031_BeachingSweep.ipynb \
     -r season ALL \
     -p members_csv "${SMOKE_MEMBER}" \
     -p age_bin_days 1 \
-    -p labels_csv "" \
-    -p baseline_member "" \
+    -r labels_csv "" \
+    -r baseline_member "" \
     --cwd notebooks/
 
 echo
