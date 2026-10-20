@@ -15,6 +15,12 @@ Implements the cross-cutting decisions of
   `occupancy_max_days` renamed and 024d/029 "viability window" comments
   reworded to keep the grep clean; 030's `drifting_fraction_curve` and
   per-bin table now sum over all origins and the sentinel (step 3).
+- Step 5 stores submitted 2026-10-20 (step 1 reviewed: bit-identical to
+  the old stores on the shared window): 024a `24456829`; 024c
+  `24456830`–`24456853` (24, afterok 024a); 024efg `24456854` (2825 cells,
+  292 tasks, afterok 024a). Consumers wait for steps 2–4. Don't edit
+  `notebooks/024e/f/g*.ipynb` or switch branches while 024efg runs: each
+  cell reads the notebook from disk when it starts.
 
 ## Design decisions
 
