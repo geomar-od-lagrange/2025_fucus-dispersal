@@ -16,7 +16,7 @@ Annotate inline with `> **WR:** …` under any item; open choices are marked
 
 ## Status
 
-- Phase A done as `paper/` commit `c20edb2` (comment-only: FACTS blocks
+- Phase A done as `paper/` commits `c20edb2`, `addc0c8` (comment-only: FACTS blocks
   current to `6d854cb`, `[STALE]` flags on four prose sentences). Not yet
   pushed to Overleaf; the superproject gitlink moves only after that push.
 - Phases B and C decided yes; cross-cutting decisions recorded under Phase B.
