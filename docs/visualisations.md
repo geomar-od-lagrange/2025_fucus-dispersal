@@ -451,14 +451,15 @@ resulting hex dilation shrink as resolution rises.
   is **wall-like relative to the domain** (`fucus_area_m2`-weighted mean `ff`
   0.427 against a domain mean of 0.527; 57 % of release cells on hexes with
   `ff < 0.5`), while under the production member the deposit sits on flat
-  coast (`ff` 0.824, 84 % of weight on flat hexes) — and the substrate-inert
-  member deposits at `ff` 0.413, i.e. **the flat bias is the rate model's trap
+  coast (`ff` 0.801, 80.6 % of weight on flat hexes) — and the substrate-inert
+  member deposits at `ff` 0.389, i.e. **the flat bias is the rate model's trap
   term, not the drift**, which is exactly why both members are printed. The
-  two share the same transport signal, visible in the subbasin table: the
-  Swedish east coast and Bothnian/Åland basins hold ~33 % of the release cells
-  and receive ~2.5 % of the production stranded weight, the Danish straits and
-  the German/Polish coast the reverse. Reading the per-hex correlation behind
-  this is 033's job; 029 states the two means so the overlaid map has numbers
+  subbasin table shows where the two diverge: Western Gotland Basin, Bothnian
+  Sea and Åland Sea hold 33.3 % of the release cells and receive 5.6 % of the
+  production stranded weight (29.5 % inert), while under production Great
+  Belt and Gulf of Finland receive more than they release (10.7 → 16.7 %,
+  10.6 → 19.5 %). Numbers from the `ALL` run, release years 2016–2024, 180 d
+  window. Reading the per-hex correlation behind this is 033's job; 029 states the two means so the overlaid map has numbers
   attached.
 - **Stranded share per source hex** — % of each hex's own released drifters
   stranded within the window, in [0, 100], so the default linear norm, no

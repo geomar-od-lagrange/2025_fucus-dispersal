@@ -96,7 +96,7 @@ the window is the never-beached residual.
 |---|---|---|
 | `w_c` | onshore Stokes above which stranding is on (m/s) | against the measured in-band forcing (p75 0.057, p90 0.088, p99 0.15 m/s); **the** sweep axis |
 | `tau_strong_hours` | e-folding time while `w_on ≥ w_c` | hours; below ~6 h everything in band during a strong-wave event strands and the value stops mattering |
-| `tau_calm_days` | background in-band rate regardless of forcing; 0 = off | ∞ or O(1 yr); a year loses 15 % over 60 d, so it is a real axis |
+| `tau_calm_days` | background in-band rate regardless of forcing; 0 = off | ∞ or O(1 yr); a year drains 39 % over the 180 d window, so it is a real axis |
 | `delta` | linear edge width around `w_c` | 0 (hard step) by default; `≈0.02` checks against nearest-hour / nearest-cell sampling noise |
 | `trap_flat`, `trap_wall` | strong-wave rate factor on a fully flat / fully walled cell; the realised factor is `trap_wall + (trap_flat − trap_wall)·ff/100` | **1.0 / 0.0** at the production point: the rate is proportional to the substrate's flat fraction and pure-wall shore retains nothing. `1.0 / 1.0` keeps the term inert (the wave field alone sets the rate); every member with a weight ≠ 1 names both in its tag |
 | `band_m` | near-shore band width (m), ≤ the sidecar's `band_max_m` | 2000; quantised by the mask — on the 5 km coarse grid 1–4 km all select the same first cell ring, so sweep it coarsely and report fine nest and coarse regions apart |
@@ -232,149 +232,128 @@ The reducer defaults: `w_c = 0.10` m/s, `τ_strong = 3 h`, `τ_calm = ∞`,
 `w_c = 0.10` is the p93 of onshore Stokes over in-band hours, so 3.9 % of
 in-band hours are strong-wave hours; `trap = ff/100` then decides how much of
 each such hour a given shore can convert into stranding. Pooled over
-`surface_stokes` release years 2016–2025 (38.94 M real drifters), with the
-substrate-inert member (`trap_flat = trap_wall = 1`, tag
-`step_wc0p1_ts3_tcinf`) beside it for scale:
-
-*Measured with a 60 d window; refreshed after the 180 d rebuild ([horizons_and_weighting.md](../plans/horizons_and_weighting.md) step 5).*
+`surface_stokes` release years 2016–2024 (37.30 M released water-seeded
+drifters, Σweight) over the 180 d window, with the substrate-inert member
+(`trap_flat = trap_wall = 1`, tag `step_wc0p1_ts3_tcinf`) beside it for
+scale — the first five rows from `031` (season `ALL`), the last from `033`
+(season `ALL`):
 
 | quantity | production `…_tf1_tw0` | substrate inert |
 |---|---|---|
-| beached within 60 d | **41.6 %** | 76.9 % |
-| hexes receiving stranded weight | 1 207 (1 179 with weight > 1) | 1 824 (1 781) |
-| Gini of stranded weight over hexes | 0.68 | 0.63 |
-| median stranding age (weight-weighted) | 7.0 d | 6.4 d |
-| median displacement at stranding | 46.6 km | 40.9 km |
-| stranded weight on `flat` hexes (`ff ≥ 50`) | 86.0 % | 41.8 % |
+| stranded within 180 d | **54.3 %** | 93.0 % |
+| hexes receiving stranded weight | 1 221 | 1 841 |
+| Gini of stranded weight over hexes | 0.695 | 0.639 |
+| median stranding age (weight-weighted, 10 d bins) | 14.9 d | 11.4 d |
+| median displacement at stranding | 71.1 km | 51.5 km |
+| stranded weight with `shore_type = flat` (stranding-site `ff ≥ 50`) | 82.8 % | 39.2 % |
 
 The Gini is computed over hexes that *receive* weight — zero-weight hexes are
 dropped, so it measures concentration among receiving hexes, not over the
 whole coast; the hex count above it is what anchors that scale. 0 = every
 receiving hex takes an equal share, 1 = one hex takes everything.
 
-83.7 % of drifters are ever in band during a strong-wave hour (a property of
-`w_c` and `band_m` alone, measured on the 2016–2019 sidecars; the trap weights
-cannot change it). At the inert weights the beached total nearly saturates
-that exposure share — 76.9 % against 83.7 %, the exposure limit at work, with
-`w_c` alone setting the total. At the production point the two decouple:
-41.6 % against the same 83.7 %, because half of the exposed coastline is wall
-enough to retain little or nothing. **Substrate, not wave exposure, is what
-caps the production beached fraction.**
+83.7 % of drifters are ever in band during a strong-wave hour within their
+first 60 d (a property of `w_c` and `band_m` alone, measured on the 2016–2019
+sidecars; the trap weights cannot change it). Over the 180 d window the inert
+member strands 93.0 %, so that 60 d exposure share is no ceiling here. At the
+same `w_c` the production total is 54.3 %: the trap axis below takes the total
+from 93.0 % (`trap_wall = 1`) to 54.3 % (`trap_wall = 0`) with the wave
+forcing unchanged. **Substrate, not wave exposure, is what caps the
+production beached fraction.**
 
 Neither `w_c` nor the trap weights are calibrated — there is no observational
 constraint on either in this study — so both are reported as ranges below.
 
-Release season still orders the beached fraction, but it no longer dominates
-it (beached %, releases pooled over years / months):
-
-*Measured with a 60 d window; refreshed after the 180 d rebuild ([horizons_and_weighting.md](../plans/horizons_and_weighting.md) step 5).*
-
-| release month | Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | Dec |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| production `…_tf1_tw0` | 41 | 40 | 39 | 38 | 39 | 39 | 39 | 41 | 46 | 45 | 46 | 46 |
-| substrate inert | 71 | 71 | 72 | 66 | 69 | 71 | 75 | 85 | 90 | 89 | 88 | 81 |
-
-*Measured with a 60 d window; refreshed after the 180 d rebuild ([horizons_and_weighting.md](../plans/horizons_and_weighting.md) step 5).*
-
-| release year | 2016 | 2017 | 2018 | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| production `…_tf1_tw0` | 43 | 42 | 41 | 42 | 42 | 45 | 39 | 40 | 39 | 46 |
-| substrate inert | 74 | 79 | 74 | 77 | 85 | 79 | 72 | 76 | 75 | 80 |
-
-Cumulative beached fraction by 60 d per release season, pooled 2016–2025,
-with the per-release-year min–max in brackets:
-
-*Measured with a 60 d window; refreshed after the 180 d rebuild ([horizons_and_weighting.md](../plans/horizons_and_weighting.md) step 5).*
+Stranded within 180 d per release season, pooled over 2016–2024 with the
+per-release-year min–max in brackets (production: `032` table A; inert: the
+`031` run of each season):
 
 | season | production `…_tf1_tw0` | substrate inert |
 |---|---|---|
-| DJF | 42 % [35–51] | 74 % [65–89] |
-| MAM | 39 % [33–49] | 69 % [62–80] |
-| JJA | 40 % [34–45] | 77 % [66–81] |
-| SON | 46 % [39–53] | 89 % [83–93] |
-| ALL | 42 % [39–46] | 77 % [72–85] |
+| DJF | 50.9 % [45.2–60.0] | 88.8 % [83.9–94.7] |
+| MAM | 57.3 % [48.6–68.4] | 93.0 % [90.0–95.7] |
+| JJA | 55.6 % [49.1–63.1] | 95.9 % [93.4–97.5] |
+| SON | 53.1 % [43.5–64.5] | 94.4 % [90.3–97.4] |
+| ALL | 54.3 % [49.3–59.1] | 93.0 % [90.1–95.8] |
 
-This is the second substantive consequence of the trap term. At the inert
-weights the seasonal spread is 20 points (MAM 69 % → SON 89 %) against ~5
-points of interannual spread, which is why the seasonal split is the primary
-product. At the production point the spread is 7 points (39 % → 46 %) and the
-interannual min–max *within* a season is as wide or wider (SON 39–53). Autumn
-still meets the strong-wave season inside the 60 d window, but the extra
-exposure falls largely on shore the trap term does not let strand, so the
-**total** is no longer a strongly seasonal quantity. The seasonal split stays
-the primary product for *where* material strands — that is a map question, not
-a scalar one — but the pooled-year beached fraction is no longer an average of
-two distinct regimes.
+Over 180 d the release season barely orders the total: the seasonal spread is
+6.4 points at production (DJF → MAM) and 7.1 points at the inert weights
+(DJF → JJA), while the interannual min–max within one season reaches 21.0
+points (production SON). The seasonal split stays the primary product for
+*where* material strands — a map question, not a scalar one. The production
+fraction per release year and season is `032`'s table A
+(`Headline/HEADLINE.md`); the cumulative curve against age, with its
+interannual band, is `029`'s `BeachedFractionCurve_*` (production `ALL`:
+32.4 % by 30 d, 41.4 % by 60 d, 46.4 % by 90 d, 54.3 % by 180 d). No consumer
+tabulates the fraction per release month.
 
 ## Sensitivity
 
 Two independent axes, each swept over the 113 partitions per member (`031`,
-`Figures/031/`), `surface_stokes`, release years 2016–2025. Every member on the
-wave axis was built at the **inert** trap weights, so their Spearman column is
-against the inert `w_c = 0.10` member, not against production; no wave member
-has been rebuilt at the production trap point, and mixing the two axes in one
-table would compare members that differ in two knobs at once.
+`Figures/031/`), `surface_stokes`, release years 2016–2024, 180 d window,
+season `ALL`. Every member on the wave axis was built at the **inert** trap
+weights, so it compares against the inert `w_c = 0.10` member, not against
+production; no wave member has been rebuilt at the production trap point, and
+mixing the two axes in one table would compare members that differ in two
+knobs at once. `031` reports totals and per-member summaries, not per-hex rank
+correlations between members; the pattern is read off its
+`BeachingSweepMaps_*` panels.
 
 ### Wave axis, at `trap_flat = trap_wall = 1`
 
-`τ_strong` in hours, `τ_calm` in days, Spearman = per-hex stranded weight
-against the inert `w_c = 0.10` member over the union of receiving hexes. Gini
-is over hexes that receive weight (see Production setting above); it rises with
-`w_c` because a higher threshold keeps only the wave-exposed shores:
+`τ_strong` in hours, `τ_calm` in days, median age and displacement
+weight-weighted over the stranded weight. Gini is over hexes that receive
+weight (see Production setting above); it rises with `w_c` because a higher
+threshold keeps only the wave-exposed shores:
 
-*Measured with a 60 d window; refreshed after the 180 d rebuild ([horizons_and_weighting.md](../plans/horizons_and_weighting.md) step 5).*
+| member | stranded % | Gini | hexes | median age (d) | median displacement (km) |
+|---|---|---|---|---|---|
+| `w_c = 0.05` | 99.4 | 0.587 | 1 840 | 5.0 | 25.2 |
+| `w_c = 0.075` | 98.3 | 0.606 | 1 844 | 5.0 | 35.8 |
+| **`w_c = 0.10`** (reference) | **93.0** | **0.639** | **1 841** | **11.4** | **51.5** |
+| `w_c = 0.15` | 57.8 | 0.720 | 1 804 | 30.6 | 79.3 |
+| `w_c = 0.05`, `τ_calm = 365` | 99.6 | 0.680 | 2 386 | 5.0 | 25.0 |
+| `w_c = 0.075`, `τ_calm = 365` | 98.8 | 0.694 | 2 397 | 5.0 | 35.2 |
+| `w_c = 0.10`, `τ_calm = 365` | 95.3 | 0.718 | 2 397 | 11.5 | 50.1 |
+| `w_c = 0.15`, `τ_calm = 365` | 71.7 | 0.764 | 2 399 | 36.2 | 75.8 |
+| `w_c = 0.10`, `τ_strong = 1` | 95.4 | 0.615 | 1 832 | 7.7 | 43.0 |
+| `w_c = 0.10`, `τ_strong = 12` | 84.0 | 0.690 | 1 842 | 21.8 | 68.4 |
+| `w_c = 0.10`, `δ = 0.02` | 93.7 | 0.637 | 1 844 | 10.9 | 50.3 |
 
-| member | beached % | Gini | hexes | Spearman |
-|---|---|---|---|---|
-| `w_c = 0.05` | 94.5 | 0.58 | 1 828 | 0.94 |
-| `w_c = 0.075` | 89.4 | 0.60 | 1 829 | 0.98 |
-| **`w_c = 0.10`** (reference) | **76.9** | **0.63** | **1 824** | 1 |
-| `w_c = 0.15` | 37.4 | 0.71 | 1 780 | 0.92 |
-| `w_c = 0.10`, `τ_calm = 365` | 79.1 | 0.70 | 2 331 | 0.99 |
-| `w_c = 0.10`, `τ_strong = 1` | 82.5 | 0.61 | 1 819 | 0.99 |
-| `w_c = 0.10`, `τ_strong = 12` | 61.1 | 0.67 | 1 826 | 0.98 |
-| `w_c = 0.10`, `δ = 0.02` | 78.2 | 0.63 | 1 826 | 0.9998 |
-
-- **`w_c` is the axis on this side.** It moves the total from 37 % to 94 %
-  across p72–p99 of the forcing and is the only wave knob that reorders the
-  map: adjacent values share 84–88 of the top-100 stranding hexes, `0.10` vs
-  `0.15` share 55.
-- **`τ_strong` scales the total, not the pattern** (Spearman ≥ 0.98 from
-  1 h to 12 h); below ~6 h it is irrelevant.
-- **`τ_calm = 1 yr`** adds ~2 points and ~500 low-weight hexes (2 331 against
-  1 824) by draining calm-water residents; it changes where nothing else
-  strands.
-- **`δ`** is noise-level: keep the hard step.
+- **`w_c` is the axis on this side.** Across p72–p99 of the forcing it moves
+  the total from 57.8 % to 99.4 % and the median stranding age from 31 d to
+  5 d.
+- **`τ_strong` scales the total** (95.4 % at 1 h, 93.0 % at 3 h, 84.0 % at
+  12 h); below ~6 h everything in band during a strong-wave event strands.
+- **`τ_calm = 1 yr`** adds 0.2–13.9 points (most at `w_c = 0.15`, where the
+  waves strand least) and ~550 receiving hexes (2 386–2 399 against
+  1 804–1 844) by draining calm-water residents.
+- **`δ`** is noise-level (+0.7 points): keep the hard step.
 
 ### Trap (substrate) axis, at `w_c = 0.10`, `τ_strong = 3 h`
 
 `trap_wall` swept at `trap_flat = 1` — pure-flat shore keeps the full
-strong-wave rate, pure-wall shore traps at a fraction of it. Spearman and the
-top-100 overlap are per `beach_hex` stranded weight against the **production**
-member, over the union of receiving hexes (n = 1 824):
+strong-wave rate, pure-wall shore traps at a fraction of it (stranded %, `032`
+table B; hexes, `031` `ALL`):
 
-*Measured with a 60 d window; refreshed after the 180 d rebuild ([horizons_and_weighting.md](../plans/horizons_and_weighting.md) step 5).*
+| member | stranded, ALL | stranded, SON | hexes |
+|---|---|---|---|
+| `step_wc0p1_ts3_tcinf` (inert) | 93.0 | 94.4 | 1 841 |
+| `…_tf1_tw0p5` | 90.6 | 92.0 | 1 842 |
+| `…_tf1_tw0p25` | 86.9 | 88.2 | 1 842 |
+| **`…_tf1_tw0`** (production) | **54.3** | **53.1** | **1 221** |
 
-| member | beached, ALL | beached, SON | hexes | Spearman | top-100 shared |
-|---|---|---|---|---|---|
-| `step_wc0p1_ts3_tcinf` (inert) | 0.769 | 0.891 | 1 824 | 0.32 | 40 |
-| `…_tf1_tw0p5` | 0.725 | 0.851 | 1 824 | 0.37 | 45 |
-| `…_tf1_tw0p25` | 0.668 | 0.793 | 1 824 | 0.45 | 56 |
-| **`…_tf1_tw0`** (production) | **0.416** | **0.456** | **1 207** | 1 | 100 |
-
-Suppressing the wall rate to a quarter rescales the total (77 % → 67 %) and
-leaves the map almost alone — against the inert member those two intermediates
-score Spearman 0.996 and 0.981. The last step, to `trap_wall = 0`, is where the
-model changes character rather than degree: 617 of the 1 824 receiving hexes
-stop receiving anything, the total falls 46 % relative, the stranded weight
-moves from 42 % to 86 % `flat`, and the per-hex ranking against the inert
-member drops to Spearman 0.32 with 40 of its top-100 hexes shared. **`trap_wall`
-is not a smooth knob near zero**: `tw0` is a different model, not a
-perturbation of the inert baseline, and the intermediates
-(`…_tf1_tw0p25`, `…_tf1_tw0p5`) are what bracket the space between them.
+Suppressing the wall rate to a quarter rescales the total (93.0 % → 86.9 %)
+and keeps the receiving set. The last step, to `trap_wall = 0`, is where the
+model changes character rather than degree: the receiving set shrinks from
+1 841 to 1 221 hexes, the total falls to 54.3 %, and the stranded weight
+moves from 39.2 % to 82.8 % `flat` (`033`). **`trap_wall` is not a smooth
+knob near zero**: `tw0` is a different model, not a perturbation of the inert
+baseline, and the intermediates (`…_tf1_tw0p25`, `…_tf1_tw0p5`) are what
+bracket the space between them.
 
 **The beached fraction is not a reportable number**; the pattern and the
-member range are.
+member range (54.3–99.6 % over the 14 members, `ALL`) are.
 
 ## Limitations
 
@@ -385,14 +364,14 @@ CLMS classification, or in any observation available here, says that: it says
 which substrate is there, not what its retention rate is. The choice is
 defensible as one end of the plausible range — hard reflective shore in a
 tide-free basin gives drifting thalli little to lodge in — but it is the
-strongest statement the parameterisation can make, and it costs 46 % of the
-beached total and 617 of 1 824 stranding hexes relative to the substrate-inert
-member (see Trap sensitivity above, where the per-hex Spearman between the two
-is 0.32). The intermediate members `…_tf1_tw0p25` and `…_tf1_tw0p5` are built
-for every release year and bracket the cases where wall shore retains at a
-reduced but non-zero rate: they put the beached fraction at 67 % and 72 %
-against production's 42 % and the inert member's 77 %, while their stranding
-map stays within Spearman 0.98 of the inert one. Anything that depends on the
+strongest statement the parameterisation can make: relative to the
+substrate-inert member it takes the beached total from 93.0 % to 54.3 % and
+the stranding hexes from 1 841 to 1 221 (see Trap sensitivity above). The
+intermediate members `…_tf1_tw0p25` and `…_tf1_tw0p5` are built for every
+release year and bracket the cases where wall shore retains at a reduced but
+non-zero rate: they put the beached fraction at 86.9 % and 90.6 % against
+production's 54.3 % and the inert member's 93.0 %, on the inert member's
+receiving set (1 842 hexes). Anything that depends on the
 *absolute* stranded amount, or on stranding at a specific wall-dominated
 stretch, must be read across that set of four rather than off production
 alone.
