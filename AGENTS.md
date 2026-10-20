@@ -142,8 +142,8 @@ filename.
   release season per run with the `release_years` (2016–2024) pooled, from the 024
   counts (unweighted) or 024f (survival-weighted, via the `member`
   parameter) store (025), the same at cumulative elapsed-time horizons via
-  the `age_bin` axis plus the water area holding 90 % of the cloud
-  (026), split per origin subbasin (026a) and per origin subbasin ×
+  the `age_bin` axis plus the mean particle age per hex and the water area
+  holding 90 % of the cloud (026), split per origin subbasin (026a) and per origin subbasin ×
   release year (026b), per-source-hex crow-flies distance
   quantiles via the 024b store (027), the subbasin connectivity views from
   the 024c (unweighted) or 024g (survival-weighted, via the `member`
@@ -159,6 +159,9 @@ filename.
 - `notebooks/035_*` — area time series: the area holding 90 % of
   particle-time against the cumulative horizon, one line per regime with
   the interannual band, read from 026's area CSVs (so after 026).
+- `notebooks/036_*` — seeding map: the release cells by HELCOM subbasin
+  (the 024a key's assignment) and the land-seeded share per cell, read
+  from the first two time steps of one regime-year of trajectory zarrs.
 
 ## Data access
 
@@ -330,7 +333,7 @@ kwargs that override defaults until a real need shows up.** Concretely:
 - Prefer xarray's built-in plotting (`.plot`, `.plot.line`, `.plot.scatter`,
   faceting via `col=` / `row=` / `hue=`) over raw matplotlib.
 
-One standing exception: the `025`–`035` figure notebooks save print-ready
+One standing exception: the `025`–`036` figure notebooks save print-ready
 figures at a fixed 180 mm page width and 300 dpi, because those PNGs *are*
 the manuscript figures — see [docs/visualisations.md](docs/visualisations.md).
 

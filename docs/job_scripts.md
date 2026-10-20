@@ -26,6 +26,7 @@ executed notebook:
 output_root/Figures/
   025/  HexRelativeDensity[DE|ByOrigin]_<regime>_<season>_r<radius>m_<member-or-unweighted>[_part<n>].png
   026/  TimeHorizonMaps_<regime>_<season>_r<radius>m_<member-or-unweighted>_<percentage|dilution>.png
+        MeanAge_<regime>_<season>_r<radius>m_<member-or-unweighted>.png
   026a/ OriginSubbasinTimeHorizonMaps_<regime>_<season>_r<radius>m_<member-or-unweighted>_<subbasin>_<column>.png
   026b/ OriginSubbasinYearTimeHorizonMaps_<regime>_<season>_r<radius>m_<member-or-unweighted>_<subbasin>_<year>_<column>.png
   027/  DistanceQuantiles_<regime>_r<radius>m_<season>.png
@@ -34,6 +35,7 @@ output_root/Figures/
   030/  {SurvivalHeatmaps,SurvivalFraction,DriftingFractionCurve}_<regime>_r<radius>m_<season>_<member>.png
   031/  BeachingSweep{Stats,Maps}_<regime>_r<radius>m_<season>.png
   035/  AreaTimeSeries_<season>_r<radius>m.png
+  036/  SeedingMap_r<radius>m.png
 ```
 
 `figure_dir` is derived from the `output_root` parameter inside each notebook
@@ -45,7 +47,8 @@ the manuscript figure, not a preview (rationale in
 `025`–`029` and `033` additionally write machine-readable exports under
 `output_root/Exports/<stage>/`: GeoJSON (hex geometry, EPSG:4326) for the map
 products of `025`/`026`/`026a`/`026b`/`027`/`029`/`033`, long-form CSV for
-`028`'s connectivity matrices, `026`'s area-holding-a-share table
+`028`'s connectivity matrices, `026`'s mean particle age per hex
+(`026_meanage_<regime>_<season>_<member-or-unweighted>.geojson`), its area-holding-a-share table
 (`026_areas_<regime>_<season>_<member-or-unweighted>.csv`) and `029`'s afloat
 share per origin subbasin
 (`afloat_by_origin_<regime>_<season>_<member>.csv`).
@@ -439,6 +442,7 @@ away.
 | `029_BeachingMaps_job.sh`, `030_SurvivalHeatmaps_job.sh` | `[regime] [hex_radius] [member] [season]` |
 | `031_BeachingSweep_job.sh` | `[regime] [hex_radius] [members_csv] [labels_csv] [baseline_member] [season]` |
 | `035_AreaTimeSeries_job.sh` | `[season] [hex_radius] [member]` — draws `surface_stokes` at 026 tag `member` (default the production member) and `bottom` unweighted, from 026's area CSVs |
+| `036_SeedingMap_job.sh` | `[hex_radius]` — no season or member; also reads the first two time steps of one regime-year of trajectory zarrs (notebook defaults `surface_stokes` 2019). Not in the consumer driver: the release set does not change between runs |
 
 Every default is `regime=surface_stokes`, `hex_radius=6000`. `age_bin_days`,
 `max_age_days`, `time_horizons_days_csv`, `disp_bin_km` and the origin/year

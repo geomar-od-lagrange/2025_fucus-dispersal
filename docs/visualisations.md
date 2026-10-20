@@ -1,6 +1,6 @@
 # Visualisations: per-plot rationale
 
-Why each notebook in `020`–`035` shows what it shows, and where
+Why each notebook in `020`–`036` shows what it shows, and where
 styling overrides earn their deviation from
 [../AGENTS.md](../AGENTS.md)'s plotting rules. AGENTS.md states the
 **rules** (no `cmap=`, no `figsize=`, no `color=` literals); this doc
@@ -16,7 +16,7 @@ listed here should be dropped.
 | 022 | Distance vs. time | Overlaid (`hue="regime"`) | Global · Per subbasin · German waters · Per quarter |
 | 023 | Density + mean-age maps | Per-run (papermill regime) | Whole Baltic · Per subbasin · German waters · Per quarter |
 | 025 | Hex relative-density maps | Per-run (regime + season + radius + member) | Baltic percentage+dilution · German-waters zoom · per origin subbasin |
-| 026 | Hex time-horizon relative-density maps | Per-run (regime + season + radius + member) | Cumulative elapsed-time horizons (30/60/90/180 d), `release_years` pooled · area holding 90 % of the cloud at every age-bin edge (CSV) |
+| 026 | Hex time-horizon relative-density maps | Per-run (regime + season + radius + member) | Cumulative elapsed-time horizons (30/60/90/180 d), `release_years` pooled · mean particle age per hex over the window · area holding 90 % of the cloud at every age-bin edge (CSV) |
 | 026a | 026 per origin subbasin | Per-run (regime + season + radius + member) | One percentage and one dilution figure per origin (HELCOM) subbasin |
 | 026b | 026a per origin subbasin and year | Per-run (regime + season + radius + member) | One percentage and one dilution figure per (origin subbasin, release year) |
 | 027 | Hex distance-quantile maps | Per-run (regime + radius + season) | One 1xN panel row, one panel per quantile (0.1/0.5/0.9), the season's releases pooled across `release_years` |
@@ -28,6 +28,7 @@ listed here should be dropped.
 | 033 | Hex shoreline-type map + stranding-vs-substrate panels | Per-run (regime + radius + season + member pair) | Flat fraction per hex · coastline length per hex · stranded weight vs. flat fraction for the production and the substrate-inert member |
 | 034 | Bottom-slowdown comparison | Two regimes (`bottom` vs `bottom_vs0p8`) + one year + radius | Area / √area holding 90 % of particle-time at 30/60/90/180 d · map pair at 90 d |
 | 035 | Area time series | Overlaid (one line per regime, each at its 026 weighting tag) + season | Area / √area holding 90 % of particle-time vs. cumulative horizon, every age-bin edge, pooled line + per-year min–max band |
+| 036 | Seeding map | Regime-free (one radius) | The 872 release cells by HELCOM subbasin · land-seeded share per cell |
 
 ## Cross-cutting choices
 
@@ -176,7 +177,7 @@ where it covers; the coarse grid is blanked inside the fine bbox.
 Override: magenta at `linewidths=0.3` — anti-viridis, hairline so it does
 not read as a second coastline.
 
-**Print-ready figures (025–031, 033–035).** Every saved figure is one full
+**Print-ready figures (025–031, 033–036).** Every saved figure is one full
 text-width (180 mm) figure at 300 dpi: `fig.set_size_inches(180/25.4, h)`
 + `savefig(dpi=300)` ⇒ 2125 px wide. Deliberate break from the AGENTS.md
 "no figsize/dpi" rule: these panels are the manuscript figures.
@@ -284,6 +285,26 @@ dense horizon set costs one ranking per horizon, not one regrouping. No
 figure here: the CSV feeds 035 (the time series) and 032 (table F, which
 filters the CSV to its own `area_quantile`).
 
+**Mean particle age.** One map per run over the whole window: per hex,
+`Σ age_centre · weight / Σ weight` with `age_centre = (age_bin + 0.5) ·
+age_bin_days`, ages in `[0, max_age_days)`, from the same per-`(age_bin,
+target_hex)` reduction as the horizon maps, so a member run is
+survival-weighted and an unweighted run is plain residence. Default
+colormap on a linear scale over the mapped range; colorbar label `mean
+particle age (d)`. **Mask:** a hex is drawn only if its dilution at
+`T = max_age_days` reaches the 1st percentile that floors the window's
+dilution map (`dilution_norm`) — the hexes that map shows above its floor,
+zero-water hexes excluded. At production this drops ~1 % of hexes and
+0.1–0.3 % of the weight. Considered an absolute sample-count cut; rejected,
+a survival weight has no sample count and the two weightings would need two
+rules. The run prints the weight-weighted median of the hex mean ages, the
+unweighted median, the range and the basin-wide mean age. Unweighted, the
+basin-wide mean is the window midpoint (90 d at 180 d) up to the share that
+leaves the domain — a check on the reduction, not a result. Figure
+`MeanAge_<regime>_<season>_r<radius>m_<member|unweighted>.png`, export
+`026_meanage_<regime>_<season>_<member|unweighted>.geojson` (mapped hexes
+only, the window's `weight, percentage, dilution` plus `mean_age_days`).
+
 ## Notebook 026a — per origin subbasin (special case)
 
 026 emitted once per origin (HELCOM) subbasin, filtered on the **release**
@@ -314,7 +335,9 @@ GeoJSON (EPSG:4326, hex geometry) under `output_root/Exports/<nb>/`, named
 `<nb>_<regime>_<season>_<member|unweighted>[_T<horizon>d][_<origin>][_<year>].geojson`,
 columns `hex_id, weight, percentage, dilution` plus `origin_subbasin` /
 `release_year` where faceted. GeoJSON over GeoTIFF because the hex
-tessellation is vector. 026 also writes
+tessellation is vector. 026's mean-age export
+`026_meanage_<regime>_<season>_<member|unweighted>.geojson` adds
+`mean_age_days` (window-wide, no horizon facet). 026 also writes
 `026_areas_<regime>_<season>_<member|unweighted>.csv` with columns
 `horizon_days, q, scope, area_km2, length_km`, `scope` = `pooled` or a
 release year. Figures follow the same rule —
@@ -637,7 +660,10 @@ window. Sources: 024f at the production member for a weighted 025/026
 product, else the 024 counts; 024b for 027; 024c / 024g for unweighted /
 weighted 028; 024e for 029 and (every member) 031; 024f for 030. 035
 draws 026's area CSVs, so its sources are those CSVs, each checked against
-its own stores — a 035 figure drawn from a stale CSV is stale too. Considered recording input build ids in
+its own stores — a 035 figure drawn from a stale CSV is stale too. 036 has
+no store source and is checked against the 024a key alone (its subbasin
+assignment; the trajectory zarrs behind its land share are not tracked —
+the seeding does not change between runs). Considered recording input build ids in
 every product; rejected, mtime needs no consumer change (copying outputs
 without preserving mtimes defeats it).
 
@@ -815,6 +841,55 @@ parquet; it runs after 026 for every regime it draws.
 300 dpi; 032 picks the year-pooled season's figure. Considered drawing the
 series inside 026; rejected, 026 runs one regime at a time and the
 comparison is the point.
+
+## Notebook 036 — Seeding map (special case)
+
+[`036_SeedingMap`](../notebooks/036_SeedingMap.py) draws the release set for
+the paper's Data section: the 872 REDLIST cells `010` seeds from
+(`data/helcom_fucus_redlist/fucus_release_points.geojson`), as filled cell
+polygons on 029's Baltic extent, in two side-by-side panels.
+
+| panel | value | source |
+|---|---|---|
+| left | HELCOM level-2 subbasin of the cell | 024a key `helcom_subbasin` of the hex at the cell's representative point (029's mapping) |
+| right | land-seeded share of the cell's particles (%) | first two time steps of every trajectory zarr of `land_regime` / `land_release_year` (default `surface_stokes` 2019, 73 releases) |
+
+- **Land share from the zarrs.** 010 seeds cell-major, so trajectory `i`
+  belongs to cell `i // particles_per_cell`; a particle is land-seeded under
+  the pipeline's test (zero lon and lat displacement over the first step,
+  024's `release_hex = -1`). The 024 counts store holds the land-seeded total
+  but no cell id, so the zarrs are the only per-cell source; reading two
+  time steps of 73 zarrs takes seconds. One regime-year (7 300 particles per
+  cell) suffices: the BSH land mask is the same for every regime and release,
+  and the first three 2019 releases of all three regimes agree within
+  0.4 points (34.7–35.1 %). Pooled
+  34.9 %, matching the sentinel share of raw `n_obs`.
+- **Subbasin borders, not outlines.** The HELCOM polygons trace every island
+  of the coast they were digitised against, which in the Åland and Stockholm
+  archipelagos smears over the cells being shown; 036 draws only the edges
+  two polygons share. The Kattegat's open edge to the Skagerrak, shared with
+  no polygon, is therefore not drawn.
+- **Override: categorical palette beyond the default cycle.** 16 subbasins
+  hold cells; the default 10-colour cycle would give pairs of subbasins one
+  colour and the legend could not separate them. The palette is the default
+  cycle followed by `tab20`'s light tints of the same hues (the cycle's own
+  paired extension), with grey (index 7 of both) held back for the 3
+  `_outside` cells. Subbasins take colours in order of their cells' mean
+  latitude, so a hue and its tint go to a southern and a northern basin,
+  never to neighbours. Considered `tab20` in its native order; rejected, it
+  puts each hue next to its tint and adjacent basins would read as one.
+- **Override: subbasin borders** in mid-grey (`"0.5"`) at `linewidth=0.4`,
+  so a border reads neither as coastline (black, as 025–033) nor as a
+  category fill.
+- **Land-share panel**: default colormap, fixed `Normalize(0, 100)`, colorbar
+  right of the map (027/029/033 placement for the tall Baltic crop).
+- **Legend** under both panels, three columns, entries in colour order with
+  the cell count per subbasin.
+- A table of cells, share of cells and mean land-seeded share per subbasin is
+  printed; no export.
+
+`output_root/Figures/036/SeedingMap_r<radius>m.png`, 180 mm × 300 dpi; first
+entry of 032's figure list.
 
 ## Cross-references
 

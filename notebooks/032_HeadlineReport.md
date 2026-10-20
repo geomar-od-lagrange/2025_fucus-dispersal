@@ -51,7 +51,7 @@ A consumer export or figure older than the newest store partition it was
 reduced from is **stale** and is not used: it lands in the report's Gaps
 section, as a missing one does.
 
-No figure is drawn here — the manuscript figures are the `025`–`031` PNGs,
+No figure is drawn here — the manuscript figures are the `025`–`036` PNGs,
 and this stage only selects, numbers and downscales them.
 
 ```python
@@ -951,6 +951,15 @@ def horizons_on_disk(regime, season):
 
 figure_specs = [
     dict(
+        # The release set and its subbasins come from the data twin and the
+        # 024a key, so the key is the only staleness source.
+        notebook="036", stem="SeedingMap_r{radius}m", name="seeding_map",
+        sources=[],
+        note="The REDLIST release cells by HELCOM subbasin (the 024a key's shoreward rule, "
+        "cell counts in the legend), and the share of each cell's seeded particles that start "
+        "on BSH land and never move.",
+    ),
+    dict(
         notebook="025", stem="HexRelativeDensity_{regime}_{pooled}_r{radius}m_{tag}",
         name="density_baltic_{regime}_{pooled}",
         sources=heatmap_sources(primary_regime),
@@ -979,6 +988,22 @@ figure_specs = [
         note=f"The same for the comparison regime ({horizons_on_disk(other_regime, figure_season)} d, "
         f"{weighting_phrase(figure_fields['other_tag']) if other_regime else '—'}).",
         pairs_with="horizons_{regime}_{season}",
+    ),
+    dict(
+        notebook="026", stem="MeanAge_{regime}_{pooled}_r{radius}m_{tag}",
+        name="mean_age_{regime}_{pooled}",
+        sources=heatmap_sources(primary_regime),
+        note=f"Mean particle age per hex over ages < {max_age_days} d, "
+        f"{weighting_phrase(figure_fields['tag'])}: the weight-weighted mean of the age-bin "
+        "centres, release years pooled.",
+    ),
+    dict(
+        notebook="026", stem="MeanAge_{other_regime}_{pooled}_r{radius}m_{other_tag}",
+        name="mean_age_{other_regime}_{pooled}",
+        sources=heatmap_sources(other_regime),
+        note="The same for the comparison regime "
+        f"({weighting_phrase(figure_fields['other_tag']) if other_regime else '—'}).",
+        pairs_with="mean_age_{regime}_{pooled}",
     ),
     dict(
         notebook="035", stem="AreaTimeSeries_{pooled}_r{radius}m", name="area_time_series_{pooled}",
