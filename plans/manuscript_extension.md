@@ -55,13 +55,18 @@ authors' call.
 | main.tex RQ | notes Q | Results section (proposed) |
 |---|---|---|
 | — | Q1 surface vs. bottom | R1 Spread by buoyancy |
+<!-- Need to quantify this by e.g. a weighted area of the dispersal after a sequence of durations or by median travel distance or similar. -->
 | RQ1 where does it end up; RQ4 subbasin differences | Q2 sources/sinks | R2 Where material goes, by origin subbasin |
 | RQ4 | Q5 connectivity | R3 Connectivity between subbasins |
+<!-- Just as a connectivity table. Resolving different time horizons. (1, 2, 3, 6, 12 months) -->
 | RQ3 where it beaches; RQ2 beaching vs. open-sea distribution | Q4 beaching | R4 Beaching |
 | — | Q6 not beached | R5 What remains afloat |
+<!-- Remaining afloat as a total number per subbasin could be calculated. And then, the heatmaps and connectivity tables only count what managed to float to where it's counted. -->
 | — | Q3 seasons | cross-cutting axis in R1–R5, not its own section |
 
 **Decide:** adopt R1–R5 as the Results skeleton?
+
+<!-- YES. -->
 
 ## Phase C — Results skeleton in `main.tex`
 
@@ -70,6 +75,8 @@ One `\subsection` per agreed R-item, each with a commented figure slot
 numbers come from `032`'s `Headline/HEADLINE.md`, never transcribed by hand.
 Figures enter `paper/figures/` only once final (Overleaf size); until then
 the slot is a comment.
+
+<!-- Yes. -->
 
 ## Phase D — figures and analyses, per request
 
