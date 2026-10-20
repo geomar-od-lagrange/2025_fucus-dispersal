@@ -15,6 +15,22 @@ Implements the cross-cutting decisions of
   `occupancy_max_days` renamed and 024d/029 "viability window" comments
   reworded to keep the grep clean; 030's `drifting_fraction_curve` and
   per-bin table now sum over all origins and the sentinel (step 3).
+- Step 2 done (cdf7b5c). Verified on production counts (10 years) and
+  seven new-schema 024f partitions built into a scratch root (2023/2024
+  JJA + 2025-05): 026 bottom JJA and surface_stokes ALL unweighted, 026
+  / 025 / 026a / 026b weighted surface_stokes JJA, 026a / 026b
+  unweighted. 2025 reported and dropped for JJA; window asserts pass.
+  Peak RSS 16.2 GiB (026, ss ALL, 10 years; was 56 GiB at four).
+  Deviations: figure stems put the member after `r<radius>m` and before
+  the facets, exports after the season; GeoJSON value column `n_obs` →
+  `weight`; counts-origin NaN folded into -1; new `area_quantiles_csv`
+  parameter in 026; AGENTS.md stage list updated. Finding: the D6 area
+  *shrinks* with T (surface_stokes ALL, q = 0.5: 16 084 km² at 30 d →
+  4 435 km² at 180 d) — cumulative particle-time concentrates in trap
+  hexes, so it measures concentration, not spread (noted in
+  visualisations.md). Step 3: 032 table E reads
+  `Exports/026/026_<regime>_<season>_<member|unweighted>_T<h>d.geojson`,
+  and its 025/026 figure stems need the member tag.
 - Step 5 stores submitted 2026-10-20 (step 1 reviewed: bit-identical to
   the old stores on the shared window): 024a `24456829`; 024c
   `24456830`–`24456853` (24, afterok 024a); 024efg `24456854` (2825 cells,
