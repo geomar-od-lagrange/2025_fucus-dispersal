@@ -23,12 +23,12 @@ Annotate inline with `> **WR:** …` under any item; open choices are marked
   Phase C skeleton in `paper/` (`5a960a0`): R1–R5 with slots and
   definition-only FACTS; numbers follow the rebuild.
   Phase D open: P1, P5 grouping, P7 mean age.
-- Cross-cutting decisions + P3/P8/P9 are being implemented per
-  [horizons_and_weighting.md](horizons_and_weighting.md), which also
-  carries the subbasin rebuild.
-- **Blocking every subbasin-keyed item (P2, P5, P6):** the subbasin rebuild
-  in [subbasin_rebuild.md](subbasin_rebuild.md). The 024c/024g stores and
-  026a/026b/028/029 figures on NESH are stale until it runs.
+- Cross-cutting decisions + P3/P8/P9 implemented per
+  [horizons_and_weighting.md](done/horizons_and_weighting.md), together with
+  the subbasin rebuild ([subbasin_rebuild.md](done/subbasin_rebuild.md));
+  the 180 d consumer run and `032` headline ran 2026-10-20 and the paper
+  FACTS carry its numbers. Still open: the bottom 0.8× runs (034) and the
+  two-regime R1 figure (P2).
 - Beaching and survival exist for `surface_stokes` only (the only regime
   with 024d sidecars). That matches the biology — negatively buoyant
   material does not strand — and is stated once in Results, not treated
@@ -48,7 +48,7 @@ Pure fact maintenance, no decisions. One commit inside `paper/`.
   `step_wc0p1_ts3_tcinf_tf1_tw0` (`w_c` = 0.10 m/s, `tau_strong` = 3 h,
   `tau_calm` = ∞, `trap_flat`/`trap_wall` = 1/0), `band_m` 2000,
   `max_age_days` 60 (180 after the
-  [horizons_and_weighting.md](horizons_and_weighting.md) rebuild). [docs/beaching.md]
+  [horizons_and_weighting.md](done/horizons_and_weighting.md) rebuild). [docs/beaching.md]
 - A4. Coastline-classification `[FACTS]`: the numbers the prose asks for
   ("GIVE A FEW NUMBERS ON FLAT, STEEP, MIXED FRACTION") from the shoreclass
   table and 033. [docs/beaching.md, notebooks/033]
@@ -83,7 +83,7 @@ decisions that follow from it:
   `L` at 60 d would make the 90/180 d horizons copies of 60 d; a smooth `L`
   needs a curve someone can defend. Consequence: beaching is integrated to
   180 d — the 024e/024f/024g reduction windows become one `max_age_days`
-  = 180 (cheap reducer reruns; [horizons_and_weighting.md](horizons_and_weighting.md) D1).
+  = 180 (cheap reducer reruns; [horizons_and_weighting.md](done/horizons_and_weighting.md) D1).
 - **Count only what floated.** `surface_stokes` heatmaps and connectivity
   read the survival-weighted stores (024f, 024g), not the raw counts.
   `bottom` stays unweighted (nothing strands); R1 states that it compares

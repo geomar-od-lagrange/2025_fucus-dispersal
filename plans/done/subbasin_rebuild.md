@@ -1,8 +1,10 @@
 # Rebuild after the shoreward subbasin assignment
 
+**Done** (2026-10-20, as step 5 of [horizons_and_weighting.md](horizons_and_weighting.md)). The rule is documented in [../../docs/hexbinning_and_connectivity.md](../../docs/hexbinning_and_connectivity.md).
+
 `024a` now assigns `helcom_subbasin` by largest overlap with a shoreward
 snap instead of centroid-within (rule and rationale:
-[../docs/hexbinning_and_connectivity.md](../docs/hexbinning_and_connectivity.md)).
+[../../docs/hexbinning_and_connectivity.md](../../docs/hexbinning_and_connectivity.md)).
 The change is committed; **nothing downstream has been rebuilt**.
 
 **Folded into [horizons_and_weighting.md](horizons_and_weighting.md)

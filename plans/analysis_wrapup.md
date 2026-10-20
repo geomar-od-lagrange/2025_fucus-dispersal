@@ -11,13 +11,11 @@ compute node via `pixi run`.
 
 ## Status and sequencing
 
-- **Blocking everything keyed on subbasin:** `024a`'s subbasin assignment
-  changed from centroid-within to largest-overlap + shoreward snap, which
-  moves ~49 % of the stranded weight out of the `-1` sentinel and into
-  named basins. The key, the 024c/024g stores and the 026a/026b/028/029/033
-  figures on NESH are all stale until the rebuild in
-  [subbasin_rebuild.md](subbasin_rebuild.md) runs, and §3's connectivity
-  conclusions must be re-read afterwards rather than assumed to hold.
+- **Subbasin rebuild done (2026-10-20):** `024a`'s largest-overlap +
+  shoreward-snap assignment now feeds the key, the 024c/024g stores and the
+  026a/026b/028/029/033 products on NESH
+  ([subbasin_rebuild.md](done/subbasin_rebuild.md)); §3's connectivity
+  conclusions must be re-read against them rather than assumed to hold.
 
 - **Manuscript:** the extension of `paper/main.tex` along the authors'
   outline notes is planned in

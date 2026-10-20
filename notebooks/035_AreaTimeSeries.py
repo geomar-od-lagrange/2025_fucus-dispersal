@@ -17,7 +17,7 @@
 # %% [markdown]
 # # Area holding the cloud vs. elapsed time
 #
-# The R1 area of plans/horizons_and_weighting.md D6 as a time series, one
+# The R1 area of plans/done/horizons_and_weighting.md D6 as a time series, one
 # line per regime: the smallest water area holding a share `q` of the
 # particle-time accumulated by horizon `T` (cumulative, ages in `[0, T)`),
 # and its square root as a length scale. Reads only 026's area exports

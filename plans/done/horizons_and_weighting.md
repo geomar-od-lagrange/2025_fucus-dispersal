@@ -1,7 +1,9 @@
 # 180 d horizons, survival weighting, areas and afloat shares
 
+**Implemented.** See [../../docs/visualisations.md](../../docs/visualisations.md), [../../docs/beaching.md](../../docs/beaching.md), [../../docs/survival_occupancy.md](../../docs/survival_occupancy.md) and [../../docs/hexbinning_and_connectivity.md](../../docs/hexbinning_and_connectivity.md) for the current state.
+
 Implements the cross-cutting decisions of
-[manuscript_extension.md](manuscript_extension.md) §Phase B (WR,
+[manuscript_extension.md](../manuscript_extension.md) §Phase B (WR,
 2026-10-20) plus its items P3, P8 and P9, and folds the pending
 [subbasin_rebuild.md](subbasin_rebuild.md) into the same rebuild.
 
@@ -93,6 +95,13 @@ Implements the cross-cutting decisions of
   refresh `docs/beaching.md` result tables and the paper FACTS from
   `Headline/HEADLINE.md`, then move this plan and subbasin_rebuild.md to
   `plans/done/`.
+- Step 5 done. Consumers and 032 ran 2026-10-20 (HEADLINE.md regenerated
+  08:47 UTC, release years 2016–2024, 180 d, no gaps). `docs/beaching.md`
+  result tables and the 029 substrate numbers in `docs/visualisations.md`
+  refreshed (6b0a545); paper FACTS refreshed from HEADLINE.md. Per-month
+  beached fractions and per-hex Spearman / top-100 overlaps between members
+  are not produced by any consumer and were dropped from the docs. The
+  bottom 0.8× runs (034) are still outstanding.
 
 ## Design decisions
 

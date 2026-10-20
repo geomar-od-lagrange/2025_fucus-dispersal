@@ -24,7 +24,7 @@ the variant is only run for one release per month, so the 1× side is
 restricted to those doys too. Reads the 024 counts partitions and the 024a
 key; parquet only, no Dask.
 
-**Footprint metric** (the R1 area of plans/horizons_and_weighting.md D6):
+**Footprint metric** (the R1 area of plans/done/horizons_and_weighting.md D6):
 for each cumulative elapsed-time horizon `T` (every `age_bin` whose window
 starts before `T`), rank target hexes by density `n_obs / water_area_m2`,
 descending, with zero-water hexes first at zero area; take the cumulative

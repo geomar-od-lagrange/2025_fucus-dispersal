@@ -45,7 +45,7 @@ claim is only "how does spread respond to an assumed 20 % slowdown".
 - **Comparison** in a new notebook `034_BottomSlowdown`: 1× `bottom` vs
   `bottom_vs0p8` on the **same 12 release doys of 2019**, area holding
   50 % / 90 % of particle-time and `sqrt(area)` at 30 / 60 / 90 / 180 d —
-  the R1 metric of [horizons_and_weighting.md](horizons_and_weighting.md)
+  the R1 metric of [horizons_and_weighting.md](done/horizons_and_weighting.md)
   D6, reimplemented notebook-locally. Plus one map pair at 90 d. Export
   CSV under `Exports/034/`.
 
