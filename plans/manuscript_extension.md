@@ -16,7 +16,10 @@ Annotate inline with `> **WR:** …` under any item; open choices are marked
 
 ## Status
 
-- Not started. Nothing in `paper/` changed by this plan yet.
+- Phase A done as `paper/` commit `c20edb2` (comment-only: FACTS blocks
+  current to `6d854cb`, `[STALE]` flags on four prose sentences). Not yet
+  pushed to Overleaf; the superproject gitlink moves only after that push.
+- Phases B and C decided yes (WR remarks); Phase D open.
 - **Blocking every subbasin-keyed item (P2, P5, P6):** the subbasin rebuild
   in [subbasin_rebuild.md](subbasin_rebuild.md). The 024c/024g stores and
   026a/026b/028/029 figures on NESH are stale until it runs.
