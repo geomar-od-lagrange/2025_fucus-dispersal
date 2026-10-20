@@ -232,6 +232,8 @@ for ax, q in zip(axes.flat, quantiles):
     length.sel(q=q).plot.line(x="horizon_days", hue="regime", ax=ax)
     ax.set_title(f"area holding {100 * q:g} % of particle-time")
     ax.set_xticks(time_horizons_days)
+    # From zero, so the 0.8x / 1x gap reads as the ratio it is (as in 035).
+    ax.set_ylim(0, None)
 fig_path = figure_dir / f"BottomSlowdown_length_{year}_r{hex_radius}m.png"
 fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
