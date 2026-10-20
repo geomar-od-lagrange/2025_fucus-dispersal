@@ -133,7 +133,10 @@ Each item: what the note asks, what exists, what is proposed.
   (30/60/90/180 d), with interannual min–max. Same weights as P2 (024f for
   `surface_stokes`, 024 counts for `bottom`) + `water_area_m2` from the key;
   lands in 026 (export) and 032 (table). This is R1's quantification — no
-  distance metric.
+  distance metric. Decided (WR, 2026-10-20): cumulative `[0, T)` for now,
+  read as concentration (where the biomass-time resides; the q = 0.5 area
+  shrinks with T as material collects in coastal retention hexes);
+  revisit a snapshot `[T − 10, T)` variant later — noted in the paper.
 
 ### P4. Paths per origin subbasin (notes Q2, Fig 3)
 
