@@ -137,6 +137,8 @@ Each item: what the note asks, what exists, what is proposed.
   read as concentration (where the biomass-time resides; the q = 0.5 area
   shrinks with T as material collects in coastal retention hexes);
   revisit a snapshot `[T − 10, T)` variant later — noted in the paper.
+  **q = 0.9 only** (WR): the 0.5 area is dominated by particles stalling
+  in a few coastal hexes under advection-only physics.
 
 ### P4. Paths per origin subbasin (notes Q2, Fig 3)
 
