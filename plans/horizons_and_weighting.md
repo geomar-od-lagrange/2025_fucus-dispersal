@@ -7,7 +7,14 @@ Implements the cross-cutting decisions of
 
 ## Status
 
-- Not started.
+- Step 1 done (bd23dc4). Verified on 2019-01 `surface_stokes` sidecars at
+  180 d: attrs round-trip, 024f Σocc identity exact (also with a partial
+  trailing bin at 15 d), 17 origin subbasins present. Deviations: no
+  `target_hex = -1` rows occur in practice (no drifter loses its in-key
+  position), so the identity holds without them; 030's local
+  `occupancy_max_days` renamed and 024d/029 "viability window" comments
+  reworded to keep the grep clean; 030's `drifting_fraction_curve` and
+  per-bin table now sum over all origins and the sentinel (step 3).
 
 ## Design decisions
 
