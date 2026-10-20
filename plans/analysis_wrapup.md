@@ -288,6 +288,8 @@ under `output_root/Exports/<notebook>/`.
 
 ## 7. Bottom-velocity sensitivity sweep (deferred)
 
+Superseded by one illustrative 0.8× variant: [bottom_slowdown.md](bottom_slowdown.md).
+
 **Deferred — it needs a kernel change plus fresh runs, not just a plot.**
 Two costs make this a poor fit for a quick turnaround: (1) it reintroduces
 a velocity scale into the `010` kernel (removed in pre-prod cleanup — both
