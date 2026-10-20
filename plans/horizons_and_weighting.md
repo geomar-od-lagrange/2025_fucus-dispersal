@@ -31,7 +31,7 @@ Implements the cross-cutting decisions of
   visualisations.md). Step 3: 032 table E reads
   `Exports/026/026_<regime>_<season>_<member|unweighted>_T<h>d.geojson`,
   and its 025/026 figure stems need the member tag.
-- Step 3 done (SHA in the commit after it). Verified on new-schema 024e
+- Step 3 done (754dfdd). Verified on new-schema 024e
   (production + inert), 024f and 024g partitions built into a scratch root
   (surface_stokes 2019 m06–m08 + 2020 m06, 180 d): 028 (JJA/ALL, both
   weightings), 029, 030 (JJA/ALL), 031 (two members), 033, 025/026/026a/026b
