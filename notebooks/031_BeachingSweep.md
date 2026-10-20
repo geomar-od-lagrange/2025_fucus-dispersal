@@ -30,7 +30,7 @@ dominate the answer, so the headline stranding number is only meaningful as
 a **range over the members**, next to the pattern statistics that
 discriminate between them: concentration of the stranded weight, how many
 hexes receive any, how long stranding takes, and how far the stranded
-material had travelled.
+material had been displaced.
 
 Each statistic additionally carries the **2016–2019 interannual min–max** as
 an error bar, so the spread across members is read against the spread the
@@ -57,7 +57,7 @@ output_root = "../output"
 regime = "surface_stokes"
 hex_radius = 6000
 age_bin_days = 10
-# Travel-distance bin width (km) of the store's `disp_bin` axis (must match
+# Displacement bin width (km) of the store's `disp_bin` axis (must match
 # the reducer).
 disp_bin_km = 10.0
 # Release season: DJF / MAM / JJA / SON, or ALL for the pooled year.
@@ -263,7 +263,7 @@ titles = {
     "gini": "Gini of stranded weight",
     "beach_hexes": "stranding hexes",
     "median_age_days": "median age (d)",
-    "median_travel_km": "median travel (km)",
+    "median_travel_km": "median displacement (km)",
 }
 # Members top-to-bottom in the given order.
 y = np.arange(len(stats))[::-1]
@@ -405,6 +405,6 @@ if baseline_label in stats.index:
 print(f"  Gini range: {stats['gini'].min():.3f} .. {stats['gini'].max():.3f} "
       "(higher = stranding concentrated on fewer, wave-exposed hexes)")
 print(f"  median stranding age: {stats['median_age_days'].min():.0f} .. "
-      f"{stats['median_age_days'].max():.0f} d; median travel distance: "
+      f"{stats['median_age_days'].max():.0f} d; median displacement: "
       f"{stats['median_travel_km'].min():.0f} .. {stats['median_travel_km'].max():.0f} km")
 ```

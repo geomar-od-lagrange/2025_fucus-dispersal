@@ -11,13 +11,13 @@ to the surface variant only.
 ## Source datasets (layered)
 
 The Baltic high-resolution hindcast covers most of the BSH domain at
-2 km / hourly; the global WAVERYS hindcast fills the German Bight
+1′ × 1/36° / hourly; the global WAVERYS hindcast fills the German Bight
 strip (BSH water west of ~9 °E) at coarser resolution.
 
 | Property       | Baltic high-res (`baltic_highres`)           | WAVERYS global (`waverys`)              |
 |----------------|----------------------------------------------|-----------------------------------------|
 | Dataset ID     | `cmems_mod_bal_wav_my_PT1H-i`, then `cmems_mod_bal_wav_anfc_PT1H-i` | `cmems_mod_glo_wav_my_0.2deg_PT3H-i` |
-| Resolution     | 2 km, hourly                                 | 0.2°, 3-hourly                          |
+| Resolution     | 1′ × 1/36° (≈ 1.85 km N–S, ≈ 1.3–1.9 km E–W across 53–66 °N), hourly                             | 0.2°, 3-hourly                          |
 | Coverage       | 9–30 °E, 53–66 °N (Baltic + Danish Straits + Kattegat) | global                       |
 | Period         | 1980 onwards, running (see below)            | 1980 onwards, hindcast only             |
 | Variables used | `VSDX`, `VSDY` (surface Stokes drift, m/s)   | same                                    |
@@ -114,7 +114,7 @@ particle is seen there; treat the mechanism below as a hypothesis.
 
 The 3×3 rolling-mean spread (N=5 iterations, in
 `_spread_into_nan` / `_interp_stokes_to_bsh`) bridges land barriers
-narrower than the spread reach. With Baltic high-res at 2 km grid and
+narrower than the spread reach. With Baltic high-res at ~1.3–1.9 km grid spacing and
 N=5, the spread crosses ~10 km of wave-model land — wide enough to
 push open-ocean Stokes across thin barriers like the Curonian Spit
 (~1–3 km wide) into the sheltered Curonian Lagoon, where actual fetch

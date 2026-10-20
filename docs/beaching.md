@@ -52,9 +52,8 @@ every array written with `numcodecs.Zstd(level=5)`.
 All five are **parameter-free with respect to the rate model** — `τ`, the band
 width, the viability window, the trap weights and the binning are reductions
 over them — so a member costs ~2.5 s per zarr against the ~90 s a re-read of the
-trajectories and the raw wave field costs. ~66 MB per zarr at
-`window_days = 120` (~19 GB for `surface_stokes` 2016–2019, against 98 GB of
-trajectories per regime-year), ~94 s per zarr to build, single-process numpy, no
+trajectories and the raw wave field costs. ~110 MB per zarr at
+`window_days = 220` (~74 GB for `surface_stokes` 2016–2025), ~94 s per zarr to build, single-process numpy, no
 Dask. Considered and rejected: a sparse (COO) layout — 73–81 % of particle-hours
 are in band, dense wins; storing `s(w)` or `Σ s` instead of `w_on` — freezes the
 functional form, which is what the sidecar exists to free; zarr's default
@@ -112,7 +111,7 @@ weights the trap factor drops out and exposure alone sets the total; at the
 production weights it is the binding term (see Production setting).
 Strong-wave stranding of freshly released material is signal, not artefact:
 Fucus releases are coastal, so a particle can be exposed from `t = 0`.
-`disp_bin` records the crow-flies travel distance at stranding precisely so
+`disp_bin` records the crow-flies displacement at stranding precisely so
 that can be *shown* rather than filtered out — a diagnostic axis, never a
 mask.
 
@@ -225,7 +224,7 @@ substrate-inert member (`trap_flat = trap_wall = 1`, tag
 | hexes receiving stranded weight | 1 207 (1 179 with weight > 1) | 1 824 (1 781) |
 | Gini of stranded weight over hexes | 0.68 | 0.63 |
 | median stranding age (weight-weighted) | 7.0 d | 6.4 d |
-| median travel distance at stranding | 46.6 km | 40.9 km |
+| median displacement at stranding | 46.6 km | 40.9 km |
 | stranded weight on `flat` hexes (`ff ≥ 50`) | 86.0 % | 41.8 % |
 
 The Gini is computed over hexes that *receive* weight — zero-weight hexes are

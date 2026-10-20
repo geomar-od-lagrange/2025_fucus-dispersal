@@ -575,7 +575,7 @@ figure_specs = [
     ("029", "BeachedFractionCurve_{regime}_r{radius}m_{pooled}_{member}", "beached_fraction_curve_{pooled}",
      "Cumulative beached fraction against age with the interannual min–max band; the curve behind table A."),
     ("031", "BeachingSweepStats_{regime}_r{radius}m_{pooled}", "beaching_sweep_stats_{pooled}",
-     "Beached fraction, Gini, stranding-hex count, median stranding age and median travel distance "
+     "Beached fraction, Gini, stranding-hex count, median stranding age and median displacement "
      "across every member with interannual bars; the visual form of table B."),
     ("028", "SubbasinConnectivity_emission_{regime}_{season}_unweighted_T{horizon}d",
      "connectivity_{season}_T{horizon}d_unweighted",

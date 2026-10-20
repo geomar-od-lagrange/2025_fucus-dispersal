@@ -125,6 +125,6 @@ Stokes) regime is not extended and no consumer reads it
 - [analysis_wrapup.md](analysis_wrapup.md) still lists §4 (biomass maps,
   blocked on the Estonian production figures) and §7 (bottom-velocity sweep,
   deferred — it needs a kernel change plus fresh runs).
-- **Refresh the trap sensitivity.** The "Trap sensitivity" table in
-  [../docs/beaching.md](../docs/beaching.md) is 2016–2019 only; recompute it
-  once stage C has written the 2020–2025 partitions.
+- ~~Refresh the trap sensitivity.~~ Done: the trap-axis table in
+  [../docs/beaching.md](../docs/beaching.md) matches the 2016–2025 pooled
+  Headline table B (0.769 / 0.725 / 0.668 / 0.416).

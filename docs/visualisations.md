@@ -21,7 +21,7 @@ listed here should be dropped.
 | 026b | 026a per origin subbasin and year | Per-run (regime + season + radius) | One percentage and one dilution figure per (origin subbasin, release year) |
 | 027 | Hex distance-quantile maps | Per-run (regime + radius + season) | One 1xN panel row, one panel per quantile (0.1/0.5/0.9), the season's releases pooled across years |
 | 028 | Subbasin connectivity matrices | Per-run (regime + radius + season + member) | Raw residence · emission fraction per age horizon · interannual range |
-| 029 | Beaching maps | Per-run (regime + radius + member + season) | Where-stranded with the release sites overlaid · source/sink substrate contrast · beached fraction per source hex · age horizons (10/20/50 d) · beached-fraction curve with interannual band · travel distance at stranding |
+| 029 | Beaching maps | Per-run (regime + radius + member + season) | Where-stranded with the release sites overlaid · source/sink substrate contrast · beached fraction per source hex · age horizons (10/20/50 d) · beached-fraction curve with interannual band · displacement at stranding |
 | 030 | Survival heatmaps | Per-run (regime + radius + member + season) | Per horizon (20/50/100 d): occupancy · survival-weighted; surviving fraction as a separate 1xN figure; drifting-fraction curve with interannual band |
 | 031 | Beaching sweep | Per-run (regime + radius + season) | Five statistics across members with interannual bars · where-stranded maps across members |
 | 032 | None — selects, numbers and downscales other notebooks' PNGs | Selection (primary + comparison regime) | One curated reading order over 025–031 |
@@ -36,7 +36,7 @@ because cross-panel reading invites artefacts from regime physics rather
 than from the spatial field.
 
 **Release season is the primary temporal axis (025–031).** Every store
-consumer takes one `season` parameter and pools all four release years.
+consumer takes one `season` parameter and pools all available release years.
 The month set is a dict literal in a code cell (papermill injects only
 primitives), and the season tag goes in every figure and export filename.
 
@@ -55,7 +55,7 @@ pools across quarters; crossing them everywhere multiplies panel counts
 beyond useful inspection density.
 
 **Interannual spread is the error bar, not a product.** Where a figure
-shows one scalar per horizon or per member, the 2016–2019 min–max of the
+shows one scalar per horizon or per member, the per-release-year min–max of the
 same reduction — grouped by the release year parsed from the partition
 filename — is drawn as a shaded band (029, 030), a lo–hi bar (031) or a
 CSV column (028). Drawn as an explicit range rather than a symmetric
@@ -152,7 +152,7 @@ Plots on a plain (non-cartopy) lon/lat axis: hex polygons, Natural Earth
 coastline, HELCOM subbasin overlay and the H0 isobath are all already in
 EPSG:4326; cartopy reprojection would introduce sub-pixel mismatches that
 double-paint hex edges. Three products over one (regime, season) with all
-four release years pooled: Baltic percentage + dilution, the same clipped
+available release years pooled: Baltic percentage + dilution, the same clipped
 to the German Bight viewport (normalisation stays basin-wide, so the
 percentages still read as shares of the whole basin's particle-time), and
 a per-origin-subbasin percentage grid where each panel is normalised over
@@ -194,8 +194,8 @@ figures.
 exposing the interannual variability 026a hides by pooling. Every panel of
 an origin divides by that origin's all-year particle-time at the same
 horizon, and one norm spans the origin's years and horizons, so a faint
-year is a genuinely weaker year and the four years sum to 100 % at a given
-horizon (in production each carries ~25 % — release counts are equal by
+year is a genuinely weaker year and the release years sum to 100 % at a given
+horizon (each carries an equal share — release counts are equal by
 construction, so the interannual signal is spatial). GeoJSON exported at
 the longest horizon only, where the release year rather than the horizon
 is the product's axis.
@@ -250,7 +250,7 @@ time.
 Three views, each its own figure: the raw residence matrix (log, pooled
 over every age bin), the emission fraction `x / x.sum(axis=1)` per
 cumulative age horizon (half-open, ages `< T` days), and the interannual
-mean of that fraction over the four release years (min/max go to CSV).
+mean of that fraction over the release years (min/max go to CSV).
 Row-normalising is the point of view 2: raw rows differ by orders of
 magnitude with release count, so only the normalised rows compare origins.
 
@@ -349,13 +349,13 @@ resulting hex dilation shrink as resolution rises.
   `LogNorm` across horizons so the fill-in over time is legible; this
   mirrors 026's horizon logic on the beaching axis.
 - **Beached-fraction curve** — cumulative beached fraction against age,
-  with the 2016–2019 min–max as a shaded band.
-- **Travel distance at stranding** — stranded weight over the store's
+  with the per-release-year min–max as a shaded band.
+- **Displacement at stranding** — stranded weight over the store's
   `disp_bin` axis (crow-flies displacement from release at the deposit
   step), pooled over sources, with the weight-weighted median printed.
   Drawn with `drawstyle="steps-mid"`: the axis is a binned quantity, so a
   step reads as the histogram it is, where a categorical bar plot would
-  label hundreds of bins. Short-travel strandings stay in — under a
+  label hundreds of bins. Short-displacement strandings stay in — under a
   threshold rate model a strong-wave stranding of freshly released
   material near home is signal, so `disp_bin` is a diagnostic axis and
   never a mask.
@@ -376,7 +376,7 @@ reusing 025's hex registration. The two density columns **share one
 a long sub-1 tail) so the age-thinning and the beaching-removal read on
 the same scale; the fraction column uses a **fixed linear 0–1** scale so
 it is comparable across horizons. A drifting-fraction curve against age,
-with the 2016–2019 min–max band, closes the notebook.
+with the per-release-year min–max band, closes the notebook.
 
 ## Notebook 031 — Beaching parameter sweep (special case)
 
@@ -390,8 +390,7 @@ grid plus a map row:
 
 - **Five statistics across members** — beached fraction, Gini
   concentration of the stranded weight, number of stranding hexes,
-  weight-weighted median stranding age, weight-weighted median travel
-  distance — one panel each, members on the **y axis** in the given order
+  weight-weighted median stranding age, weight-weighted median displacement — one panel each, members on the **y axis** in the given order
   so the long tags read horizontally off one shared column, each pooled
   marker carrying its interannual lo–hi bar. Members differ in several
   parameters at once, so a numeric axis would invite reading a slope where
@@ -401,7 +400,7 @@ grid plus a map row:
   its label, on a **shared `LogNorm`** so the difference read off the row
   is pattern, not scale — the same reasoning as 026's horizon row.
 
-The Gini and travel-distance panels are the load-bearing ones: beached
+The Gini and displacement panels are the load-bearing ones: beached
 totals can coincide between members whose stranding patterns differ, so
 concentration and how far the stranded material got are what distinguish a
 wave-selective member from a residence-driven one.
@@ -437,7 +436,7 @@ reimplemented and drift.
 
 **Everything that grows is discovered.** Release years, regimes and
 rate-model member tags are parsed out of the partition filenames, so a store
-growing from four release years to ten, or from one member to a full trap
+growing from few release years to many, or from one member to a full trap
 sweep, changes the report's content and never this notebook. A coverage
 table states the years each store holds per regime — the regimes are not in
 step (`surface` stops at the aggregates; beaching and survival exist only

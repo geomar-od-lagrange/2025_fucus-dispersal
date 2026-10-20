@@ -38,7 +38,7 @@ labels every figure; this notebook never parses the tag. Draws:
    with the 2016–2019 interannual min–max as a band around the pooled
    curve. Maps stay pooled; only the scalar-per-horizon curve carries the
    spread.
-5. **Travel distance at stranding** — stranded weight over `disp_bin`, the
+5. **Displacement at stranding** — stranded weight over `disp_bin`, the
    crow-flies displacement from release at the deposit step. Short-travel
    strandings are a real outcome under a threshold rate model, never a
    mask.
@@ -96,7 +96,7 @@ member = "step_wc0p1_ts3_tcinf_tf1_tw0"
 # enter its rate at all and its deposit is where the drift alone puts the
 # material. "" skips the comparison.
 contrast_member = "step_wc0p1_ts3_tcinf"
-# Travel-distance bin width (km) of the store's `disp_bin` axis (must match
+# Displacement bin width (km) of the store's `disp_bin` axis (must match
 # the reducer).
 disp_bin_km = 10.0
 
@@ -360,7 +360,7 @@ on the HELCOM BRISK + CLMS flat fraction `ff` at the stranding hour (`flat`
 if `ff >= 50%` else `wall`), a coarser cut than the rate itself, which
 scales continuously with `ff` through `trap_wall + (trap_flat -
 trap_wall)*ff/100` (production: `trap_flat = 1`, `trap_wall = 0`, so the
-substrate signal is already inside the plotted weight); travel distance
+substrate signal is already inside the plotted weight); displacement
 gets its own figure below.
 
 ```python
@@ -683,19 +683,19 @@ print(f"wrote {fig_path}")
 plt.show()
 ```
 
-# Travel distance at stranding
+# Displacement at stranding
 
 Stranded weight over `disp_bin` — the crow-flies displacement from the
 release point at the deposit step, in `disp_bin_km` bins — pooled over every
 source hex. The residual (never-beached) rows carry `disp_bin = -1` and drop
-out with the `beach_hex = -1` filter. Short-travel strandings are kept: a
+out with the `beach_hex = -1` filter. Short-displacement strandings are kept: a
 strong-wave event stranding freshly released material near home is a real
 outcome of the threshold rate model, not an artefact to mask.
 
 ```python
 disp_weight = beached.groupby("disp_bin")["weight"].sum()
 disp_weight.index = (disp_weight.index.to_numpy() + 0.5) * disp_bin_km
-disp_weight.index.name = "travel distance (km)"
+disp_weight.index.name = "displacement (km)"
 median_disp = float(
     np.interp(0.5, disp_weight.cumsum() / disp_weight.sum(), disp_weight.index.to_numpy())
 )
@@ -711,7 +711,7 @@ fig_path = figure_dir / f"StrandingTravelDistance_{regime}_r{hex_radius}m_{seaso
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
 fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
-print(f"weight-weighted median travel distance at stranding: {median_disp:.1f} km")
+print(f"weight-weighted median displacement at stranding: {median_disp:.1f} km")
 plt.show()
 ```
 
@@ -727,7 +727,7 @@ print(f"  beached:           {n_beached:,.0f} "
       f"({100 * n_beached / max(total_released, 1):.1f}%)")
 print(f"  stranding hexes:   {beached['beach_hex'].nunique():,}")
 print(f"  source hexes:      {frac['release_hex'].nunique():,}")
-print(f"  median travel distance at stranding: {median_disp:,.1f} km")
+print(f"  median displacement at stranding: {median_disp:,.1f} km")
 print(f"  member:            {member}")
 print("  cumulative beached fraction by age horizon (pooled, interannual min–max):")
 for t in curve.index:

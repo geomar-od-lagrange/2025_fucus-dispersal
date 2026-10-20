@@ -143,7 +143,7 @@ trap_wall = 0.0
 max_float_days = 60
 # Age-bin granularity for the deposition age (days); matches the counts store.
 age_bin_days = 10
-# Crow-flies travel-distance bin width (km) for the `disp_bin` axis.
+# Crow-flies displacement bin width (km) for the `disp_bin` axis.
 disp_bin_km = 10
 # Sidecar cadence (hours).
 output_dt_hours = 1
@@ -191,7 +191,7 @@ sidecar_dir = output_root / f"BeachingForcing/{regime}/{release_year}"
 # Per real drifter, deposit the fractional weight that strands at each
 # near-shore step (`dep = S_before − S_after`, a telescoping survival
 # difference), binned by the coastal hex, elapsed-age bin, shore type and
-# travel-distance bin of that step. The surviving weight remaining at the
+# displacement bin of that step. The surviving weight remaining at the
 # window's end is the never-beached residual, recorded once per source hex
 # (`beach_hex = -1`, `beach_age_bin = -1`, `disp_bin = -1`,
 # `shore_type = "none"`), so deposits + residual per `release_hex` sum to the
