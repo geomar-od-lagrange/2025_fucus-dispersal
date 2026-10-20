@@ -9,7 +9,7 @@
 set -euo pipefail
 
 # Lightweight: reads HexAggregates counts or survocc parquet, no Dask cluster.
-# Pools every release_year partition of the regime and keeps one release season, then maps cumulative elapsed-time horizons.
+# Pools the regime's partitions in the notebook's release_years and keeps one release season, then maps cumulative elapsed-time horizons.
 # Submit once per (regime, season, hex_radius, member), e.g.:
 #   sbatch scripts/026_TimeHorizonMaps_job.sh surface_stokes ALL 6000 step_wc0p1_ts3_tcinf_tf1_tw0
 #   sbatch scripts/026_TimeHorizonMaps_job.sh bottom SON 6000

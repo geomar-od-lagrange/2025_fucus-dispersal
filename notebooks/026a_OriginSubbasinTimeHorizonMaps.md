@@ -84,6 +84,9 @@ regime = "surface_stokes"
 member = ""
 # Release season: DJF, MAM, JJA, SON or ALL (every month).
 season = "ALL"
+# Release years pooled: "first-last" (inclusive) or one year ("2019").
+# Partitions of other years stay on disk unopened (2025 is partial).
+release_years = "2016-2024"
 # Hex radius of the store (built by 024a/024). Must match the files on disk.
 hex_radius = 6000
 # Age-bin granularity of the store (must match 024 / 024f). Horizons must
@@ -122,6 +125,11 @@ SEASON_MONTHS = {
 if season not in SEASON_MONTHS:
     raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
 season_months = SEASON_MONTHS[season]
+# `release_years` is "first-last" (inclusive) or a single year.
+first_year, _, last_year = release_years.partition("-")
+analysis_years = range(int(first_year), int(last_year or first_year) + 1)
+assert len(analysis_years), f"release_years {release_years!r} is an empty range"
+print(f"release years in the analysis: {analysis_years[0]}–{analysis_years[-1]}")
 
 output_root = Path(output_root)
 data_root = Path(data_root)
@@ -210,14 +218,22 @@ else:
     part_re = re.compile(rf"HexAgg_counts_r{hex_radius}m_{regime}_(?P<year>\d{{4}})\.parquet$")
 
 partitions = []
+years_not_read = set()
 for f in sorted(store_root.glob(store_glob)):
     m = part_re.search(f.name)
-    if m is not None:
-        month = m.groupdict().get("month")
-        partitions.append((f, int(m["year"]), None if month is None else int(month)))
+    if m is None:
+        continue
+    if int(m["year"]) not in analysis_years:
+        years_not_read.add(int(m["year"]))
+        continue
+    month = m.groupdict().get("month")
+    partitions.append((f, int(m["year"]), None if month is None else int(month)))
+if years_not_read:
+    print(f"on disk but outside release_years, not read: {sorted(years_not_read)}")
 if not partitions:
     raise FileNotFoundError(
-        f"no partitions matching {store_glob!r} at {store_root} — "
+        f"no partitions matching {store_glob!r} for release years {release_years} "
+        f"at {store_root} — "
         + ("run 024f." if member else "run 024.")
     )
 partition_years = sorted({year for _, year, _ in partitions})

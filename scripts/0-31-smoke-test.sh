@@ -152,7 +152,7 @@ pixi run papermill notebooks/024c_BuildHexConnectivity.ipynb \
 
 # 025/026/026a/026b read the BSH static H0 grids from the data twin for the
 # 3 m isobath overlay, so they take data_root as well as output_root. They
-# pool every release year and keep one release season; the smoke run has a
+# pool their release_years (default 2016-2024, holding 2020) and keep one release season; the smoke run has a
 # single January release, so pass season=ALL (DJF would also carry it).
 echo
 echo "==== 025 HexHeatmaps (surface_stokes) ===="
@@ -205,7 +205,7 @@ pixi run papermill notebooks/026b_OriginSubbasinYearTimeHorizonMaps.ipynb \
     -r origin_subbasins_csv "Kiel Bay" \
     --cwd notebooks/
 
-# 027 pools the run's season across every release year; pass season=ALL for
+# 027 pools the run's season across its release_years; pass season=ALL for
 # the single January release. With 1 particle per cell, drop the
 # min-trajectory gate.
 echo

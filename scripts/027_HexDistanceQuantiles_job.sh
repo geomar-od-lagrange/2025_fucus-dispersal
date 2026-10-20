@@ -9,7 +9,7 @@
 set -euo pipefail
 
 # Lightweight: reads from HexAggregates distance parquet, no Dask cluster.
-# Pools every release_year for the regime (distance histograms are small).
+# Pools the notebook's release_years for the regime (distance histograms are small).
 # Submit once per (regime, hex_radius, season), e.g.:
 #   sbatch scripts/027_HexDistanceQuantiles_job.sh surface_stokes 6000 ALL
 #   sbatch scripts/027_HexDistanceQuantiles_job.sh bottom 6000 SON

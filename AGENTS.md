@@ -139,7 +139,7 @@ filename.
   `notebooks/029_*`, `notebooks/030_*`, `notebooks/031_*` — lightweight
   parquet-only consumers (no Dask cluster): hex relative-density maps —
   share of particle-time and dilution per km² of hex water area, one
-  release season per run with every release year pooled, from the 024
+  release season per run with the `release_years` (2016–2024) pooled, from the 024
   counts (unweighted) or 024f (survival-weighted, via the `member`
   parameter) store (025), the same at cumulative elapsed-time horizons via
   the `age_bin` axis plus the water area holding 90 % of the cloud

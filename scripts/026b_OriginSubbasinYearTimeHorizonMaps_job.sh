@@ -19,8 +19,9 @@ set -euo pipefail
 # age_bin_days (10), max_age_days (180) and the horizons (30,60,90,180) fall
 # back to the notebook defaults; age_bin_days must match the store, horizons
 # must be its multiples, and a 024f store must cover max_age_days.
-# origin_subbasins_csv and release_years_csv fall back to the notebook
-# defaults (all named subbasins that seed releases; all years present).
+# origin_subbasins_csv and mapped_years_csv fall back to the notebook
+# defaults (all named subbasins that seed releases; every year in the
+# notebook's release_years).
 
 regime="${1:-surface_stokes}"
 season="${2:-ALL}"

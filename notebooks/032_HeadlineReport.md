@@ -26,8 +26,11 @@ numbered, downscaled copy of the selected figures.
 
 Everything that varies with the data is **discovered**: release years and
 rate-model member tags come from the partition filenames, figures from a
-glob per notebook. Adding release years or sweep members changes the
-report's content, never this notebook.
+glob per notebook. The coverage table lists every year on disk; tables A–C
+pool only the `release_years` range, D–G read consumer exports that apply
+the same parameter.
+Adding release years or sweep members changes the report's content, never
+this notebook.
 
 Seven tables:
 
@@ -74,6 +77,11 @@ regimes_csv = "surface_stokes,bottom"
 member = "step_wc0p1_ts3_tcinf_tf1_tw0"
 # Release seasons, in reading order. Contract in docs/visualisations.md.
 seasons_csv = "DJF,MAM,JJA,SON,ALL"
+# Release years the tables pool: "first-last" (inclusive) or one year
+# ("2019"). The coverage table still lists every year on disk (2025 is
+# partial); tables A–C read only these years' partitions, D–G the consumers'
+# exports (pooled over the consumers' own release_years).
+release_years = "2016-2024"
 # Elapsed-time horizon (d) for the concentration table E: which 026 GeoJSON
 # export (`_T<horizon_days>d`) it reads.
 horizon_days = 180
@@ -123,6 +131,12 @@ if not regimes:
 connectivity_horizons = [int(h) for h in connectivity_horizons_csv.split(",") if h.strip()]
 if not connectivity_horizons:
     raise ValueError("connectivity_horizons_csv is empty")
+# `release_years` is "first-last" (inclusive) or a single year.
+first_year, _, last_year = release_years.partition("-")
+analysis_years = range(int(first_year), int(last_year or first_year) + 1)
+assert len(analysis_years), f"release_years {release_years!r} is an empty range"
+analysis_span = f"{analysis_years[0]}–{analysis_years[-1]}"
+print(f"release years in the analysis: {analysis_span}")
 
 primary_regime = regimes[0]
 other_regime = regimes[1] if len(regimes) > 1 else None
@@ -163,7 +177,9 @@ def fmt(value, decimals=1):
 Release years, rate-model members and regimes are parsed out of the
 partition filenames. Nothing below hardcodes a year or a member tag, so a
 store that grows from four release years to ten, or from one member to a
-full sweep, changes the report without changing the notebook.
+full sweep, changes the report without changing the notebook. The full
+catalogue feeds the coverage table; `analysis_parts`, its rows inside
+`release_years`, feeds everything else.
 
 The per-`(regime, year)` stores (`024` counts, `024b` distance, `024c`
 connectivity) and the per-`(regime, year, month, member)` ones (`024e`
@@ -204,14 +220,15 @@ member_parts = pd.DataFrame(
         if m
     ]
 )
+analysis_parts = member_parts[member_parts.year.isin(analysis_years)]
 
 sweep_members = sorted(
-    member_parts.loc[member_parts.kind == "beaching", "member"].unique().tolist()
+    analysis_parts.loc[analysis_parts.kind == "beaching", "member"].unique().tolist()
 )
 beaching_regimes = [
     r
     for r in regimes
-    if not member_parts[(member_parts.kind == "beaching") & (member_parts.regime == r)].empty
+    if not analysis_parts[(analysis_parts.kind == "beaching") & (analysis_parts.regime == r)].empty
 ]
 if member not in sweep_members:
     raise ValueError(f"member {member!r} has no 024e partitions; on disk: {sweep_members}")
@@ -220,7 +237,8 @@ if not beaching_regimes:
 
 print(f"key {key_path.name}: {len(key)} hexes")
 print(f"per-(regime, year) partitions: {len(year_parts)}")
-print(f"per-(regime, year, month, member) partitions: {len(member_parts)}")
+print(f"per-(regime, year, month, member) partitions: {len(member_parts)}, "
+      f"{len(analysis_parts)} in {analysis_span}")
 print(f"024e members on disk ({len(sweep_members)}): {', '.join(sweep_members)}")
 print(f"beaching regimes: {', '.join(beaching_regimes)}")
 
@@ -230,8 +248,10 @@ print(f"beaching regimes: {', '.join(beaching_regimes)}")
 # applies. Its exports and figures carry that tag in their names.
 heatmap_tag = {
     r: member
-    if not member_parts[
-        (member_parts.kind == "survocc") & (member_parts.regime == r) & (member_parts.member == member)
+    if not analysis_parts[
+        (analysis_parts.kind == "survocc")
+        & (analysis_parts.regime == r)
+        & (analysis_parts.member == member)
     ].empty
     else "unweighted"
     for r in regimes
@@ -328,7 +348,7 @@ def pooled_attrs(attrs, store):
 
 beaching_rows = []
 beaching_attrs = {}
-for part in member_parts[member_parts.kind == "beaching"].itertuples(index=False):
+for part in analysis_parts[analysis_parts.kind == "beaching"].itertuples(index=False):
     if part.regime not in beaching_regimes:
         continue
     frame = pd.read_parquet(part.path, columns=["beach_hex", "weight"])
@@ -434,8 +454,8 @@ figures show the same numbers.
 ```python
 survconn_rows = []
 survconn_attrs = []
-for part in member_parts[
-    (member_parts.kind == "survconn") & (member_parts.member == member)
+for part in analysis_parts[
+    (analysis_parts.kind == "survconn") & (analysis_parts.member == member)
 ].itertuples(index=False):
     if part.regime not in beaching_regimes:
         continue
@@ -942,7 +962,7 @@ sections = [
     f"Parcels runs on BSH HBMnoku currents, regimes {', '.join(f'`{r}`' for r in regimes)}; "
     f"aggregation on the {hex_radius / 1000:g} km hex grid (`024a` key, {len(key)} hexes). "
     "Release **season** is the primary temporal axis (DJF/MAM/JJA/SON, ALL = all 12 months), "
-    "release years pooled. Beaching and survival use the production member "
+    f"release years {analysis_span} pooled. Beaching and survival use the production member "
     f"`{member}` on {', '.join(f'`{r}`' for r in beaching_regimes)}; "
     f"table B sweeps all {len(sweep_members)} members on disk. Every `024e`/`024g` partition "
     f"records a {max_age_days} d reduction window in {age_bin_days} d age bins (build attrs, "
@@ -953,7 +973,9 @@ sections = [
     "",
     "## Coverage",
     "",
-    "Release years per store and regime, as found on disk.",
+    f"Release years per store and regime, as found on disk. Tables A–C read only the "
+    f"{analysis_span} partitions (`release_years`); tables D–G read the consumer exports, "
+    "pooled over the consumers' own `release_years`.",
     "",
     coverage_md,
     "",

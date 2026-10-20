@@ -9,7 +9,7 @@
 set -euo pipefail
 
 # Lightweight: reads from HexAggregates parquet, no Dask cluster needed.
-# Pools every release_year partition of the regime and keeps one release
+# Pools the regime's partitions in the notebook's release_years and keeps one release
 # season. Submit once per (regime, season, hex_radius, member), e.g.:
 #   sbatch scripts/025_HexHeatmaps_job.sh surface_stokes ALL 6000 step_wc0p1_ts3_tcinf_tf1_tw0
 #   sbatch scripts/025_HexHeatmaps_job.sh bottom SON 6000

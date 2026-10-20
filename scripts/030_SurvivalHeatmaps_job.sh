@@ -10,7 +10,7 @@ set -euo pipefail
 
 # Lightweight: reads the 024f survival-occupancy parquet + the 024a key, no
 # Dask cluster. One (regime, hex_radius, member, season) per submit; the
-# notebook pools the season's monthly partitions across every release year. E.g.:
+# notebook pools the season's monthly partitions across the notebook's release_years. E.g.:
 #   sbatch scripts/030_SurvivalHeatmaps_job.sh surface_stokes 6000 step_wc0p1_ts3_tcinf_tf1_tw0 ALL
 # season is one of DJF / MAM / JJA / SON / ALL (release month).
 # 024f_BuildSurvivalOccupancy_job.sh must have run first for the matching

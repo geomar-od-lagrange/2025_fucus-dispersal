@@ -16,10 +16,10 @@ listed here should be dropped.
 | 022 | Distance vs. time | Overlaid (`hue="regime"`) | Global · Per subbasin · German waters · Per quarter |
 | 023 | Density + mean-age maps | Per-run (papermill regime) | Whole Baltic · Per subbasin · German waters · Per quarter |
 | 025 | Hex relative-density maps | Per-run (regime + season + radius + member) | Baltic percentage+dilution · German-waters zoom · per origin subbasin |
-| 026 | Hex time-horizon relative-density maps | Per-run (regime + season + radius + member) | Cumulative elapsed-time horizons (30/60/90/180 d), all release years pooled · area holding 90 % of the cloud at every age-bin edge (CSV) |
+| 026 | Hex time-horizon relative-density maps | Per-run (regime + season + radius + member) | Cumulative elapsed-time horizons (30/60/90/180 d), `release_years` pooled · area holding 90 % of the cloud at every age-bin edge (CSV) |
 | 026a | 026 per origin subbasin | Per-run (regime + season + radius + member) | One percentage and one dilution figure per origin (HELCOM) subbasin |
 | 026b | 026a per origin subbasin and year | Per-run (regime + season + radius + member) | One percentage and one dilution figure per (origin subbasin, release year) |
-| 027 | Hex distance-quantile maps | Per-run (regime + radius + season) | One 1xN panel row, one panel per quantile (0.1/0.5/0.9), the season's releases pooled across years |
+| 027 | Hex distance-quantile maps | Per-run (regime + radius + season) | One 1xN panel row, one panel per quantile (0.1/0.5/0.9), the season's releases pooled across `release_years` |
 | 028 | Subbasin connectivity matrices | Per-run (regime + radius + season + member) | Raw residence over the 180 d window · emission fraction per cumulative horizon (30/60/90/180 d) · interannual range |
 | 029 | Beaching maps | Per-run (regime + radius + member + season) | Where-stranded with the release sites overlaid · source/sink substrate contrast · stranded share per source hex · cumulative horizons (30/60/90/180 d) · afloat by origin subbasin (table + CSV) · stranded-share curve with interannual band · displacement at stranding |
 | 030 | Survival heatmaps | Per-run (regime + radius + member + season) | Per snapshot bin ending at 30/60/90/180 d: occupancy · survival-weighted (% of released); surviving fraction as a separate 1xN figure; drifting-fraction curve with interannual band |
@@ -38,9 +38,25 @@ because cross-panel reading invites artefacts from regime physics rather
 than from the spatial field.
 
 **Release season is the primary temporal axis (025–031).** Every store
-consumer takes one `season` parameter and pools all available release years.
-The month set is a dict literal in a code cell (papermill injects only
-primitives), and the season tag goes in every figure and export filename.
+consumer takes one `season` parameter and pools the release years of its
+`release_years` parameter. The month set is a dict literal in a code cell
+(papermill injects only primitives), and the season tag goes in every figure
+and export filename.
+
+**Release years 2016–2024.** Every consumer that finds partitions by
+filename (025–033) takes `release_years = "2016-2024"`, an inclusive
+`"first-last"` range or a single year (`"2019"`), parsed in a code cell and
+applied to the filenames before any partition is opened; it prints the range
+and the years on disk it left out. Pooled values and per-year bands therefore
+cover exactly those years. The partial 2025 (January–May releases only) stays
+in the stores and is not read: its missing seasons would pull every
+per-year band down, and a full 2025 needs 2026 forcing. The driver and job
+scripts pass no year argument, so the notebook default is the study's year
+set. 026b keeps a separate `mapped_years_csv` for which years get panels,
+since each origin is normalised over all of `release_years`; 034 compares one
+fixed `year`; 035 reads 026's CSVs, whose per-year rows already end at the
+range. 032 lists every year on disk in its coverage table and pools only
+`release_years` in tables A–C (D–G read the consumers' exports).
 
 | season | DJF | MAM | JJA | SON | ALL |
 |---|---|---|---|---|---|
@@ -214,8 +230,8 @@ default.
 Plots on a plain (non-cartopy) lon/lat axis: hex polygons, Natural Earth
 coastline, HELCOM subbasin overlay and the H0 isobath are all already in
 EPSG:4326; cartopy reprojection would introduce sub-pixel mismatches that
-double-paint hex edges. Three products over one (regime, season) with all
-available release years pooled: Baltic percentage + dilution, the same clipped
+double-paint hex edges. Three products over one (regime, season) with the
+`release_years` pooled: Baltic percentage + dilution, the same clipped
 to the German Bight viewport (normalisation stays basin-wide, so the
 percentages still read as shares of the whole basin's particle-time), and
 a per-origin-subbasin percentage grid where each panel is normalised over
@@ -253,7 +269,7 @@ fraction of its area needed (a 6 km hex is 93.5 km² of water, so whole
 hexes would quantise small-T areas); hexes with weight but no water area
 rank first at zero area. `length_km = sqrt(area_km2)` is the side of the
 equal-area square, a length scale rather than a distance travelled.
-`pooled` ranks the summed weights of every release year; each year is the
+`pooled` ranks the summed weights of every year in `release_years`; each year is the
 same reduction on its own releases, so the per-year rows give the
 interannual range (a pooled value need not lie inside it). A year whose
 partitions hold no release in the season (the partial last release year

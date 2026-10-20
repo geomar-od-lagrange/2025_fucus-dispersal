@@ -35,7 +35,7 @@ subbasin id→name map lives in the key's JSON sidecar. Releases outside
 any named subbasin (origin -1) carry no origin and are reported, not
 mapped.
 
-Each origin is normalised over **its own** releases across **all** years,
+Each origin is normalised over **its own** releases across **all** `release_years`,
 so a year's panels sum to that year's share of the origin's all-year
 particle-time: a faint year reads as a genuinely weaker year rather than
 a rescaling artefact, and the years' panels add up to 100 % at a given
@@ -87,6 +87,9 @@ regime = "surface_stokes"
 member = ""
 # Release season: DJF, MAM, JJA, SON or ALL (every month).
 season = "ALL"
+# Release years pooled: "first-last" (inclusive) or one year ("2019").
+# Partitions of other years stay on disk unopened (2025 is partial).
+release_years = "2016-2024"
 # Hex radius of the store (built by 024a/024). Must match the files on disk.
 hex_radius = 6000
 # Age-bin granularity of the store (must match 024 / 024f). Horizons must
@@ -103,8 +106,9 @@ time_horizons_days_csv = "30,60,90,180"
 # Origin subbasins to map, by HELCOM name (comma-separated). Empty ⇒ every
 # named subbasin that seeds releases.
 origin_subbasins_csv = ""
-# Release years to map (comma-separated). Empty ⇒ every year present.
-release_years_csv = ""
+# Release years to map (comma-separated), a subset of release_years. Each
+# origin is still normalised over all of release_years. Empty ⇒ every year.
+mapped_years_csv = ""
 
 # Isobath to overlay on every panel, in metres of BSH H0 (floor position,
 # see docs/h0_semantics.md). Fucus vesiculosus no longer grows below ~3 m.
@@ -127,6 +131,11 @@ SEASON_MONTHS = {
 if season not in SEASON_MONTHS:
     raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
 season_months = SEASON_MONTHS[season]
+# `release_years` is "first-last" (inclusive) or a single year.
+first_year, _, last_year = release_years.partition("-")
+analysis_years = range(int(first_year), int(last_year or first_year) + 1)
+assert len(analysis_years), f"release_years {release_years!r} is an empty range"
+print(f"release years in the analysis: {analysis_years[0]}–{analysis_years[-1]}")
 
 output_root = Path(output_root)
 data_root = Path(data_root)
@@ -156,7 +165,7 @@ FIGURE_DPI = 300
 PANEL_DECORATION_IN = 0.62
 
 origin_subbasins_filter = [s.strip() for s in origin_subbasins_csv.split(",") if s.strip()]
-release_years_filter = [int(y) for y in release_years_csv.split(",") if y]
+mapped_years_filter = [int(y) for y in mapped_years_csv.split(",") if y]
 
 figure_dir = output_root / "Figures" / "026b"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -216,14 +225,22 @@ else:
     part_re = re.compile(rf"HexAgg_counts_r{hex_radius}m_{regime}_(?P<year>\d{{4}})\.parquet$")
 
 partitions = []
+years_not_read = set()
 for f in sorted(store_root.glob(store_glob)):
     m = part_re.search(f.name)
-    if m is not None:
-        month = m.groupdict().get("month")
-        partitions.append((f, int(m["year"]), None if month is None else int(month)))
+    if m is None:
+        continue
+    if int(m["year"]) not in analysis_years:
+        years_not_read.add(int(m["year"]))
+        continue
+    month = m.groupdict().get("month")
+    partitions.append((f, int(m["year"]), None if month is None else int(month)))
+if years_not_read:
+    print(f"on disk but outside release_years, not read: {sorted(years_not_read)}")
 if not partitions:
     raise FileNotFoundError(
-        f"no partitions matching {store_glob!r} at {store_root} — "
+        f"no partitions matching {store_glob!r} for release years {release_years} "
+        f"at {store_root} — "
         + ("run 024f." if member else "run 024.")
     )
 partition_years = sorted({year for _, year, _ in partitions})
@@ -346,10 +363,10 @@ if unknown:
 filter_ids = {name_to_id[n] for n in origin_subbasins_filter}
 origin_codes = [c for c in origin_codes_present if not filter_ids or c in filter_ids]
 
-missing_years = [y for y in release_years_filter if y not in pooled_years]
+missing_years = [y for y in mapped_years_filter if y not in pooled_years]
 if missing_years:
     print(f"requested years with no {season} releases (skipped): {missing_years}")
-years = [y for y in pooled_years if not release_years_filter or y in release_years_filter]
+years = [y for y in pooled_years if not mapped_years_filter or y in mapped_years_filter]
 
 print(f"release years to map ({len(years)}): {years}")
 print(

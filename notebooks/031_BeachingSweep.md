@@ -33,7 +33,7 @@ hexes receive any, how long stranding takes, and how far the stranded
 material had been displaced.
 
 Each statistic additionally carries the **interannual min–max** over the
-release years on disk as an error bar, so the spread across members is read
+`release_years` as an error bar, so the spread across members is read
 against the spread the same member shows across years. Every member must
 share one reduction window (`max_age_days`, from the partitions' attrs), so
 "beached" means the same elapsed time for all of them. Figures are
@@ -64,6 +64,9 @@ age_bin_days = 10
 disp_bin_km = 10.0
 # Release season: DJF / MAM / JJA / SON, or ALL for the pooled year.
 season = "ALL"
+# Release years pooled: "first-last" (inclusive) or one year ("2019").
+# Partitions of other years stay on disk unopened (2025 is partial).
+release_years = "2016-2024"
 
 # Member tags to compare, comma-separated, in the order they should be drawn.
 # Each must have been built by 024e; missing members are reported and skipped
@@ -103,6 +106,11 @@ output_root = Path(output_root)
 if season not in SEASON_MONTHS:
     raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
 season_months = SEASON_MONTHS[season]
+# `release_years` is "first-last" (inclusive) or a single year.
+first_year, _, last_year = release_years.partition("-")
+analysis_years = range(int(first_year), int(last_year or first_year) + 1)
+assert len(analysis_years), f"release_years {release_years!r} is an empty range"
+print(f"release years in the analysis: {analysis_years[0]}–{analysis_years[-1]}")
 member_tags = [x.strip() for x in members_csv.split(",") if x.strip()]
 member_labels = [x.strip() for x in labels_csv.split(",") if x.strip()] or member_tags
 assert len(member_labels) == len(member_tags), (
@@ -181,7 +189,7 @@ def load_member(tag):
     attrs = []
     for f in sorted(store_root.glob(f"HexAgg_beaching_r{hex_radius}m_{regime}_*.parquet")):
         m = part_re.search(f.name)
-        if m is None:
+        if m is None or int(m.group(1)) not in analysis_years:
             continue
         month = m.group(2)
         if month is None:
@@ -209,8 +217,8 @@ for tag, label in zip(member_tags, member_labels):
     print(f"{tag} ({label}): {len(df):,} rows; {attrs}")
 if not members:
     raise FileNotFoundError(
-        f"no sweep members found for regime {regime!r}, season {season} at "
-        f"{store_root} — run 024e."
+        f"no sweep members found for regime {regime!r}, season {season}, "
+        f"release years {release_years} at {store_root} — run 024e."
     )
 # One window for the whole sweep: a member reduced over a longer window has
 # had longer to strand, which no rate-model setting should be credited with.
@@ -225,10 +233,10 @@ assert store_disp_bin_km == disp_bin_km, (
     f"store disp_bin_km {store_disp_bin_km} != {disp_bin_km}"
 )
 print(f"every member reduced over {max_age_days} d")
-release_years = sorted(
+pooled_years = sorted(
     int(y) for y in pd.concat([df["release_year"] for df in members.values()]).unique()
 )
-print(f"season {season} (months {season_months}); release years {release_years}")
+print(f"season {season} (months {season_months}); release years {pooled_years}")
 ```
 
 # Per-member statistics
@@ -346,7 +354,7 @@ for ax in axes.flat[len(metrics):]:
     ax.set_axis_off()
 axes.flat[len(metrics)].text(
     0.0, 0.5,
-    f"bars: interannual min-max\n{release_years[0]}-{release_years[-1]}\n"
+    f"bars: interannual min-max\n{pooled_years[0]}-{pooled_years[-1]}\n"
     f"season {season}",
     va="center",
 )
@@ -451,7 +459,7 @@ print(f"regime={regime}, hex_radius={hex_radius} m, season={season} "
 print(f"  stranded by {max_age_days} d, range across members: {lo:.1f}% .. {hi:.1f}% "
       f"(spread {hi - lo:.1f} points)")
 bf_year = stats_year["beached_pct"]
-print(f"  interannual min–max within a member ({release_years[0]}–{release_years[-1]}):")
+print(f"  interannual min–max within a member ({pooled_years[0]}–{pooled_years[-1]}):")
 for label in stats.index:
     print(f"    {label}: {stats.loc[label, 'beached_pct']:.1f}% "
           f"[{bf_year.loc[label].min():.1f} .. {bf_year.loc[label].max():.1f}]")

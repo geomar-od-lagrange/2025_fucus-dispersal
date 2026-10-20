@@ -19,7 +19,7 @@ jupyter:
 Lightweight parquet-only consumer of the beaching store built by
 `024e_BuildBeaching` (+ the `024a` key) — no trajectory zarrs, no Dask.
 One regime and one release `season` per run; the season's monthly
-partitions are pooled across every available release year.
+partitions are pooled across the `release_years` range.
 
 The rate model is a two-state hazard — a background rate in the near-shore
 band plus a strong-wave rate switched on where the onshore Stokes forcing
@@ -95,6 +95,9 @@ age_bin_days = 10
 # Release season: DJF / MAM / JJA / SON, or ALL for the pooled year. Selects
 # which of the monthly `_mMM` partitions 024e wrote are read and pooled.
 season = "ALL"
+# Release years pooled: "first-last" (inclusive) or one year ("2019").
+# Partitions of other years stay on disk unopened (2025 is partial).
+release_years = "2016-2024"
 
 # Rate-model member: the opaque tag the reducer put in the store filename
 # (e.g. "step_wc0p1_ts3_tcinf_tf1_tw0"). Selects the partitions and tags
@@ -152,6 +155,11 @@ shoreclass_path = (
 if season not in SEASON_MONTHS:
     raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
 season_months = SEASON_MONTHS[season]
+# `release_years` is "first-last" (inclusive) or a single year.
+first_year, _, last_year = release_years.partition("-")
+analysis_years = range(int(first_year), int(last_year or first_year) + 1)
+assert len(analysis_years), f"release_years {release_years!r} is an empty range"
+print(f"release years in the analysis: {analysis_years[0]}–{analysis_years[-1]}")
 time_horizons_days = [int(x) for x in time_horizons_days_csv.split(",") if x]
 for h in time_horizons_days:
     assert h % age_bin_days == 0, (
@@ -263,7 +271,7 @@ def season_partitions(tag):
     files = []
     for f in sorted(store_root.glob(f"HexAgg_beaching_r{hex_radius}m_{regime}_*.parquet")):
         m = part_re.search(f.name)
-        if m is None:
+        if m is None or int(m.group(1)) not in analysis_years:
             continue
         month = m.group(2)
         if month is None:
@@ -276,7 +284,7 @@ def season_partitions(tag):
     if not files:
         raise FileNotFoundError(
             f"no beaching partitions for regime {regime!r}, season {season}, "
-            f"member {tag!r} at {store_root} — run 024e"
+            f"release years {release_years}, member {tag!r} at {store_root} — run 024e"
             + (f', or set contrast_member = "" to skip the comparison.'
                if tag == contrast_member else ".")
         )
@@ -306,12 +314,12 @@ assert max(time_horizons_days) <= max_age_days, (
     f"({max_age_days} d) — rebuild 024e or lower the horizon"
 )
 
-release_years = sorted(int(y) for y in beaching["release_year"].unique())
+pooled_years = sorted(int(y) for y in beaching["release_year"].unique())
 # The denominator of every percentage below: the released water-seeded
 # drifters of the pooled partitions.
 total_released = float(beaching["weight"].sum())
 print(f"key: {len(key):,} hexes; pooled {len(beaching_files)} (year, month) partition(s)")
-print(f"season {season} (months {season_months}); release years {release_years}")
+print(f"season {season} (months {season_months}); release years {pooled_years}")
 print(f"024e partitions agree on {window}")
 print(f"beaching rows: {len(beaching):,}; released drifters (Σweight) "
       f"{total_released:,.0f}")
@@ -768,7 +776,7 @@ with afloat_path.open("w") as fh:
         f"# 029_BeachingMaps: percentage of each origin subbasin's released "
         f"water-seeded drifters not stranded by age horizon_days "
         f"(regime {regime}, season {season}, member {member}, release years "
-        f"{release_years[0]}-{release_years[-1]}, reduction window "
+        f"{pooled_years[0]}-{pooled_years[-1]}, reduction window "
         f"{max_age_days} d)\n"
         "# afloat = released - stranded at ages < horizon_days; it includes "
         "drifters that left the BSH domain, and no lifetime or sinking is "
@@ -854,7 +862,7 @@ fig.set_size_inches(FIGURE_WIDTH_IN, 0.45 * FIGURE_WIDTH_IN)
 curve.plot(ax=ax)
 ax.fill_between(
     curve.index, curve_per_year.min(axis=1), curve_per_year.max(axis=1), alpha=0.3,
-    label=f"interannual range ({release_years[0]}–{release_years[-1]})",
+    label=f"interannual range ({pooled_years[0]}–{pooled_years[-1]})",
 )
 ax.set_ylabel("stranded (% of released)")
 ax.legend()

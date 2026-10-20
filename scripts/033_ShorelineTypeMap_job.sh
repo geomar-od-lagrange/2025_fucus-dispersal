@@ -11,7 +11,7 @@ set -euo pipefail
 # Lightweight: reads the data twin's shoreline-class table, the 024a key and
 # the 024e beaching parquet, no Dask cluster. One (regime, hex_radius, member,
 # season) per submit; the notebook pools the season's monthly partitions across
-# every release year and repeats the relationship for `contrast_member`. E.g.:
+# the notebook's release_years and repeats the relationship for `contrast_member`. E.g.:
 #   sbatch scripts/033_ShorelineTypeMap_job.sh surface_stokes 6000 \
 #       step_wc0p1_ts3_tcinf_tf1_tw0 ALL step_wc0p1_ts3_tcinf
 # season is one of DJF / MAM / JJA / SON / ALL (release month).

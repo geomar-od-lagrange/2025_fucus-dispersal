@@ -99,6 +99,9 @@ regime = "surface_stokes"
 hex_radius = 6000
 # Release season: DJF / MAM / JJA / SON, or ALL for the pooled year.
 season = "ALL"
+# Release years pooled: "first-last" (inclusive) or one year ("2019").
+# Partitions of other years stay on disk unopened (2025 is partial).
+release_years = "2016-2024"
 
 # Production rate-model member: the opaque tag the reducer put in the store
 # filename. Substrate drives the trapping term here (trap_flat = 1,
@@ -163,6 +166,11 @@ if not shoreclass_path.exists():
 if season not in SEASON_MONTHS:
     raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
 season_months = SEASON_MONTHS[season]
+# `release_years` is "first-last" (inclusive) or a single year.
+first_year, _, last_year = release_years.partition("-")
+analysis_years = range(int(first_year), int(last_year or first_year) + 1)
+assert len(analysis_years), f"release_years {release_years!r} is an empty range"
+print(f"release years in the analysis: {analysis_years[0]}–{analysis_years[-1]}")
 
 flat_bin_edges = [float(x) for x in flat_bin_edges_csv.split(",") if x]
 swedish_subbasins = [s.strip() for s in swedish_subbasins_csv.split(",") if s.strip()]
@@ -293,7 +301,7 @@ print(f"unattributed by length: {100 * unattributed_share:.1f}% (counted as ff =
 print(f"hexes carrying coastline: {len(shore):,} of {len(key):,} key hexes")
 
 # %% [markdown]
-# # Pool the season's beaching partitions across years
+# # Pool the season's beaching partitions across `release_years`
 #
 # Same layout and filename contract as 029: flat per-(year, month) partitions
 # `HexAgg_beaching_r<radius>m_<regime>_<year>_mMM_<member>.parquet` under
@@ -303,7 +311,7 @@ print(f"hexes carrying coastline: {len(shore):,} of {len(key):,} key hexes")
 # Each partition is reduced to `(beach_hex, shore_type) → weight` **before**
 # pooling, and the never-beached residual (`beach_hex = -1`) is dropped there:
 # this notebook has no release-side, age or displacement axis, and a full
-# ten-year pool of the raw rows is ~31 M rows per member for a table that
+# multi-year pool of the raw rows is ~31 M rows per member for a table that
 # reduces to a few thousand.
 #
 # Each partition carries its build parameters as `df.attrs`, taken per file
@@ -353,7 +361,7 @@ def load_beaching(tag):
         store_root.glob(f"HexAgg_beaching_r{hex_radius}m_{regime}_*.parquet")
     ):
         m = pat.search(f.name)
-        if m is None:
+        if m is None or int(m.group(1)) not in analysis_years:
             continue
         month = m.group(2)
         if month is None:
@@ -365,7 +373,7 @@ def load_beaching(tag):
     if not files:
         raise FileNotFoundError(
             f"no beaching partitions for regime {regime!r}, season {season}, "
-            f"member {tag!r} at {store_root} — run 024e."
+            f"release years {release_years}, member {tag!r} at {store_root} — run 024e."
         )
     parts = []
     attrs = []

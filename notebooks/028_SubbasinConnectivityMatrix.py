@@ -86,6 +86,9 @@ max_age_days = 180
 time_horizons_days_csv = "30,60,90,180"
 # Release season: one of DJF, MAM, JJA, SON, ALL.
 season = "ALL"
+# Release years pooled: "first-last" (inclusive) or one year ("2019").
+# Partitions of other years stay on disk unopened (2025 is partial).
+release_years = "2016-2024"
 # Rate-model member tag. "" reads the unweighted 024c connectivity store;
 # any other string reads the 024g survconn store for that member and uses its
 # survival-weighted `w_obs`. Opaque — never parsed.
@@ -117,6 +120,11 @@ store_root = output_root / "HexAggregates"
 if season not in SEASON_MONTHS:
     raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
 season_months = SEASON_MONTHS[season]
+# `release_years` is "first-last" (inclusive) or a single year.
+first_year, _, last_year = release_years.partition("-")
+analysis_years = range(int(first_year), int(last_year or first_year) + 1)
+assert len(analysis_years), f"release_years {release_years!r} is an empty range"
+print(f"release years in the analysis: {analysis_years[0]}–{analysis_years[-1]}")
 
 time_horizons_days = [int(x) for x in time_horizons_days_csv.split(",") if x]
 for h in time_horizons_days:
@@ -177,10 +185,22 @@ else:
         rf"HexAgg_connectivity_r{hex_radius}m_{regime}_(\d{{4}})\.parquet$"
     )
 
-files = sorted(p for p in store_root.glob(pattern) if year_re.search(p.name))
+files = []
+years_not_read = set()
+for f in sorted(store_root.glob(pattern)):
+    m = year_re.search(f.name)
+    if m is None:
+        continue
+    if int(m.group(1)) in analysis_years:
+        files.append(f)
+    else:
+        years_not_read.add(int(m.group(1)))
+if years_not_read:
+    print(f"on disk but outside release_years, not read: {sorted(years_not_read)}")
 if not files:
     raise FileNotFoundError(
-        f"no partitions matching {pattern!r} at {store_root} — "
+        f"no partitions matching {pattern!r} for release years {release_years} "
+        f"at {store_root} — "
         + ("run 024g." if member else "run 024c.")
     )
 

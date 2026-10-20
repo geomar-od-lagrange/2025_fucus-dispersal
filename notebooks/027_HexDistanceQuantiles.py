@@ -21,7 +21,7 @@
 # 024a hex grid as one panel per quantile level. Reads the distance
 # histogram store built by 024b (+ the 024a key for geometry) — no
 # trajectory zarrs, no Dask cluster. One regime and one release `season`
-# per run, pooled across every available release year.
+# per run, pooled across the `release_years` range.
 #
 # Quantiles are derived from the pooled per-hex histogram (cumulative count
 # over `distance_bin`). Histograms are additive, so pooling across years is
@@ -57,6 +57,9 @@ distance_bin_km = 1.0
 
 # Release season: DJF / MAM / JJA / SON, or ALL for the pooled year.
 season = "ALL"
+# Release years pooled: "first-last" (inclusive) or one year ("2019").
+# Partitions of other years stay on disk unopened (2025 is partial).
+release_years = "2016-2024"
 # Distance quantile levels to compute per source hex.
 quantile_levels_csv = "0.1,0.5,0.9"
 # Minimum trajectories per source hex to report a quantile (else dropped —
@@ -91,6 +94,11 @@ output_root = Path(output_root)
 if season not in SEASON_MONTHS:
     raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
 season_months = SEASON_MONTHS[season]
+# `release_years` is "first-last" (inclusive) or a single year.
+first_year, _, last_year = release_years.partition("-")
+analysis_years = range(int(first_year), int(last_year or first_year) + 1)
+assert len(analysis_years), f"release_years {release_years!r} is an empty range"
+print(f"release years in the analysis: {analysis_years[0]}–{analysis_years[-1]}")
 quantile_levels = [float(x) for x in quantile_levels_csv.split(",")]
 
 # Print-ready output: every saved figure is one full text-width (180 mm)
@@ -110,7 +118,8 @@ export_dir.mkdir(parents=True, exist_ok=True)
 # Layout: ``output_root/HexAggregates/HexAgg_key_r<radius>m.parquet`` and
 # ``HexAgg_distance_r<radius>m_<regime>_<year>.parquet``. The release year
 # is parsed from each filename so `release_doy → month` is leap-correct;
-# the per-hex histograms are summed across the season's months and all years.
+# the per-hex histograms are summed across the season's months and the
+# `release_years`; partitions of other years are not opened.
 
 # %%
 store_root = output_root / "HexAggregates"
@@ -120,17 +129,26 @@ key = gpd.read_parquet(key_path)
 # Match exactly four year digits after the regime so `surface` does not also
 # glob `surface_stokes_*` files (prefix collision).
 _DIST_RE = re.compile(rf"HexAgg_distance_r{hex_radius}m_{regime}_(\d{{4}})\.parquet$")
-dist_files = sorted(
+dist_files = []
+years_not_read = set()
+for f in sorted(
     store_root.glob(f"HexAgg_distance_r{hex_radius}m_{regime}_[0-9][0-9][0-9][0-9].parquet")
-)
+):
+    year = int(_DIST_RE.search(f.name).group(1))
+    if year in analysis_years:
+        dist_files.append((f, year))
+    else:
+        years_not_read.add(year)
+if years_not_read:
+    print(f"on disk but outside release_years, not read: {sorted(years_not_read)}")
 if not dist_files:
     raise FileNotFoundError(
-        f"no distance partitions for regime {regime!r} at {store_root} — run 024b."
+        f"no distance partitions for regime {regime!r}, release years {release_years} "
+        f"at {store_root} — run 024b."
     )
 
 parts = []
-for f in dist_files:
-    year = int(_DIST_RE.search(f.name).group(1))
+for f, year in dist_files:
     df = pd.read_parquet(f).reset_index(drop=True)
     df["release_year"] = year
     df["release_month"] = pd.to_datetime(
@@ -138,7 +156,8 @@ for f in dist_files:
     ).dt.month
     parts.append(df)
 dist = pd.concat(parts, ignore_index=True)
-print(f"key: {len(key):,} hexes; pooled {len(dist_files)} year partition(s)")
+print(f"key: {len(key):,} hexes; pooled {len(dist_files)} year partition(s): "
+      f"{[year for _, year in dist_files]}")
 
 dist = dist[dist["release_month"].isin(season_months)]
 print(f"season {season} (months {season_months}): {len(dist):,} rows")
