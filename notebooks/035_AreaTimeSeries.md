@@ -156,24 +156,33 @@ colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 fig, axes = plt.subplots(1, len(PANELS), layout="constrained")
 # Print-ready width; a line panel at the default 4:3 per-panel aspect.
 fig.set_size_inches(FIGURE_WIDTH_IN, 0.75 * FIGURE_WIDTH_IN / len(PANELS))
+legend_handles = {}
 for ax, (value, ylabel) in zip(axes, PANELS.items()):
     for regime in drawn:
         color = colors[regimes.index(regime)]
         t = table.loc[regime]
         tag = areas.loc[areas["regime"] == regime, "tag"].iloc[0]
+        weighting = "unweighted" if tag == "unweighted" else "survival-weighted"
         # The band takes the line's colour so each regime reads as one
         # object; alpha keeps the other regime's line visible through it.
-        ax.fill_between(
+        band = ax.fill_between(
             t.index, t[f"{value}_year_min"], t[f"{value}_year_max"],
-            color=color, alpha=0.3, label=f"{regime} per-year min–max",
+            color=color, alpha=0.3,
         )
         # Markers mark the horizons the 026 table actually holds.
-        ax.plot(t.index, t[value], marker="o", color=color, label=f"{regime} ({tag}), pooled")
-    ax.set_xlabel("horizon T, cumulative ages in [0, T) (d)")
+        (line,) = ax.plot(t.index, t[value], marker="o", color=color)
+        legend_handles[f"{regime} ({weighting})"] = (band, line)
+    ax.set_xlabel("horizon T (d), ages in [0, T)")
     ax.set_ylabel(ylabel)
     # From zero, so the two regimes' areas compare as ratios by eye.
     ax.set_ylim(0, None)
-axes[0].legend()
+# One entry per regime (band + pooled line), below the panels: inside an
+# axes it covers the curves at print width.
+fig.legend(
+    list(legend_handles.values()), list(legend_handles),
+    loc="outside lower center", ncols=len(legend_handles),
+    title="pooled (line) and per-year min–max (band)",
+)
 fig.suptitle(f"release season {season}")
 fig_path = figure_dir / f"AreaTimeSeries_{season}_r{hex_radius}m.png"
 fig.savefig(fig_path, dpi=FIGURE_DPI)
