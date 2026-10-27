@@ -93,3 +93,20 @@ Bothnian Sea · QUA The Quark · BOB Bothnian Bay
 ## Status
 
 - 2026-10-27: plan written.
+- 2026-10-27: **P1 done** (026, 026a, 034, 035; G1–G4, Fig 3–7, 9–12) —
+  `bd9a5e4` (026, 034), `3f918b6` (035), `fbf4cb3` (026a), `20088dd` (docs).
+  Dilution floor **F = 10⁻⁵ % per km²** (`dilution_floor`; 10⁻⁴ would cut up
+  to 13 % of a panel). Weight below F, worst panel per figure: Fig 5 surface
+  0.53 % (180 d), Fig 3 bottom 0.34 % (180 d), Fig 10 overview surface T30
+  0.47 % (Kattegat), Fig 11 surface T180 0.80 % (Arkona Basin), Fig 12
+  bottom T180 0.22 % (Eastern Gotland Basin), Fig 9 pair 0.26 % (1×);
+  nothing above 10² anywhere. Coastline: BSH wet-cell outline, fine-first as
+  in 024a, minus a 0.001° strip on the fine-bbox seam (otherwise a line runs
+  across the Kattegat at 56.45 °N). Isobath at zorder 10, verified on 2×
+  crops (magenta over black where they coincide). 034's colourbar stays an
+  inset under the lower map (a figure-wide bar overruns the height-limited
+  pair). Reruns: 026 ALL/DJF/MAM/JJA/SON × both regimes, 026a ALL × both,
+  034 2019, 035 ALL. Notable: at the fixed scale most open water falls in
+  the two lowest decades (10⁻⁵–10⁻³), and the darkest turbo class sits close
+  to the black coastline; captions for Fig 4 must carry the season and the
+  band (per-release-year min–max).
