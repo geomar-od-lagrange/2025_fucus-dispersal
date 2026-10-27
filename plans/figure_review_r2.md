@@ -285,3 +285,12 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
   (surface_stokes, 0–180 d): 38 % (April) to 65 % (October).
 - Stalled in land cells ≤ 0.7 % of particle-hours; stalled in open water
   ≤ 3 %.
+- Spatial signal (`tmp_pinned_time/e_spatial.py`, ~1 km boxes of the
+  day-180 position): pins collect at few persistent sites. surface_stokes:
+  186,577 pinned drifters at 1,174 sites; 64 sites hold 50 %, 345 hold
+  90 %; the top 8 sites (2–2.6 % each) are hit by all 4 releases (e.g.
+  22.17E 60.45N, 24.58E 58.35N, 29.83E 60.20N, 21.42E 62.30N). surface and
+  bottom: 19 sites hold 50 %. Median release→pin distance 125 km
+  (surface_stokes), 141 km (surface), 28 km (bottom): drifters travel for
+  weeks before a downstream attractor catches them; pinning is absorbing,
+  so the pinned fraction can only grow with age.
