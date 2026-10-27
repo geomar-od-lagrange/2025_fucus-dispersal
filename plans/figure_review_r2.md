@@ -294,3 +294,28 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
   (surface_stokes), 141 km (surface), 28 km (bottom): drifters travel for
   weeks before a downstream attractor catches them; pinning is absorbing,
   so the pinned fraction can only grow with age.
+
+## Within-grid land entries (2026-10-27, `tmp_land_entry/`, verified)
+
+- 957 of 228,822 water-seeded surface_stokes drifters (0.42 %, 2019) enter a
+  land cell without a nest switch; all stay bit-frozen there. Plus 1,175 at
+  nest switches (0.51 %). Particle-hours in land within 180 d: 0.29 % /
+  0.42 %.
+- Mechanism (all 957 entry steps rerun bit-identically in the 3.0.6
+  container, every RK4 stage traced): AdvectionRK4 samples stage positions
+  wherever they land, without checking that they stay in the cell or in
+  water. At a convex corner of a one-cell island (144) or spit tip (813) a
+  stage crosses into the land cell L, where all four faces are zero and the
+  C-grid returns u = v = 0 exactly. That truncates the RK4 average to a
+  point already inside L (91 %: patterns PLPL, PPPL). The other 9 % pick up
+  a neighbouring water cell's wall-normal velocity and cross the start
+  cell's closed face. Not RK4 overshoot: k·dt ≤ 0.26 at a 5-min step, and the
+  one-cell RK4 wall distance has no real root.
+- Generic: a synthetic 1-km C-grid island in uniform 0.3 m/s flow at 225°
+  traps 20/4/0 of 4000 drifters at dt = 300/60/12 s, same stage pattern.
+- Stores: counted as real afloat drifters (024, 024f); 40 % sit at
+  flat_fraction 0 and never strand under trap weights 1/0.
+- Fix options: post-process as stranded (free with the stall rule); a
+  land-guard kernel with sub-stepping in 010 (rerun); smaller dt (5×
+  cost, only reduces); AdvectionAnalytical (Scipy-only in 3.0.6, no
+  NestedField).
