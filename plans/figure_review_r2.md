@@ -199,10 +199,11 @@ sample = every third zarr, 1.42 M drifters per regime).
 - Underneath is real retention: 88.6 % of surface drifters never move ≥ 10 m
   again by 180 d (median stop day 76; bottom 25.5 %). Stalled drifters keep
   survival weight (mean exp(−A) 0.44, same as moving ones; `trap_wall = 0`
-  gives walled shores zero stranding rate). 25 % of surface positions sit
-  exactly on coarse-grid F-points (cell corners) — the corner trap of
-  `plans/done/corner_theory.md`, whose ε-floor fix was never wired into 010.
-  To be verified before acting on it.
+  gives walled shores zero stranding rate). The first diagnostic called this
+  the C-grid corner trap; that is unverified — its "on F-points" test ran
+  only inside the top hexes, as a half-cell offset from the H0 coarse
+  coordinates. An independent audit on actual trajectories with the 010
+  fieldset is running (`tmp_stall_audit/`).
 - Land seeds are excluded correctly (both regimes count water-seeded
   drifters: surface N = 37,296,956, bottom 37,277,160).
 - Options, by soundness of the result: (1) floor the dilution area at ¼ hex
