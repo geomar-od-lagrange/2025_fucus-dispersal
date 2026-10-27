@@ -65,13 +65,12 @@ quantile_levels_csv = "0.1,0.5,0.9"
 # avoids unstable quantiles from a handful of particles).
 min_traj_per_hex = 30
 
-# Map extent (degrees E / degrees N). Cropped to the Baltic proper: the 024a
-# key tiles the whole BSH domain including the North Sea, which carries no
-# Fucus source hexes and only costs panel height (as 029/030).
-baltic_lon_min = 9.0
-baltic_lon_max = 30.7
-baltic_lat_min = 53.0
-baltic_lat_max = 66.0
+# Map extent (degrees), one for every map of the pipeline: the Baltic with
+# the Belt Sea and Kattegat, North Sea cropped (docs/visualisations.md).
+extent_lon_min = 9.0
+extent_lon_max = 30.7
+extent_lat_min = 53.0
+extent_lat_max = 66.0
 ```
 
 # Parse parameters
@@ -253,13 +252,13 @@ def grid_height_in(nrows, ncols, aspect, width_in):
 _coast_gdf = gpd.read_file(
     natural_earth(resolution="10m", category="physical", name="coastline")
 )
-coast_baltic = _coast_gdf.clip(box(baltic_lon_min, baltic_lat_min, baltic_lon_max, baltic_lat_max))
+coast_baltic = _coast_gdf.clip(box(extent_lon_min, extent_lat_min, extent_lon_max, extent_lat_max))
 
-baltic_extent = [baltic_lon_min, baltic_lon_max, baltic_lat_min, baltic_lat_max]
+baltic_extent = [extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max]
 # Aspect ratio that keeps 1° lon at lat_mean visually equal to 1° lat.
 baltic_aspect = (
-    (baltic_lon_max - baltic_lon_min) * np.cos(np.radians(0.5 * (baltic_lat_min + baltic_lat_max)))
-) / (baltic_lat_max - baltic_lat_min)
+    (extent_lon_max - extent_lon_min) * np.cos(np.radians(0.5 * (extent_lat_min + extent_lat_max)))
+) / (extent_lat_max - extent_lat_min)
 # Hex seam stroke, as 029/031: edgecolor="face" means this is not a visible
 # outline, it closes the ~1 px anti-aliasing seam between adjacent polygons.
 # The seam is a fixed PIXEL artefact, so pin the stroke to ~1 px at the
@@ -288,6 +287,17 @@ for ax, q in zip(axes.flat, quantile_levels):
         quant_gdf, ax, baltic_extent, f"q{q:g}_km",
         title=f"quantile {q:g}", coast=coast_baltic,
     )
+# What the crop cuts off: the share of the mapped trajectories whose source
+# hex (representative point) lies outside the extent.
+point = quant_gdf.geometry.representative_point()
+outside = ~(
+    point.x.between(extent_lon_min, extent_lon_max)
+    & point.y.between(extent_lat_min, extent_lat_max)
+)
+print(
+    f"{100 * quant_gdf.loc[outside, 'n_traj'].sum() / quant_gdf['n_traj'].sum():.3f} % "
+    f"of the mapped trajectories outside the map extent"
+)
 fig_path = figure_dir / f"DistanceQuantiles_{regime}_r{hex_radius}m_{season}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
 fig.savefig(fig_path, dpi=FIGURE_DPI)

@@ -129,9 +129,9 @@ swedish_subbasins_csv = (
     "Northern Baltic Proper,Bothnian Sea"
 )
 
-# Map extent (degrees), as 029 — the key tiles the whole BSH domain including
-# the North Sea, which is empty for Fucus. Set all four to 0 for the key's
-# full bounds.
+# Map extent (degrees), one for every map of the pipeline: the Baltic with
+# the Belt Sea and Kattegat, North Sea cropped (docs/visualisations.md). Set
+# all four to 0 to fall back to the key's full bounds.
 extent_lon_min = 9.0
 extent_lon_max = 30.7
 extent_lat_min = 53.0
@@ -467,6 +467,14 @@ rather than auto-ranging keeps the white at 0.5 across runs.
 ```python
 gdf_shore = shore.assign(value=shore["flat_fraction"]).pipe(
     gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326"
+)
+# What the crop cuts off both maps: the share of the mapped coastline length
+# on hexes whose representative point lies outside the extent.
+point = gdf_shore.geometry.representative_point()
+outside = ~(point.x.between(lon_min, lon_max) & point.y.between(lat_min, lat_max))
+print(
+    f"{100 * gdf_shore.loc[outside, 'coast_len_m'].sum() / gdf_shore['coast_len_m'].sum():.3f} % "
+    f"of the mapped coastline length outside the map extent"
 )
 
 fig, ax = plt.subplots(layout="constrained")

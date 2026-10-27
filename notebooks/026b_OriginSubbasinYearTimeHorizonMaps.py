@@ -115,6 +115,14 @@ mapped_years_csv = ""
 # see docs/h0_semantics.md). Fucus vesiculosus no longer grows below ~3 m.
 isobath_m = 3.0
 
+# Map extent (degrees), one for every map of the pipeline: the Baltic with
+# the Belt Sea and Kattegat, North Sea cropped (docs/visualisations.md). Set
+# all four to 0 to fall back to the key's full bounds.
+extent_lon_min = 9.0
+extent_lon_max = 30.7
+extent_lat_min = 53.0
+extent_lat_max = 66.0
+
 # %% [markdown]
 # # Parse parameters
 #
@@ -164,6 +172,9 @@ FIGURE_DPI = 300
 # Vertical inches a panel needs on top of its map for the horizontal
 # colorbar, the colorbar label and the panel title.
 PANEL_DECORATION_IN = 0.62
+# One page: a taller grid is capped here, its maps turn height-limited and
+# the spare width becomes side margin.
+MAX_FIGURE_HEIGHT_IN = 230 / 25.4
 
 origin_subbasins_filter = [s.strip() for s in origin_subbasins_csv.split(",") if s.strip()]
 mapped_years_filter = [int(y) for y in mapped_years_csv.split(",") if y]
@@ -421,11 +432,11 @@ COLUMN_LABEL = {
 # %% [markdown]
 # # Map backdrop: coastline and the 3 m isobath
 #
-# The hex key decides the extent — no manual crop. The key tiles the full
-# BSH model domain (North Sea included), so this shows the whole covered
-# area; the dispersal cloud occupies wherever it actually reaches.
-# Coastline is Natural Earth 10 m via cartopy's shapereader (cached
-# locally), clipped to that extent once.
+# The `extent_*` parameters decide the extent, shared by every map of the
+# pipeline. The key tiles the full BSH model domain (North Sea included), so
+# some weight can lie outside it; each map prints that share. Coastline is
+# Natural Earth 10 m via cartopy's shapereader (cached locally), clipped to
+# the extent once.
 #
 # The isobath comes from the BSH static H0 grids, *not* from the key's
 # `mean_depth_m` — a hex mean over a 6 km cell cannot resolve a 3 m
@@ -436,8 +447,12 @@ COLUMN_LABEL = {
 # not draw the same contour twice.
 
 # %%
-domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max = key.total_bounds
-domain_extent = [domain_lon_min, domain_lon_max, domain_lat_min, domain_lat_max]
+if any((extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max)):
+    domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max = (
+        extent_lon_min, extent_lat_min, extent_lon_max, extent_lat_max
+    )
+else:
+    domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max = key.total_bounds
 
 h0_fine = xr.open_dataset(
     data_root / "bsh_hbmnoku_static/static_file_fine/H0_file_fine.nc"
@@ -473,9 +488,22 @@ def map_grid(nrows, ncols):
     fig, axes = plt.subplots(nrows=nrows, ncols=ncols, squeeze=False, layout="constrained")
     fig.set_size_inches(
         FIGURE_WIDTH_IN,
-        nrows * ((FIGURE_WIDTH_IN / ncols) / domain_aspect + PANEL_DECORATION_IN),
+        min(
+            nrows * ((FIGURE_WIDTH_IN / ncols) / domain_aspect + PANEL_DECORATION_IN),
+            MAX_FIGURE_HEIGHT_IN,
+        ),
     )
     return fig, axes
+
+
+def share_outside_extent(gdf):
+    """Share (%) of ``gdf``'s weight on hexes whose representative point lies
+    outside the map extent — what the crop cuts off a map."""
+    point = gdf.geometry.representative_point()
+    inside = point.x.between(domain_lon_min, domain_lon_max) & point.y.between(
+        domain_lat_min, domain_lat_max
+    )
+    return 100 * gdf.loc[~inside, "weight"].sum() / gdf["weight"].sum()
 
 
 def percentage_norm(gdf):
@@ -603,6 +631,15 @@ for code in origin_codes:
         print(f"{name}: no occupied target hexes — skipping")
         continue
     pooled = pd.concat(nonempty, ignore_index=True)
+    for y in years:
+        if all(gdfs[(y, h)].empty for h in time_horizons_days):
+            continue
+        print(
+            f"{name} {y}: mapped weight outside the map extent "
+            + ", ".join(
+                f"{h} d {share_outside_extent(gdfs[(y, h)]):.3f} %" for h in time_horizons_days
+            )
+        )
     for column, norm_of in (("percentage", percentage_norm), ("dilution", dilution_norm)):
         # One norm per (origin, view), spanning the origin's years and
         # horizons, so colour differences across years are signal.

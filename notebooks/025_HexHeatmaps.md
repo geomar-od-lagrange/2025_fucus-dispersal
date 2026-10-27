@@ -94,11 +94,13 @@ age_bin_days = 10
 # unweighted maps cover the same ages. A multiple of age_bin_days.
 max_age_days = 180
 
-# Baltic-wide map extent (degrees E / degrees N).
-baltic_lon_min = 5
-baltic_lon_max = 32
-baltic_lat_min = 53
-baltic_lat_max = 66
+# Map extent (degrees), one for every map of the pipeline: the Baltic with
+# the Belt Sea and Kattegat, North Sea cropped (docs/visualisations.md). The
+# German-waters zoom below is the one exception.
+extent_lon_min = 9.0
+extent_lon_max = 30.7
+extent_lat_min = 53.0
+extent_lat_max = 66.0
 
 # DE-zoom map extent (degrees E / degrees N).
 de_lon_min = 8
@@ -157,6 +159,9 @@ FIGURE_DPI = 300
 # Vertical inches a panel needs on top of its map for the horizontal
 # colorbar, the colorbar label and the panel title.
 PANEL_DECORATION_IN = 0.62
+# One page: a taller grid is capped here, its maps turn height-limited and
+# the spare width becomes side margin.
+MAX_FIGURE_HEIGHT_IN = 230 / 25.4
 
 figure_dir = output_root / "Figures" / "025"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -409,11 +414,11 @@ _coast_gdf = gpd.read_file(
     natural_earth(resolution="10m", category="physical", name="coastline")
 )
 coast_baltic = _coast_gdf.clip(
-    box(baltic_lon_min, baltic_lat_min, baltic_lon_max, baltic_lat_max)
+    box(extent_lon_min, extent_lat_min, extent_lon_max, extent_lat_max)
 )
 coast_de = _coast_gdf.clip(box(de_lon_min, de_lat_min, de_lon_max, de_lat_max))
 
-baltic_extent = [baltic_lon_min, baltic_lon_max, baltic_lat_min, baltic_lat_max]
+baltic_extent = [extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max]
 de_extent = [de_lon_min, de_lon_max, de_lat_min, de_lat_max]
 
 
@@ -435,9 +440,22 @@ def map_grid(nrows, ncols, extent):
     fig, axes = plt.subplots(nrows=nrows, ncols=ncols, squeeze=False, layout="constrained")
     fig.set_size_inches(
         FIGURE_WIDTH_IN,
-        nrows * ((FIGURE_WIDTH_IN / ncols) / extent_aspect(extent) + PANEL_DECORATION_IN),
+        min(
+            nrows * ((FIGURE_WIDTH_IN / ncols) / extent_aspect(extent) + PANEL_DECORATION_IN),
+            MAX_FIGURE_HEIGHT_IN,
+        ),
     )
     return fig, axes
+
+
+def share_outside_extent(gdf):
+    """Share (%) of ``gdf``'s weight on hexes whose representative point lies
+    outside the Baltic map extent — what the crop cuts off a map."""
+    point = gdf.geometry.representative_point()
+    inside = point.x.between(extent_lon_min, extent_lon_max) & point.y.between(
+        extent_lat_min, extent_lat_max
+    )
+    return 100 * gdf.loc[~inside, "weight"].sum() / gdf["weight"].sum()
 
 
 def percentage_norm(gdf):
@@ -526,6 +544,7 @@ def export_geojson(gdf, name, **extra_columns):
 
 ```python
 gdf_full = to_hex_gdf(binned, key)
+print(f"Baltic: {share_outside_extent(gdf_full):.3f} % of the mapped weight outside the map extent")
 
 fig, axes = map_grid(1, 2, baltic_extent)
 hex_map(
@@ -595,7 +614,9 @@ origin_gdfs = {
     code: to_hex_gdf(binned[binned["origin_subbasin"] == code], key)
     for code in origin_codes
 }
-ncols = 3
+# Four columns: at three, a 12-panel grid on the tall Baltic extent overruns
+# the page height.
+ncols = 4
 for i in range(0, len(origin_codes), max_panels_per_figure):
     chunk = origin_codes[i : i + max_panels_per_figure]
     nrows = int(np.ceil(len(chunk) / ncols))
@@ -612,6 +633,13 @@ for i in range(0, len(origin_codes), max_panels_per_figure):
     for ax in axes.flat[len(chunk):]:
         ax.set_visible(False)
     part = i // max_panels_per_figure + 1
+    print(
+        f"part {part}: mapped weight outside the map extent "
+        + ", ".join(
+            f"{subbasin_id_to_name[code]} {share_outside_extent(origin_gdfs[code]):.3f} %"
+            for code in chunk
+        )
+    )
     fig_path = (
         figure_dir
         / f"HexRelativeDensityByOrigin_{regime}_{season}_r{hex_radius}m_{member_tag}_part{part}.png"

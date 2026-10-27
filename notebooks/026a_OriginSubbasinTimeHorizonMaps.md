@@ -106,10 +106,6 @@ time_horizons_days_csv = "30,60,90,180"
 # panel per origin on a shared colour scale), in days: same rules as the map
 # horizons.
 overview_horizons_days_csv = "30,180"
-# Map extent of the overview panels, "lon_min,lon_max,lat_min,lat_max" in
-# degrees: the Baltic plus the Kattegat/Skagerrak entrance. The run prints
-# how much above-floor particle-time falls outside it.
-overview_extent_csv = "8,30.7,53,66"
 
 # Origin subbasins to map, by HELCOM name (comma-separated). Empty ⇒ every
 # named subbasin that seeds releases.
@@ -118,6 +114,15 @@ origin_subbasins_csv = ""
 # Isobath to overlay on every panel, in metres of BSH H0 (floor position,
 # see docs/h0_semantics.md). Fucus vesiculosus no longer grows below ~3 m.
 isobath_m = 3.0
+
+# Map extent (degrees), one for every map of the pipeline — the per-origin
+# grids and the overview alike: the Baltic with the Belt Sea and Kattegat,
+# North Sea cropped (docs/visualisations.md). Set all four to 0 to fall back
+# to the key's full bounds.
+extent_lon_min = 9.0
+extent_lon_max = 30.7
+extent_lat_min = 53.0
+extent_lat_max = 66.0
 ```
 
 # Parse parameters
@@ -147,8 +152,6 @@ data_root = Path(data_root)
 store_root = output_root / "HexAggregates"
 time_horizons_days = [int(x) for x in time_horizons_days_csv.split(",") if x]
 overview_horizons_days = [int(x) for x in overview_horizons_days_csv.split(",") if x]
-overview_extent = [float(x) for x in overview_extent_csv.split(",")]
-assert len(overview_extent) == 4, f"overview_extent_csv {overview_extent_csv!r} needs 4 numbers"
 assert max_age_days % age_bin_days == 0, (
     f"max_age_days {max_age_days} d is not a multiple of age_bin_days {age_bin_days} d"
 )
@@ -172,6 +175,9 @@ FIGURE_DPI = 300
 # Vertical inches a panel needs on top of its map for the horizontal
 # colorbar, the colorbar label and the panel title.
 PANEL_DECORATION_IN = 0.62
+# One page: a taller grid is capped here, its maps turn height-limited and
+# the spare width becomes side margin.
+MAX_FIGURE_HEIGHT_IN = 230 / 25.4
 
 origin_subbasins_filter = [s.strip() for s in origin_subbasins_csv.split(",") if s.strip()]
 
@@ -422,11 +428,11 @@ COLUMN_LABEL = {
 
 # Map backdrop: coastline and the 3 m isobath
 
-The hex key decides the extent — no manual crop. The key tiles the full
-BSH model domain (North Sea included), so this shows the whole covered
-area; the dispersal cloud occupies wherever it actually reaches.
-Coastline is Natural Earth 10 m via cartopy's shapereader (cached
-locally), clipped to that extent once.
+The `extent_*` parameters decide the extent, shared by every map of the
+pipeline. The key tiles the full BSH model domain (North Sea included), so
+some weight can lie outside it; each map prints that share. Coastline is
+Natural Earth 10 m via cartopy's shapereader (cached locally), clipped to
+the extent once.
 
 The isobath comes from the BSH static H0 grids, *not* from the key's
 `mean_depth_m` — a hex mean over a 6 km cell cannot resolve a 3 m
@@ -437,8 +443,12 @@ Baltic); the coarse grid is blanked inside the fine bbox so the two do
 not draw the same contour twice.
 
 ```python
-domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max = key.total_bounds
-domain_extent = [domain_lon_min, domain_lon_max, domain_lat_min, domain_lat_max]
+if any((extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max)):
+    domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max = (
+        extent_lon_min, extent_lat_min, extent_lon_max, extent_lat_max
+    )
+else:
+    domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max = key.total_bounds
 
 h0_fine = xr.open_dataset(
     data_root / "bsh_hbmnoku_static/static_file_fine/H0_file_fine.nc"
@@ -474,9 +484,22 @@ def map_grid(nrows, ncols):
     fig, axes = plt.subplots(nrows=nrows, ncols=ncols, squeeze=False, layout="constrained")
     fig.set_size_inches(
         FIGURE_WIDTH_IN,
-        nrows * ((FIGURE_WIDTH_IN / ncols) / domain_aspect + PANEL_DECORATION_IN),
+        min(
+            nrows * ((FIGURE_WIDTH_IN / ncols) / domain_aspect + PANEL_DECORATION_IN),
+            MAX_FIGURE_HEIGHT_IN,
+        ),
     )
     return fig, axes
+
+
+def share_outside_extent(gdf):
+    """Share (%) of ``gdf``'s weight on hexes whose representative point lies
+    outside the map extent — what the crop cuts off a map."""
+    point = gdf.geometry.representative_point()
+    inside = point.x.between(domain_lon_min, domain_lon_max) & point.y.between(
+        domain_lat_min, domain_lat_max
+    )
+    return 100 * gdf.loc[~inside, "weight"].sum() / gdf["weight"].sum()
 
 
 def percentage_norm(gdf):
@@ -515,7 +538,7 @@ def extend_of(values, norm):
 
 def hex_map(
     gdf, column, ax, norm, title=None, cbar_label=True, colorbar=True,
-    isobath=True, extent=domain_extent,
+    isobath=True,
 ):
     """Draw one relative-density panel: hex polygons through ``norm``,
     coastline, and the H0 isobath, all on a plain (non-cartopy) lon/lat
@@ -523,8 +546,7 @@ def hex_map(
     hexes, coastline and isobath out of register. An empty ``gdf`` skips
     the hex layer and still renders the backdrop, keeping the grid layout
     stable. ``colorbar=False`` leaves the colorbar to the caller (one
-    shared bar for a whole figure); ``isobath=False`` drops the isobath;
-    ``extent`` is ``[lon_min, lon_max, lat_min, lat_max]``."""
+    shared bar for a whole figure); ``isobath=False`` drops the isobath."""
     if not gdf.empty and gdf[column].notna().any():
         colorbar_kwargs = {}
         if colorbar:
@@ -557,10 +579,9 @@ def hex_map(
             h0.lon, h0.lat, h0, levels=[isobath_m],
             colors="magenta", linewidths=0.3, zorder=3,
         )
-    lon_min, lon_max, lat_min, lat_max = extent
-    ax.set_xlim(lon_min, lon_max)
-    ax.set_ylim(lat_min, lat_max)
-    ax.set_aspect(1 / np.cos(np.radians(0.5 * (lat_min + lat_max))))
+    ax.set_xlim(domain_lon_min, domain_lon_max)
+    ax.set_ylim(domain_lat_min, domain_lat_max)
+    ax.set_aspect(1 / np.cos(np.radians(0.5 * (domain_lat_min + domain_lat_max))))
     ax.set_xticks([])
     ax.set_yticks([])
     if title is not None:
@@ -598,6 +619,10 @@ for code in origin_codes:
     if all(g.empty for g in gdfs.values()):
         print(f"{name}: no occupied target hexes — skipping")
         continue
+    print(
+        f"{name}: mapped weight outside the map extent "
+        + ", ".join(f"{h} d {share_outside_extent(gdfs[h]):.3f} %" for h in time_horizons_days)
+    )
     for column, norm_of in (("percentage", percentage_norm), ("dilution", dilution_norm)):
         fig, axes = map_grid(nrows, ncols)
         fig.suptitle(f"origin: {name}")
@@ -647,9 +672,8 @@ rule (1st percentile to maximum); rejected here, survival weights
 hex with a sliver of water sets the maximum, so the pooled range ran over
 ~28 decades and every cloud rendered in one colour.
 
-Panels are cropped to `overview_extent` (Baltic plus the Kattegat /
-Skagerrak entrance) and carry no isobath: at a quarter of the page width
-the 3 m contour fills the Danish straits.
+Panels share the extent of every other map and carry no isobath: at a
+quarter of the page width the 3 m contour fills the Danish straits.
 
 ```python
 # West → east, south → north: entrance, western Baltic, Baltic Proper, gulfs,
@@ -665,10 +689,6 @@ overview_codes += [c for c in origin_codes if c not in overview_codes]
 overview_ncols = 4
 overview_nrows = int(np.ceil(len(overview_codes) / overview_ncols))
 OVERVIEW_DECADES = 4
-ov_lon_min, ov_lon_max, ov_lat_min, ov_lat_max = overview_extent
-overview_aspect = (
-    (ov_lon_max - ov_lon_min) * np.cos(np.radians(0.5 * (ov_lat_min + ov_lat_max)))
-) / (ov_lat_max - ov_lat_min)
 # Vertical inches per row for the panel title, and once per figure for the
 # shared colorbar with its label.
 OVERVIEW_TITLE_IN = 0.25
@@ -691,17 +711,19 @@ for h in overview_horizons_days:
         nrows=overview_nrows, ncols=overview_ncols, squeeze=False, layout="constrained"
     )
     # Width-limited maps: the panel height follows from the page width and
-    # the extent aspect, as in ``map_grid``.
+    # the extent aspect, capped at one page, as in ``map_grid``.
     fig.set_size_inches(
         FIGURE_WIDTH_IN,
-        overview_nrows
-        * ((FIGURE_WIDTH_IN / overview_ncols) / overview_aspect + OVERVIEW_TITLE_IN)
-        + OVERVIEW_COLORBAR_IN,
+        min(
+            overview_nrows
+            * ((FIGURE_WIDTH_IN / overview_ncols) / domain_aspect + OVERVIEW_TITLE_IN)
+            + OVERVIEW_COLORBAR_IN,
+            MAX_FIGURE_HEIGHT_IN,
+        ),
     )
     for ax, code in zip(axes.flat, overview_codes):
         hex_map(
             drawn[code], "dilution", ax, norm, colorbar=False, isobath=False,
-            extent=overview_extent,
         )
         # Panel titles one step below the default size: at four maps per
         # 180 mm row the longest HELCOM names would run into the neighbours.
@@ -726,26 +748,25 @@ for h in overview_horizons_days:
     print(f"wrote {fig_path}")
     plt.show()
     # What the floor and the crop leave out, per origin: the share of the
-    # origin's particle-time below the floor, on hexes with no water area
-    # (NaN dilution, never drawn either), and of the above-floor part lying
-    # outside the extent (hex centroid).
+    # origin's particle-time below the floor and on hexes with no water area
+    # (NaN dilution, never drawn either), and the share of the drawn weight
+    # outside the map extent.
     print(f"  {h} d: shared dilution scale {norm.vmin:.3g}–{norm.vmax:.3g} % per km²")
+    outside = {code: share_outside_extent(drawn[code]) for code in overview_codes}
     for code in overview_codes:
-        g = drawn[code]
         dilution = gdfs[code]["dilution"]
         below = gdfs[code].loc[dilution < norm.vmin, "percentage"].sum()
         no_water = gdfs[code].loc[dilution.isna(), "percentage"].sum()
-        centre = g.geometry.representative_point()
-        outside = (
-            (centre.x < ov_lon_min) | (centre.x > ov_lon_max)
-            | (centre.y < ov_lat_min) | (centre.y > ov_lat_max)
-        )
         print(
             f"    {subbasin_id_to_name[code]}: {below:.2f} % below floor, "
             f"{no_water:.2f} % on zero-water hexes, "
-            f"{g.loc[outside, 'percentage'].sum():.3f} % above floor outside the extent"
-            + (f" (westmost {centre.x.min():.2f}°E)" if len(g) else "")
+            f"{outside[code]:.3f} % of the drawn weight outside the map extent"
         )
+    worst = max(outside, key=outside.get)
+    print(
+        f"  {h} d: mapped weight outside the map extent at most {outside[worst]:.3f} % "
+        f"({subbasin_id_to_name[worst]})"
+    )
 ```
 
 # Validation prints
