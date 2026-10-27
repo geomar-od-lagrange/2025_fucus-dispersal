@@ -539,7 +539,6 @@ def extend_of(values, norm):
 
 def hex_map(
     gdf, column, ax, norm, title=None, cbar_label=True, colorbar=True,
-    isobath=True,
 ):
     """Draw one relative-density panel: hex polygons through ``norm``,
     coastline, and the H0 isobath, all on a plain (non-cartopy) lon/lat
@@ -547,7 +546,7 @@ def hex_map(
     hexes, coastline and isobath out of register. An empty ``gdf`` skips
     the hex layer and still renders the backdrop, keeping the grid layout
     stable. ``colorbar=False`` leaves the colorbar to the caller (one
-    shared bar for a whole figure); ``isobath=False`` drops the isobath."""
+    shared bar for a whole figure)."""
     if not gdf.empty and gdf[column].notna().any():
         colorbar_kwargs = {}
         if colorbar:
@@ -575,10 +574,12 @@ def hex_map(
     # One styling override for the isobath: magenta at a hairline width is
     # the canonical anti-viridis, so the 3 m line stays legible over every
     # fill colour and clear of the black coastline.
-    for h0 in (h0_fine, h0_coarse_outside_fine) if isobath else ():
+    for h0 in (h0_fine, h0_coarse_outside_fine):
         ax.contour(
             h0.lon, h0.lat, h0, levels=[isobath_m],
-            colors="magenta", linewidths=0.3, zorder=3,
+            colors="magenta", linewidths=0.3,
+            # Top layer, above hexes and coastline, on every map.
+            zorder=3,
         )
     ax.set_xlim(domain_lon_min, domain_lon_max)
     ax.set_ylim(domain_lat_min, domain_lat_max)
@@ -674,8 +675,8 @@ for code in origin_codes:
 # hex with a sliver of water sets the maximum, so the pooled range ran over
 # ~28 decades and every cloud rendered in one colour.
 #
-# Panels share the extent of every other map and carry no isobath: at a
-# quarter of the page width the 3 m contour fills the Danish straits.
+# Panels share the extent of every other map and carry the 3 m isobath on
+# top, as every map does.
 
 # %%
 # West → east, south → north: entrance, western Baltic, Baltic Proper, gulfs,
@@ -725,7 +726,7 @@ for h in overview_horizons_days:
     )
     for ax, code in zip(axes.flat, overview_codes):
         hex_map(
-            drawn[code], "dilution", ax, norm, colorbar=False, isobath=False,
+            drawn[code], "dilution", ax, norm, colorbar=False,
         )
         # Panel titles one step below the default size: at four maps per
         # 180 mm row the longest HELCOM names would run into the neighbours.

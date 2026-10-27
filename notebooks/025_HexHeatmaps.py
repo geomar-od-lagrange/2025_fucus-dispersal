@@ -522,7 +522,9 @@ def hex_map(gdf, column, ax, extent, norm, coast, title=None, cbar_label=True):
     for h0 in (h0_fine, h0_coarse_outside_fine):
         ax.contour(
             h0.lon, h0.lat, h0, levels=[isobath_m],
-            colors="magenta", linewidths=0.3, zorder=3,
+            colors="magenta", linewidths=0.3,
+            # Top layer, above hexes and coastline, on every map.
+            zorder=3,
         )
     lon_min_, lon_max_, lat_min_, lat_max_ = extent
     ax.set_xlim(lon_min_, lon_max_)
