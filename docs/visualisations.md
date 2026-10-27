@@ -267,7 +267,8 @@ outline of the BSH HBMnoku wet cells (`data/bsh_hbmnoku_static/coastline.geojson
 the polygons 024a takes the hex water area from), merged fine-first as in
 024a (fine polygons plus the coarse ones outside the fine bbox) and drawn
 minus a 0.001° strip along the fine bbox, where the two grids meet in open
-water (026/026a/034), or unioned on a 1e-3° precision grid, which closes
+water (026/026a/034; 029/033/036 drop one fine cell either side of it), or
+unioned on a 1e-3° precision grid, which closes
 the slivers the two grids' 1e-4°-rounded cell edges leave along the seam
 (025/026b/027/030/031); black at `linewidth=0.5`. The model coastline rather than Natural
 Earth because the maps show where the model's water is — hexes, isobath and
@@ -277,7 +278,7 @@ default.
 
 ## Notebook 025 — Hex relative-density maps (special case)
 
-Plots on a plain (non-cartopy) lon/lat axis: hex polygons, Natural Earth
+Plots on a plain (non-cartopy) lon/lat axis: hex polygons, the model
 coastline, HELCOM subbasin overlay and the H0 isobath are all already in
 EPSG:4326; cartopy reprojection would introduce sub-pixel mismatches that
 double-paint hex edges. Three products over one (regime, season) with the
@@ -430,7 +431,7 @@ built by 024b (`(release_hex, release_doy, distance_bin)→n_traj`) plus the
 024a key for geometry. Pools the run's season across years by summing
 histograms, then derives each quantile from the pooled cumulative count —
 one panel per quantile level in a 1xN row. Like 025 it draws hex polygons
-+ Natural Earth coastline on a plain EPSG:4326 axis, with the same hex
++ the model coastline on a plain EPSG:4326 axis, with the same hex
 `edgecolor="face"` / black coastline `linewidth=0.5` registration
 overrides.
 
@@ -459,8 +460,11 @@ fraction is the genuinely un-Baltic part of the domain plus, for the
 unweighted store only, the land-seeded particles counts keeps as
 `release_hex == -1`; 024g's population excludes those by construction, so
 the weighted matrix drops less than the unweighted one. No hex geometry, no cartopy — every panel is `imshow` on
-a plain subbasin × subbasin grid with names as tick labels set at plot
-time.
+a plain subbasin × subbasin grid. Both axes run west → east (KAT SOU GRB KIE
+MEC ARK BOR GDA EGB WGB GRI NBP GFI ALA BOS QUA BOB, 026a's overview order)
+with three-letter codes as tick labels set at plot time; 029's
+where-stranded map is the key. A subbasin missing from the code list
+raises.
 
 Three views, each its own figure: the raw residence matrix (log, pooled
 over the window, ages `< max_age_days`, stem `_T<max_age_days>d`), the
@@ -475,18 +479,28 @@ magnitude with release count, so only the normalised rows compare origins.
 In a survival-weighted run views 2 and 3 gain a last target column
 `stranded` (particle-time removed by beaching, from the 024e store), drawn
 after one blank NaN column so it reads apart from the subbasins without a
-styled separator line; derivation in
+styled separator line, labelled `stranded (%)` on a top axis (under the
+matrix its length would push the axis label down a band) and with the share
+printed as a whole percentage in each cell, since the stranded shares crowd
+the top one or two classes; derivation in
 [hexbinning_and_connectivity.md](hexbinning_and_connectivity.md#connectivity-views-028).
 
-Overrides: 180 mm × 300 dpi as above; one figure per horizon, not a panel
-grid (17 HELCOM names are illegible once four panels share a page); run
-context in `fig.suptitle`, horizon in `ax.set_title` (long y tick labels
-push the axes box right and an axes title overruns the page);
-`norm=LogNorm()` (the self-retention diagonal dominates by orders of
-magnitude, so a linear scale washes out every off-diagonal; zeros masked
-to NaN so empty cells render blank; the emission-fraction norm is floored
-four decades below the peak, as in 029). Default colormap — the readable
-object is a small labelled grid, not a wide-range map. Cell annotation
+Overrides: 180 mm × 300 dpi as above, the height derived from square cells
+filling the page width minus fixed label margins (`matrix_figure`), the
+colorbar under the matrix at its width; one figure per horizon, not a
+panel grid (17 codes per axis need cells of several mm); run context and
+horizon as one two-line `fig.suptitle` (an axes title collides with it once
+the fixed-aspect matrix fills the page). **Discrete log scale**: a
+`BoundaryNorm` with one class per half decade (edges `10**(k/2)`), the
+default colormap sampled across the classes. The emission views share one
+norm across horizons: the peak rounded up to its half-decade edge, floored
+four decades below it — eight classes, edges 1e-4, 3.16e-4, …, 0.316, 1 in
+every paper run — with `extend="min"` for the sub-floor shares (the
+thinnest run to 1e-7). The raw view spans every non-zero cell (no floor,
+no extend), its decade labels thinned to at most eight. Discrete rather
+than a continuous `LogNorm`: a cell's class reads off the colorbar, where a
+continuous viridis ramp blurs neighbouring decades into one hue. Zeros are
+masked to NaN so empty cells render blank. Cell annotation
 with mean and min–max range is gated at `ANNOTATE_MAX_N = 12`; the axis is
 17 wide, so it is normally off and the range is read from
 `Exports/028/connectivity_<regime>_<season>_<member>_T<h>d_emission_fraction_by_year.csv`.
@@ -553,13 +567,19 @@ resulting hex dilation shrink as resolution rises.
   deliberately **not** repeated on the beached-fraction or age-horizon panels:
   the beached-fraction panel's coloured hexes already *are* the release set,
   and the horizon row is about time, not about where the material came from.
-- **Subbasin borders** (where-stranded panel only) — the HELCOM level-2
-  borders as the edges two polygons share, unannotated, no fill, the same
-  geometry and style as 036 (**override: `color="0.5"`, `linewidth=0.4`**, so
-  a border reads neither as coastline nor as part of the field). They tie the
-  map to the per-subbasin readouts (afloat table, 026a, 028). Full polygon
-  outlines rejected: they retrace the coast and its skerries, exactly where
-  the stranding hexes sit.
+- **Subbasin borders and codes** (where-stranded panel only) — the HELCOM
+  level-2 borders as the edges two polygons share, no fill, the same geometry
+  and style as 036 (**override: `color="0.5"`, `linewidth=0.52`** — grey so a
+  border reads neither as coastline nor as part of the field, 1.3× the former
+  hairline at the authors' request so it survives print). Each subbasin
+  carries its three-letter code (**override: `fontsize=6`**, small enough to
+  sit inside the western straits at 180 mm, legible in print), the key to
+  028's axes, at the polygon's `representative_point`; KAT, MEC, GDA and ALA
+  are nudged by hand (`LABEL_AT`) off hexes and coast, and SOU, GRB and KIE
+  — straits filled with stranding hexes from shore to shore — get a tight
+  white backing at alpha 0.8 (`BOXED`), which hides less than a leader line
+  from adjacent land would cross. Full polygon outlines rejected: they
+  retrace the coast and its skerries, exactly where the stranding hexes sit.
 - **Source and sink substrate** — printed, not plotted: the shoreline flat
   fraction `ff` at the release sites against the flat fraction where the
   weight lands, aggregated per hex the way 033 does it (nest seam dropped,
@@ -584,8 +604,10 @@ resulting hex dilation shrink as resolution rises.
   colour override to defend.
 - **Age-horizon where-stranded maps** — the same log-density map at
   cumulative age cut-offs (`beach_age_bin < T // age_bin_days`, default
-  30/60/90/180 d), a shared `LogNorm` across horizons so the fill-in over time
-  is legible; this mirrors 026's horizon logic on the beaching axis. Exported
+  30/60/90/180 d), on the where-stranded map's `LogNorm` (the full-window
+  deposit is the largest any cumulative panel reaches) with one colorbar
+  under the row, so the fill-in over time reads on the same scale as the
+  single map; this mirrors 026's horizon logic on the beaching axis. Exported
   per horizon as `Exports/029/029_<regime>_<season>_<member>_T<h>d.geojson`
   with `stranded_weight` (expected particles) and `pct_released`.
 - **Afloat by origin subbasin** — printed and exported, not plotted: per
@@ -830,8 +852,11 @@ on flat coast because the model puts it there" from "stranding is on flat coast
 because that is where the drift goes" — the latter is the only thing the inert
 member can show.
 
-- **Flat fraction per hex** — the headline map, 029's hex registration on
-  the shared extent. **One styling override: `cmap="coolwarm"` with a
+- **Flat fraction per hex** — the headline map and the paper's
+  shoreline-classification figure (Methods): 029's where-stranded layout,
+  one map at the full page width on the shared extent with its colorbar under
+  it, title on one line (the nest-seam cut belongs in the caption).
+  **One styling override: `cmap="coolwarm"` with a
   fixed `Normalize(0, 1)`.** Justified because this is not a magnitude but a
   bounded two-ended axis (0 = fully walled, 1 = fully flat) with a
   *distinguished midpoint*: 0.5 is exactly what the pipeline assigns coastline
@@ -841,7 +866,7 @@ member can show.
   pinned rather than auto-ranged so the white stays at 0.5 across runs.
 - **Coastline length per hex** — the denominator of the normalised stranded
   weight, and the map that says how much of the flat-fraction map rests on a
-  sliver of coast. Default colormap, default linear norm.
+  sliver of coast. Default colormap, default linear norm, same layout.
 - **Stranded weight vs. shore type**, one figure per member, laid out as a
   `subplot_mosaic` — two half-width panels over one full-width panel, because
   the subbasin panel carries 17 long HELCOM names on its y axis and is
@@ -977,7 +1002,7 @@ comparison is the point.
 872 REDLIST cells `010` seeds from
 (`data/helcom_fucus_redlist/fucus_release_points.geojson`), as filled cell
 polygons on the shared extent, in two side-by-side panels, plus the
-right-hand panel on its own as the paper's supplement figure.
+right-hand panel on its own at the full page width.
 
 | panel | value | source |
 |---|---|---|
@@ -1008,12 +1033,12 @@ right-hand panel on its own as the paper's supplement figure.
   latitude, so a hue and its tint go to a southern and a northern basin,
   never to neighbours. Considered `tab20` in its native order; rejected, it
   puts each hue next to its tint and adjacent basins would read as one.
-- **Override: subbasin borders** in mid-grey (`"0.5"`) at `linewidth=0.4`,
-  so a border reads neither as coastline (black, as 025–033) nor as a
-  category fill.
+- **Override: subbasin borders** in mid-grey (`"0.5"`) at `linewidth=0.52`
+  (029's width), so a border reads neither as coastline (black, as 025–033)
+  nor as a category fill. No subbasin codes: the legend names the subbasins.
 - **Land-share panel**: default colormap, fixed `Normalize(0, 100)`, colorbar
   right of the map (027/033 placement for the tall Baltic crop). The
-  single-panel copy (supplement) is one map at the full page width with the
+  single-panel copy is one map at the full page width with the
   colorbar under it, 029's where-stranded layout.
 - **Legend** under both panels, three columns, entries in colour order with
   the cell count per subbasin.
@@ -1021,7 +1046,7 @@ right-hand panel on its own as the paper's supplement figure.
   printed; no export.
 
 `output_root/Figures/036/SeedingMap_r<radius>m.png` (two panels) and
-`LandSeededShare_r<radius>m.png` (single panel, supplement), 180 mm × 300 dpi;
+`LandSeededShare_r<radius>m.png` (single panel), 180 mm × 300 dpi;
 `SeedingMap` is the first entry of 032's figure list.
 
 ## Cross-references

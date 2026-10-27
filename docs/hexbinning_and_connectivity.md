@@ -157,14 +157,20 @@ by its `member` parameter: `""` reads the 024c partitions and plots `n_obs`;
 a rate-model tag reads the 024g partitions and plots `w_obs`. It pools the
 release years, restricts to one release `season` (DJF/MAM/JJA/SON/ALL — the
 contract lives in [visualisations.md](visualisations.md)), drops `-1` rows
-from the matrix and reports the dropped fraction. Three views:
+from the matrix and reports the dropped fraction. Origins and targets run
+west → east (Kattegat … Bothnian Bay) under three-letter subbasin codes; the
+CSVs keep the full HELCOM names in that row order. Three views:
 
-- **Raw residence matrix**, log scale, pooled over the reduction window.
+- **Raw residence matrix**, log scale (half-decade classes, as below),
+  pooled over the reduction window.
 - **Emission fraction** `x / x.sum(axis=1)` — the share of an origin's
   cumulative particle-time that sits in each target, one figure per age
   horizon `T`. Cumulative and half-open: ages `< T` days, i.e.
   `age_bin * age_bin_days < T`. Row-normalising is what makes origins
   comparable; raw rows differ by orders of magnitude with release count.
+  One discrete class per half decade over the four decades below the peak
+  (edges 1e-4 … 1), shared across horizons; style in
+  [visualisations.md](visualisations.md#notebook-028--subbasin-connectivity-matrices-special-case).
 - **Interannual range** — the emission fraction recomputed per release year,
   reduced to mean / min / max per (origin, target, horizon).
 
