@@ -24,7 +24,7 @@
 # threshold, its settings baked into the opaque `member` tag that selects the
 # partitions read here (`docs/beaching.md`). For each elapsed-time horizon `T`
 # it maps the **snapshot** age bin ending at `T` (ages in
-# `[T − age_bin_days, T)`), in two panels:
+# `[T − age_bin_days, T)`), in two rows of one grid (a column per horizon):
 #
 # 1. **Occupancy** — plain particle-residence density (`occ`), the baseline
 #    (no beaching), on discrete log-spaced bins. In **% of the released
@@ -65,15 +65,19 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import shapely
+import xarray as xr
 import matplotlib.pyplot as plt
+from matplotlib.cm import ScalarMappable
 from matplotlib.colors import BoundaryNorm
 from shapely.geometry import box
-from cartopy.io.shapereader import natural_earth
 
 # %% [markdown]
 # # Parameters
 
 # %% tags=["parameters"]
+# Read root of the data twin (BSH wet-cell coastline and fine-grid H0).
+data_root = "../data"
 output_root = "../output"
 regime = "surface_stokes"
 hex_radius = 6000
@@ -122,6 +126,7 @@ SEASON_MONTHS = {
     "ALL": list(range(1, 13)),
 }
 
+data_root = Path(data_root)
 output_root = Path(output_root)
 if season not in SEASON_MONTHS:
     raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
@@ -157,6 +162,9 @@ FIGURE_DPI = 300
 # the stroke to ~1 px at the output dpi keeps the seam closed while letting
 # the resulting hex dilation shrink as resolution rises.
 hex_seam_lw = 1.1 * 72 / FIGURE_DPI
+# Height per grid row beyond the map itself (inches): a column title or
+# padding plus the row's colorbar, its ticks and its label.
+ROW_DECORATION_IN = 0.9
 # Discrete colour bins (docs/visualisations.md, 030). Occupancy: log-spaced
 # 1–3 steps from 1e-4 % to 3 % of released, fixed rather than scaled to the
 # data so every member and season reads on the same legend; values outside
@@ -265,9 +273,9 @@ print(f"survocc rows: {len(survocc):,}")
 # %% [markdown]
 # # Rendering helpers
 #
-# The colorbar is an inset axes at axes-fraction height 1.0, so it is exactly
-# the map height at any figure size — a fixed-aspect map never fills its
-# gridspec cell, and a cell-sized colorbar overshoots it.
+# One colorbar per row, under it and spanning the row's four maps. The maps
+# are width-limited (see `grid_height_in`), so the row's gridspec cells and
+# the maps share one width and the bar runs the full figure width.
 
 # %%
 def hex_gdf(df, value_col):
@@ -295,17 +303,15 @@ def frac_gdf(df):
     )
 
 
-def hex_map(gdf, ax, norm, cmap, extend, title, label):
-    """One hex panel through a discrete ``norm`` with its colorbar inset right
-    of the map at the map's height."""
+def hex_map(gdf, ax, norm, cmap):
+    """One hex panel through a discrete ``norm``, with the model coastline on
+    top; no colorbar (one per row, drawn by the caller)."""
+    # Only hexes touching the extent: off-extent patches still count in
+    # constrained_layout's bounding box.
+    gdf = gdf.cx[extent[0]:extent[1], extent[2]:extent[3]]
     if not gdf.empty:
-        cax = ax.inset_axes([1.02, 0.0, 0.035, 1.0])
         gdf.plot(
             ax=ax, column="value", norm=norm, cmap=cmap,
-            legend=True, cax=cax,
-            # Format "%g": the log bins span 1e-4 to 3, which a fixed-decimal default
-            # rounds to 0.000 at the low end.
-            legend_kwds={"label": label, "extend": extend, "format": "%g"},
             edgecolor="face", linewidth=hex_seam_lw, zorder=1,
         )
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
@@ -314,17 +320,32 @@ def hex_map(gdf, ax, norm, cmap, extend, title, label):
     ax.set_aspect(1 / np.cos(np.radians(0.5 * (extent[2] + extent[3]))))
     ax.set_xticks([])
     ax.set_yticks([])
-    ax.set_title(title)
 
 
 def grid_height_in(nrows, ncols, aspect, width_in):
     """Height seed for a grid of fixed-aspect map panels at a fixed figure
     width. The figure width is set by the page, so only the height is free:
-    each column gives its map ~72 % of its width (the rest is the inset
-    colorbar and its tick labels), and ~10 % is added for titles and padding.
-    constrained_layout does the packing; there is no measure-rescale loop."""
-    return 1.10 * nrows * (0.72 * width_in / ncols) / aspect
+    each map takes its column's width (no side colorbars), and a fixed
+    allowance per row covers the column titles and the row's colorbar with
+    its label. Seeded slightly short of the width limit, so the maps fill
+    their cells side to side and constrained_layout leaves no band between
+    rows; there is no measure-rescale loop."""
+    return nrows * (0.97 * width_in / ncols / aspect + ROW_DECORATION_IN)
 
+
+# %% [markdown]
+# # Map backdrop: the model coastline
+#
+# The BSH HBMnoku wet-cell outline (`coastline.geojson`, the water 024a's key
+# areas and the particles' advection use), not a geographic coastline: the
+# hexes are registered on model water, so the outline they are read against
+# is the model's. The file holds the fine and the coarse grid's wet
+# polygons. The coarse grid is masked inside the fine nest except an
+# overlap strip at its edges, so the merge is the fine polygons plus the
+# coarse ones outside the fine bbox (half a fine cell beyond the outermost
+# fine centres), unioned on a 1e-3° precision grid: the two grids' edges are
+# stored rounded to 1e-4°, and an exact union leaves a sliver outline along
+# the nest seam.
 
 # %%
 if any((extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max)):
@@ -334,9 +355,28 @@ if any((extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max)):
 else:
     lon_min, lat_min, lon_max, lat_max = key.total_bounds
 extent = [lon_min, lon_max, lat_min, lat_max]
-coast = gpd.read_file(
-    natural_earth(resolution="10m", category="physical", name="coastline")
-).clip(box(lon_min, lat_min, lon_max, lat_max))
+
+h0_fine = xr.open_dataset(
+    data_root / "bsh_hbmnoku_static/static_file_fine/H0_file_fine.nc"
+).H0
+half_lon = 0.5 * abs(float(h0_fine.lon.diff("lon").mean()))
+half_lat = 0.5 * abs(float(h0_fine.lat.diff("lat").mean()))
+fine_bbox = box(
+    float(h0_fine.lon.min()) - half_lon, float(h0_fine.lat.min()) - half_lat,
+    float(h0_fine.lon.max()) + half_lon, float(h0_fine.lat.max()) + half_lat,
+)
+wet = gpd.read_file(data_root / "bsh_hbmnoku_static/coastline.geojson")
+model_water = shapely.union_all(
+    [
+        *wet.loc[wet["grid"] == "fine", "geometry"],
+        *wet.loc[wet["grid"] == "coarse", "geometry"].difference(fine_bbox),
+    ],
+    grid_size=1e-3,
+)
+coast = (
+    gpd.GeoSeries([model_water], crs="EPSG:4326")
+    .boundary.clip(box(lon_min, lat_min, lon_max, lat_max))
+)
 domain_aspect = (
     (lon_max - lon_min) * np.cos(np.radians(0.5 * (lat_min + lat_max)))
 ) / (lat_max - lat_min)
@@ -344,13 +384,15 @@ domain_aspect = (
 # %% [markdown]
 # # Comparison grid: occupancy and surviving fraction
 #
-# Rows = horizons; columns = occupancy (% of the released drifters present in
-# the hex during the bin) and surviving fraction `surv / occ`. Both on
-# discrete bins, fixed across horizons (and members), so a colour step is a
-# readable value and the age progression compares down each column:
-# occupancy on log-spaced 1–3 bins with `extend="both"`, the fraction on
-# tenths of [0, 1]. The fraction is a history integral, not a local beaching
-# rate (see the header); occupancy × fraction is the survival-weighted share.
+# Columns = horizons (the snapshot bin ending at each); rows = occupancy (%
+# of the released drifters present in the hex during the bin) and surviving
+# fraction `surv / occ`. Both on discrete bins, fixed across horizons (and
+# members), so a colour step is a readable value and the age progression
+# reads along each row: occupancy on log-spaced 1–3 bins with
+# `extend="both"`, the fraction on tenths of [0, 1]. One colorbar per row, so
+# a row is one quantity on one scale. The fraction is a history integral,
+# not a local beaching rate (see the header); occupancy × fraction is the
+# survival-weighted share.
 #
 # The occupancy colormap is a sequential one with a wide lightness range —
 # light for sparse, dark for dense — so the sub-floor periphery recedes and
@@ -371,22 +413,37 @@ occ_cmap = plt.get_cmap("magma_r")
 occ_norm = BoundaryNorm(OCC_BOUNDS, ncolors=occ_cmap.N, extend="both")
 frac_cmap = plt.get_cmap()
 frac_norm = BoundaryNorm(FRACTION_BOUNDS, ncolors=frac_cmap.N)
+rows = [
+    # (row label, per-horizon frames, norm, cmap, colorbar label)
+    ("occupancy", occ_gdfs, occ_norm, occ_cmap, "present (% of released drifters)"),
+    ("surviving fraction", frac_gdfs, frac_norm, frac_cmap,
+     "surviving fraction (un-beached share of the hex's particles)"),
+]
 
-nrows = len(time_horizons_days)
-fig, axes = plt.subplots(nrows=nrows, ncols=2, layout="constrained", squeeze=False)
+ncols = len(time_horizons_days)
+fig, axes = plt.subplots(nrows=len(rows), ncols=ncols, layout="constrained", squeeze=False)
 fig.set_size_inches(
-    FIGURE_WIDTH_IN, grid_height_in(nrows, 2, domain_aspect, FIGURE_WIDTH_IN)
+    FIGURE_WIDTH_IN, grid_height_in(len(rows), ncols, domain_aspect, FIGURE_WIDTH_IN)
 )
-for i, h in enumerate(time_horizons_days):
-    hex_map(occ_gdfs[h], axes[i, 0], occ_norm, occ_cmap, "both",
-            title=f"occupancy — age {bin_labels[h]}", label="present (% of released)")
-    hex_map(frac_gdfs[h], axes[i, 1], frac_norm, frac_cmap, "neither",
-            title=f"surviving fraction — age {bin_labels[h]}",
-            label="surviving fraction")
+for i, (row_label, gdfs, norm, cmap, cbar_label) in enumerate(rows):
+    for j, h in enumerate(time_horizons_days):
+        hex_map(gdfs[h], axes[i, j], norm, cmap)
+    axes[i, 0].set_ylabel(row_label)
+    fig.colorbar(
+        ScalarMappable(norm=norm, cmap=cmap), ax=axes[i, :], location="bottom",
+        # Format "%g": the log bins span 1e-4 to 3, which a fixed-decimal
+        # default rounds to 0.000 at the low end.
+        label=cbar_label, format="%g",
+        # Length/thickness 40 instead of the default 20: at full figure width
+        # the default bar is ~9 mm thick and crowds the row (visualisations.md).
+        aspect=40,
+    )
+for j, h in enumerate(time_horizons_days):
+    axes[0, j].set_title(f"age {bin_labels[h]}")
 fig_path = figure_dir / f"SurvivalHeatmaps_{regime}_r{hex_radius}m_{season}_{member}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
 fig.savefig(fig_path, dpi=FIGURE_DPI)
-print(f"wrote {fig_path}")
+print(f"wrote {fig_path}: {fig.get_size_inches()[1] * 25.4:.0f} mm tall")
 for h in time_horizons_days:
     o, f = occ_gdfs[h]["value"], frac_gdfs[h]["value"]
     print(f"  age {bin_labels[h]}: occupancy % below {OCC_BOUNDS[0]:g} in "
