@@ -636,7 +636,8 @@ for regime in beaching_regimes:
             continue
         counts = pd.read_csv(paths["n_obs"])
         unweighted = pd.read_csv(paths["unweighted"])
-        weighted = pd.read_csv(paths["weighted"])
+        # 028 adds a target "stranded" row to weighted CSVs; it is not a subbasin.
+        weighted = pd.read_csv(paths["weighted"]).query("target_subbasin != 'stranded'")
         by_origin = counts.groupby("origin_subbasin")["n_obs"].sum()
         share = 100.0 * by_origin / by_origin.sum()
         for origin in share.nlargest(n_top_origins).index:
@@ -1255,7 +1256,9 @@ for regime, table in table_c_ratio_md.items():
 sections += [
     f"Top-{n_top_origins} emitters per season at the {top_horizon_days} d horizon, from "
     f"`Exports/028/connectivity_<regime>_<season>_{{unweighted, {member}}}_T{top_horizon_days}d_"
-    "emission_fraction.csv`; origins ranked by the matching `_n_obs.csv`. Target shares in percent.",
+    "emission_fraction.csv`; origins ranked by the matching `_n_obs.csv`. Target shares in percent; "
+    "survival-weighted shares are fractions of the origin's unweighted particle-time "
+    "(the stranded remainder is excluded, so they do not sum to 100).",
     "",
 ]
 for regime, table in table_c_top_md.items():
