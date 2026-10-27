@@ -41,9 +41,11 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm, Normalize
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import BoundaryNorm, Normalize
+from matplotlib.ticker import FuncFormatter
 from shapely.geometry import box
-from cartopy.io.shapereader import natural_earth
+from shapely.ops import unary_union
 ```
 
 # Parameters
@@ -76,6 +78,11 @@ map_horizon_days = 90
 # Isobath to overlay on the maps, in metres of BSH H0 (floor position, see
 # docs/h0_semantics.md). Fucus vesiculosus no longer grows below ~3 m.
 isobath_m = 3.0
+# Floor of the dilution colour scale, % per km², a whole decade. The same in
+# every dilution figure (026, 026a, 034): chosen once from the paper figures'
+# pooled data so that ≥ 99 % of every panel's weight lies above it
+# (docs/visualisations.md). Hexes below it are not drawn.
+dilution_floor = 1e-5
 # Map extent (degrees). The 024a key tiles the whole BSH domain including the
 # North Sea, which the bottom regime does not reach; cropping to the Baltic
 # (western Baltic and Belt Sea to the Gulf of Finland and Bothnian Bay) spends
@@ -113,6 +120,22 @@ FIGURE_DPI = 300
 # capped at a height that fits one manuscript page with its caption, and the
 # maps take the width that height leaves them.
 MAP_PAIR_HEIGHT_IN = 220 / 25.4
+
+# Shared dilution scale: one class per decade from `dilution_floor` up to
+# 100 % per km² — all of the material in one km² of water.
+DILUTION_TOP = 1e2
+dilution_exponents = np.arange(round(np.log10(dilution_floor)), round(np.log10(DILUTION_TOP)) + 1)
+assert np.isclose(10.0 ** dilution_exponents[0], dilution_floor), (
+    f"dilution_floor {dilution_floor} is not a whole decade"
+)
+# turbo, not the default colormap (docs/visualisations.md): dilution is
+# multiplied by a per-site biomass downstream, so it has to read in absolute
+# terms over seven decades — one high-contrast colour per decade. Below-floor
+# hexes are not drawn, so the colorbar's extend="min" triangle stays empty.
+dilution_cmap = plt.get_cmap("turbo").resampled(len(dilution_exponents) - 1).with_extremes(
+    under="none"
+)
+dilution_norm = BoundaryNorm(10.0 ** dilution_exponents, dilution_cmap.N)
 
 figure_dir = output_root / "Figures" / "034"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -265,10 +288,15 @@ plt.show()
 026's relative-density rendering, notebook-local: `percentage` is the share
 of the regime's particle-time in `[0, map_horizon_days)`, `dilution` that
 share per km² of hex water area. The two regimes are stacked (reference on
-top) under one colour norm and one colourbar under the lower map, so the same
-colour is the same share in both. Extent is the Baltic crop of the
-parameters (the key's bounds if all four are 0); the isobath is the BSH H0
-3 m contour, fine grid taking precedence where it covers.
+top) under one colour norm and one colourbar under the pair, so the same
+colour is the same share in both. `dilution` is the fixed decade scale
+shared with 026 and 026a, below-floor hexes not drawn; `percentage` is
+linear to the pooled 99th percentile. Extent is the Baltic crop of the
+parameters (the key's bounds if all four are 0). Coastline is the outline
+of the BSH HBMnoku wet cells, merged fine-first as in 024a (fine polygons
+plus the coarse ones outside the fine bbox, minus a 0.001° strip along the
+bbox where the grids meet in open water); the isobath is the BSH H0 3 m
+contour, fine grid taking precedence where it covers.
 
 ```python
 def to_hex_gdf(counts_df, key_df):
@@ -313,33 +341,47 @@ h0_coarse_outside_fine = h0_coarse.where(
     )
 )
 
-coast = gpd.read_file(
-    natural_earth(resolution="10m", category="physical", name="coastline")
-).clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
+wet = gpd.read_file(data_root / "bsh_hbmnoku_static/coastline.geojson")
+# Fine bbox padded by half a fine cell, so every fine cell lies inside it.
+fine_bbox = box(
+    float(h0_fine.lon.min()) - 0.5 * abs(float(h0_fine.lon.diff("lon").mean())),
+    float(h0_fine.lat.min()) - 0.5 * abs(float(h0_fine.lat.diff("lat").mean())),
+    float(h0_fine.lon.max()) + 0.5 * abs(float(h0_fine.lon.diff("lon").mean())),
+    float(h0_fine.lat.max()) + 0.5 * abs(float(h0_fine.lat.diff("lat").mean())),
+)
+wet_fine_first = unary_union([
+    unary_union(wet.loc[wet["grid"] == "fine", "geometry"].tolist()),
+    unary_union(wet.loc[wet["grid"] == "coarse", "geometry"].tolist()).difference(fine_bbox),
+])
+coast = (
+    gpd.GeoSeries([wet_fine_first], crs="EPSG:4326").boundary
+    .difference(fine_bbox.exterior.buffer(1e-3))
+    .clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
+)
 
 
-def hex_map(gdf, column, ax, norm, title):
+def hex_map(gdf, column, ax, norm, cmap, title):
     """One relative-density panel on a plain lon/lat axis: hexes through
-    ``norm``, coastline, H0 isobath."""
+    ``norm`` and ``cmap`` (None: the default colormap), coastline, H0
+    isobath."""
     # Only hexes touching the extent: off-extent patches still count in
     # constrained_layout's bounding box and push the title off the page.
     gdf = gdf.cx[domain_lon_min:domain_lon_max, domain_lat_min:domain_lat_max]
     gdf.plot(
-        ax=ax, column=column, norm=norm,
+        ax=ax, column=column, norm=norm, cmap=cmap,
         missing_kwds={"color": "none"},
         # Default polygon stroke is a black hairline that dominates at Baltic
         # zoom; matching edge to fill makes the hexes read as a field.
         edgecolor="face", linewidth=0.4, zorder=1,
     )
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
-    # Magenta hairline isobath: anti-viridis, legible over every fill colour
-    # and clear of the black coastline.
+    # Magenta hairline isobath: anti-viridis, legible over every fill colour.
+    # Drawn last at zorder 10, above every other artist: where it runs along
+    # the coast it must sit on the black line, not under it.
     for h0 in (h0_fine, h0_coarse_outside_fine):
         ax.contour(
             h0.lon, h0.lat, h0, levels=[isobath_m],
-            colors="magenta", linewidths=0.3,
-            # Top layer, above hexes and coastline, on every map.
-            zorder=3,
+            colors="magenta", linewidths=0.3, zorder=10,
         )
     ax.set_xlim(domain_lon_min, domain_lon_max)
     ax.set_ylim(domain_lat_min, domain_lat_max)
@@ -354,30 +396,39 @@ gdfs = {
     for regime, c in counts.items()
 }
 both = pd.concat(gdfs.values())
-# Shared norms: percentage saturates at the 99th percentile of the pooled
-# panels (a few hexes sit decades above the bulk), dilution is log with its
-# floor at the 1st percentile; colorbar arrows mark the saturated ends.
-dilution_pos = both["dilution"].where(both["dilution"] > 0).dropna()
-norms = {
-    "percentage": Normalize(vmin=0, vmax=both["percentage"].quantile(0.99)),
-    "dilution": LogNorm(vmin=dilution_pos.quantile(0.01), vmax=dilution_pos.max()),
+for regime, g in gdfs.items():
+    print(
+        f"{regime}: {g.loc[g['dilution'] < dilution_floor, 'percentage'].sum():.3f} % of the "
+        f"weight below the dilution floor (not drawn), "
+        f"{g.loc[g['dilution'].isna(), 'percentage'].sum():.3f} % on zero-water hexes, "
+        f"{g.loc[g['dilution'] > DILUTION_TOP, 'percentage'].sum():.3f} % above the top"
+    )
+# Shared across the pair: percentage saturates at the 99th percentile of the
+# pooled panels (a few hexes sit decades above the bulk; the arrow marks
+# it), dilution is the fixed decade scale with below-floor hexes not drawn.
+VIEWS = {
+    "percentage": (
+        Normalize(vmin=0, vmax=both["percentage"].quantile(0.99)), None, "max", gdfs, {},
+    ),
+    "dilution": (
+        dilution_norm, dilution_cmap, "min",
+        {r: g[g["dilution"] >= dilution_floor] for r, g in gdfs.items()},
+        {"format": FuncFormatter(lambda x, _: f"$10^{{{np.log10(x):.0f}}}$")},
+    ),
 }
-for column, norm in norms.items():
+for column, (norm, cmap, extend, drawn, colorbar_kwargs) in VIEWS.items():
     fig, axes = plt.subplots(2, 1, squeeze=False, layout="constrained")
     fig.set_size_inches(FIGURE_WIDTH_IN, MAP_PAIR_HEIGHT_IN)
     for ax, regime in zip(axes.flat, regimes):
-        hex_map(gdfs[regime], column, ax, norm, title=f"{regime}, {map_horizon_days} d")
+        hex_map(drawn[regime], column, ax, norm, cmap, title=f"{regime}, {map_horizon_days} d")
     # One colourbar for both maps, inset under the lower one at axes-fraction
-    # width 1.0, so it is exactly the map width at any figure size.
-    values = both[column]
+    # width 1.0: the stacked maps are height-limited, so a bar under the
+    # whole figure would run past them to the page edges.
     fig.colorbar(
-        plt.cm.ScalarMappable(norm=norm),
+        ScalarMappable(norm=norm, cmap=cmap),
         cax=axes[-1, 0].inset_axes([0.0, -0.07, 1.0, 0.03]),
-        orientation="horizontal", label=COLUMN_LABEL[column],
-        extend={
-            (False, False): "neither", (True, False): "max",
-            (False, True): "min", (True, True): "both",
-        }[(bool(values.max() > norm.vmax), bool(values.min() < norm.vmin))],
+        orientation="horizontal", label=COLUMN_LABEL[column], extend=extend,
+        **colorbar_kwargs,
     )
     fig_path = (
         figure_dir
