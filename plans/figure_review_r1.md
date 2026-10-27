@@ -220,3 +220,15 @@ PNG paths. Every saved figure stays print-ready (180 mm, 300 dpi,
   closure, `fig:r5_occupancy_surviving`, overviews T30 → T180 regenerated.
   New: Gdansk Basin puts 3.1 % (30 d) / 4.5 % (180 d) of its particle-time
   on zero-water hexes (026a surface ALL print) — check before quoting.
+
+## Addendum (authors, 2026-10-27): one map extent everywhere
+
+- **W10** — every map uses the narrow extent of the stranding map (029):
+  9–30.7°E, 53–66°N, via the same four `extent_lon_min/max`,
+  `extent_lat_min/max` parameters 029/030/034/036 carry. Affected: 025, 026
+  (now the key's total bounds), 026a (per-origin maps and the overview,
+  replacing `overview_extent_csv`), 026b, 027, 033. Each map notebook prints
+  the share of the mapped weight outside the extent, for the captions' FACTS.
+- The purple lines the authors asked about are the 3 m isobath of BSH H0
+  (magenta contour, fine and coarse grid) in 026/026a/034; along steep
+  coasts it hugs the coastline and reads as a second coastline.
