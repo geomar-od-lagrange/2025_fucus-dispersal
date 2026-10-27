@@ -185,3 +185,11 @@ PNG paths. Every saved figure stays print-ready (180 mm, 300 dpi,
   180 d. Follow-up: 032 Table C reads the 028 T60d emission CSV and must
   drop the `stranded` rows (within-row ranks are otherwise unchanged by
   the new denominator).
+- B: 026 done (`8f0eec5`, median age, share floor at the 5th percentile —
+  the 1st kept two estuary hexes); 026a overview code in (`e2d6ef4`),
+  production runs pending a visual check (pooled scale may span ~10
+  decades; cap the top at a high percentile if it reads flat).
+- C done (`c5c79ec`, `2d41525`): 034 ratio 0.97–0.98 (length) across
+  30–180 d; map pair stacked at 220 mm height on a Baltic crop (9–30.7°E,
+  53–66°N), each map ~1.6× the old area. 030 on `magma_r` discrete log bins,
+  right column = surviving fraction; Fig 35 caption must say so.
