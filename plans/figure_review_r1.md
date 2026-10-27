@@ -180,3 +180,8 @@ PNG paths. Every saved figure stays print-ready (180 mm, 300 dpi,
 ## Status
 
 - 2026-10-27: Q1–Q6 answered, decisions taken; A–D launched.
+- D done (`a5d3296`, `8ff6804`): closure −1.0 % pooled at 30 d, −0.19 % at
+  180 d; stranded share of row 0.08 (Bothnian Sea) – 0.90 (Great Belt) at
+  180 d. Follow-up: 032 Table C reads the 028 T60d emission CSV and must
+  drop the `stranded` rows (within-row ranks are otherwise unchanged by
+  the new denominator).
