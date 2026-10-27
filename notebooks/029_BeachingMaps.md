@@ -29,8 +29,8 @@ labels every figure; this notebook never parses the tag. Draws:
 
 1. **Where-stranded density** — stranded weight per `beach_hex` as a
    percentage of the released water-seeded drifters (log scale), with the
-   *Fucus* release sites overlaid so the map reads as a source→sink picture
-   rather than a deposition field alone.
+   *Fucus* release sites and the HELCOM subbasin borders overlaid so the map
+   reads as a source→sink picture rather than a deposition field alone.
 2. **Beached share per source hex** — of the drifters released in each
    hex, the percentage that strands within the reduction window (linear
    0–100).
@@ -61,6 +61,7 @@ Figures are print-ready (full page width, 300 dpi) and the per-horizon
 where-stranded field is exported as GeoJSON.
 
 ```python
+import itertools
 import json
 import re
 from pathlib import Path
@@ -82,7 +83,8 @@ from hextraj import HexProj
 ```python tags=["parameters"]
 # Read root of the hex-aggregate store.
 output_root = "../output"
-# Read root of the data twin: the Fucus release sites 010 seeds from and the
+# Read root of the data twin: the Fucus release sites 010 seeds from, the
+# HELCOM subbasin polygons drawn on the where-stranded map and the
 # shoreline-class table the substrate contrast reads.
 data_root = "../data"
 # Which regime's beaching partitions to read; one regime per run.
@@ -149,6 +151,7 @@ output_root = Path(output_root)
 data_root = Path(data_root)
 # The file 010 seeds from: the REDLIST cells baked by 000 (F_vesiculo != 0).
 release_points_path = data_root / "helcom_fucus_redlist" / "fucus_release_points.geojson"
+subbasins_path = data_root / "helcom_subbasins_2022" / "HELCOM_subbasins_2022_level2.shp"
 shoreclass_path = (
     data_root / "shoreclass_bsh_coastline" / "bsh_coastline_k2_flatfraction.parquet"
 )
@@ -197,6 +200,9 @@ hex_seam_lw = 1.1 * 72 / FIGURE_DPI
 release_marker_color = "magenta"
 release_marker_size = 2.5
 release_marker_lw = 0.4
+# Vertical inches the full-width where-stranded map adds to its own height:
+# the title above, the horizontal colorbar with its ticks and label below.
+STRANDED_DECOR_IN = 0.9
 
 figure_dir = output_root / "Figures" / "029"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -331,9 +337,9 @@ print(f"beaching rows: {len(beaching):,}; released drifters (Σweight) "
 percentage of the released drifters and joins to the key geometry
 (dropping the `-1` sentinel); `hex_map` draws hex polygons +
 coastline on a plain EPSG:4326 axis (as 025/026), with the colorbar as an
-inset axes at axes-fraction height 1.0 so it is exactly the map height —
-a fixed-aspect map never fills its gridspec cell, and a cell-sized
-colorbar overshoots it.
+inset axes at axes-fraction height 1.0 right of the map (or width 1.0 under
+it) so it is exactly the map's size — a fixed-aspect map never fills its
+gridspec cell, and a cell-sized colorbar overshoots it.
 
 ```python
 def hex_gdf(df, hex_col):
@@ -357,14 +363,25 @@ def log_norm(values):
     return LogNorm(vmin=vmin, vmax=vmax)
 
 
-def hex_map(gdf, ax, norm=None, title=None, label=None):
+def hex_map(gdf, ax, norm=None, title=None, label=None, cbar_below=False):
     """Hex choropleth + coastline on a lon/lat axis. `norm=None` → linear
-    default scale; a `LogNorm` → shared log scale across panels."""
+    default scale; a `LogNorm` → shared log scale across panels. The colorbar
+    sits right of the map at its full height, or with `cbar_below` under it at
+    its full width; it carries an `extend` arrow wherever values fall outside
+    the norm (the log norm's four-decade floor clips the sparse tail)."""
     if not gdf.empty:
-        cax = ax.inset_axes([1.02, 0.0, 0.035, 1.0])
+        cax = ax.inset_axes(
+            [0.0, -0.045, 1.0, 0.022] if cbar_below else [1.02, 0.0, 0.035, 1.0]
+        )
+        below = norm is not None and bool((gdf["value"] < norm.vmin).any())
+        above = norm is not None and bool((gdf["value"] > norm.vmax).any())
         gdf.plot(
             ax=ax, column="value", norm=norm, legend=True, cax=cax,
-            legend_kwds={"label": label} if label else None,
+            legend_kwds={
+                "orientation": "horizontal" if cbar_below else "vertical",
+                "extend": {(False, False): "neither", (True, False): "min",
+                           (False, True): "max", (True, True): "both"}[below, above],
+            } | ({"label": label} if label else {}),
             edgecolor="face", linewidth=hex_seam_lw, zorder=1,
         )
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
@@ -432,6 +449,30 @@ print(f"  in {pd.unique(release_hex_of_cell).size:,} hexes; key hexes with "
       f"fucus_area_m2 > 0: {int((key['fucus_area_m2'] > 0).sum()):,}")
 ```
 
+# Subbasin borders
+
+The HELCOM level-2 subbasins every per-subbasin readout below (and 026a,
+028) groups by, drawn on the where-stranded map as the edges two polygons
+share — the same borders as `036`'s seeding map. The polygons' full outlines
+also trace every island and skerry of the coast they were digitised against,
+which would smear over exactly the coastal hexes the map is about; the
+shared edges are the basin-to-basin borders alone. The Kattegat's open edge
+to the Skagerrak, shared with no polygon, is therefore not drawn.
+
+```python
+subbasin_outline = gpd.read_file(subbasins_path).to_crs(4326).boundary
+basin_borders = gpd.GeoSeries(
+    [
+        a.intersection(b)
+        for a, b in itertools.combinations(subbasin_outline, 2)
+        if a.intersects(b)
+    ],
+    crs="EPSG:4326",
+)
+print(f"subbasin borders: {len(basin_borders)} shared edges between "
+      f"{len(subbasin_outline)} HELCOM polygons")
+```
+
 # Where-stranded density
 
 Log-scale stranded share (% of released drifters) per stranding hex, summed over
@@ -442,18 +483,30 @@ if `ff >= 50%` else `wall`), a coarser cut than the rate itself, which
 scales continuously with `ff` through `trap_wall + (trap_flat -
 trap_wall)*ff/100` (production: `trap_flat = 1`, `trap_wall = 0`, so the
 substrate signal is already inside the plotted weight); displacement
-gets its own figure below.
+gets its own figure below. The release sites and the subbasin borders are
+drawn over the field, the colorbar runs the full page width under the map,
+and its `extend` arrow marks the hexes below the four-decade floor.
 
 ```python
 gdf_stranded = hex_gdf(beached, "beach_hex")
 strand_norm = log_norm(gdf_stranded["value"])
+below_floor = gdf_stranded["value"] < strand_norm.vmin
+print(f"stranding hexes: {len(gdf_stranded):,}; peak {strand_norm.vmax:.3g} %, "
+      f"floor {strand_norm.vmin:.3g} %; {int(below_floor.sum()):,} below the floor "
+      f"holding {100 * gdf_stranded['weight'][below_floor].sum() / gdf_stranded['weight'].sum():.2f} % "
+      f"of the stranded weight")
 
 fig, ax = plt.subplots(layout="constrained")
-fig.set_size_inches(FIGURE_WIDTH_IN, grid_height_in(1, 1, domain_aspect, FIGURE_WIDTH_IN))
+# The map spans the full page width, its colorbar under it at the same width;
+# the height is the map's at that width plus the title and colorbar band.
+fig.set_size_inches(FIGURE_WIDTH_IN, FIGURE_WIDTH_IN / domain_aspect + STRANDED_DECOR_IN)
 hex_map(gdf_stranded, ax, norm=strand_norm,
         title="stranded, Fucus release sites overlaid"
         if show_release_points else "stranded",
-        label="stranded (% of released)")
+        label="stranded (% of released)", cbar_below=True)
+# Override: neutral mid-grey hairline subbasin borders (as 036), so a border
+# reads neither as coastline (black) nor as part of the hex field.
+basin_borders.plot(ax=ax, color="0.5", linewidth=0.4, zorder=2)
 if show_release_points:
     # Hollow magenta rings, one per REDLIST release cell; style constants and
     # their rationale are at the top of the notebook.
