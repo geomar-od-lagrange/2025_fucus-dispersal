@@ -518,11 +518,14 @@ def class_norm(k_lo, k_hi, extend):
 
 
 def colorbar(fig, ax, im, label):
-    """Shared-width colorbar under the matrix, decades labelled."""
+    """Shared-width colorbar under the matrix, decades labelled — every
+    decade up to eight of them, then every n-th so the labels never touch."""
     cb = fig.colorbar(im, ax=ax, location="bottom", label=label)
-    edges = im.norm.boundaries
-    decades = [e for e in edges if np.isclose(np.log10(e), np.round(np.log10(e)))]
-    cb.set_ticks(decades, labels=[f"$10^{{{int(np.round(np.log10(e)))}}}$" for e in decades])
+    exps = [int(np.round(np.log10(e))) for e in im.norm.boundaries
+            if np.isclose(np.log10(e), np.round(np.log10(e)))]
+    step = int(np.ceil(len(exps) / 8))
+    exps = [x for x in exps if (x - exps[-1]) % step == 0]
+    cb.set_ticks([10.0 ** x for x in exps], labels=[f"$10^{{{x}}}$" for x in exps])
     return cb
 
 
@@ -589,10 +592,10 @@ raw_norm = class_norm(
 fig, ax = matrix_figure(named_ids)
 im = draw(ax, np.where(raw_values > 0, raw_values, np.nan), named_ids, norm=raw_norm)
 colorbar(fig, ax, im, f"residence ({value_col})")
-# Run context on the figure, horizon on the axes: the combined string
-# overruns the 180 mm page.
-fig.suptitle(f"{regime} — {season} — {member_tag}")
-ax.set_title(f"age < {max_age_days} d")
+# Run context and horizon as one two-line figure title: the combined string
+# overruns the 180 mm page on one line, and a separate axes title can be
+# pushed into the figure title once the fixed-aspect matrix fills the page.
+fig.suptitle(f"{regime} — {season} — {member_tag}\nage < {max_age_days} d")
 save(fig, f"SubbasinConnectivity_raw_{regime}_{season}_{member_tag}_T{max_age_days}d.png")
 
 # %% [markdown]
@@ -632,8 +635,7 @@ for h in time_horizons_days:
     fig, ax = matrix_figure(targets)
     im = draw(ax, np.where(values > 0, values, np.nan), targets, norm=norm)
     colorbar(fig, ax, im, "emission fraction")
-    fig.suptitle(f"{regime} — {season} — {member_tag}")
-    ax.set_title(f"age < {h} d")
+    fig.suptitle(f"{regime} — {season} — {member_tag}\nage < {h} d")
     save(fig, f"SubbasinConnectivity_emission_{regime}_{season}_{member_tag}_T{h}d.png")
 
 # %% [markdown]
@@ -688,8 +690,8 @@ for h in time_horizons_days:
                         ha="center", va="center",
                     )
     colorbar(fig, ax, im, "emission fraction (mean over years)")
-    fig.suptitle(f"{regime} — {season} — {member_tag}")
-    ax.set_title(f"age < {h} d — {len(years)}-year mean")
+    fig.suptitle(f"{regime} — {season} — {member_tag}\n"
+                 f"age < {h} d — {len(years)}-year mean")
     save(fig, f"SubbasinConnectivity_interannual_{regime}_{season}_{member_tag}_T{h}d.png")
 
 # %% [markdown]
