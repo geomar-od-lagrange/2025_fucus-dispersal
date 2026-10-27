@@ -36,7 +36,7 @@ output_root/Figures/
   030/  {SurvivalHeatmaps,DriftingFractionCurve}_<regime>_r<radius>m_<season>_<member>.png
   031/  BeachingSweep{Stats,Maps}_<regime>_r<radius>m_<season>.png
   035/  AreaTimeSeries_<season>_r<radius>m.png
-  036/  SeedingMap_r<radius>m.png
+  036/  {SeedingMap,LandSeededShare}_r<radius>m.png
 ```
 
 `figure_dir` is derived from the `output_root` parameter inside each notebook

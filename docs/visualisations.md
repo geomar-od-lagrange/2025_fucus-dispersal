@@ -206,6 +206,12 @@ reason read on different axes:
   extent is cropped to the Baltic proper (9–30.7 °E), so the maps are tall
   and narrow: a bar under the map would be far wider than the values need
   and would eat the row height the tall maps want.
+- **Single full-width maps** (029 where-stranded, 036 land-seeded share) —
+  `ax.inset_axes([0, -0.045, 1, 0.022])`, a horizontal bar under a map that
+  spans the whole 180 mm, so the bar runs the full page width. The map is
+  `set_anchor("S")`: centred in its cell it drifts below constrained_layout's
+  room for the inset and clips the colorbar label; bottom-anchored, a
+  too-tall height seed only leaves a band above the title. 180 × 231 mm.
 
 Facet grids split across figures past ~12 panels rather than shrinking the
 maps; 027/029/030/031/033 set `hex_seam_lw = 1.1 * 72 / FIGURE_DPI`, and 031's
@@ -458,7 +464,11 @@ resulting hex dilation shrink as resolution rises.
   released drifters, summed over the store's `disp_bin` (and `shore_type`
   where the reducer emits it) axes, on a `LogNorm` floored four decades
   below the peak (weighted deposition's sparse tail carries fractional
-  weight). `shore_type` is deliberately **not shown at all** — neither
+  weight). One map at the full page width with its colorbar under it (the
+  single full-width layout above); the colorbar carries `extend="min"`
+  because the floor clips hexes (production `ALL`: 110 of 1 221, < 0.01 % of
+  the stranded weight). `hex_map` sets `extend` from the data against the
+  norm on every panel, so the horizon row's shared norm gets the arrow too. `shore_type` is deliberately **not shown at all** — neither
   faceted nor broken out in the summary. It is a threshold label on the
   HELCOM BRISK + CLMS flat fraction `ff` at the stranding hour (`flat` if
   `ff >= 50%` else `wall`), a coarser cut than the rate, which scales
@@ -494,6 +504,13 @@ resulting hex dilation shrink as resolution rises.
   deliberately **not** repeated on the beached-fraction or age-horizon panels:
   the beached-fraction panel's coloured hexes already *are* the release set,
   and the horizon row is about time, not about where the material came from.
+- **Subbasin borders** (where-stranded panel only) — the HELCOM level-2
+  borders as the edges two polygons share, unannotated, no fill, the same
+  geometry and style as 036 (**override: `color="0.5"`, `linewidth=0.4`**, so
+  a border reads neither as coastline nor as part of the field). They tie the
+  map to the per-subbasin readouts (afloat table, 026a, 028). Full polygon
+  outlines rejected: they retrace the coast and its skerries, exactly where
+  the stranding hexes sit.
 - **Source and sink substrate** — printed, not plotted: the shoreline flat
   fraction `ff` at the release sites against the flat fraction where the
   weight lands, aggregated per hex the way 033 does it (nest seam dropped,
@@ -903,7 +920,8 @@ comparison is the point.
 [`036_SeedingMap`](../notebooks/036_SeedingMap.py) draws the release set for
 the paper's Data section: the 872 REDLIST cells `010` seeds from
 (`data/helcom_fucus_redlist/fucus_release_points.geojson`), as filled cell
-polygons on 029's Baltic extent, in two side-by-side panels.
+polygons on 029's Baltic extent, in two side-by-side panels, plus the
+right-hand panel on its own as the paper's supplement figure.
 
 | panel | value | source |
 |---|---|---|
@@ -938,14 +956,17 @@ polygons on 029's Baltic extent, in two side-by-side panels.
   so a border reads neither as coastline (black, as 025–033) nor as a
   category fill.
 - **Land-share panel**: default colormap, fixed `Normalize(0, 100)`, colorbar
-  right of the map (027/029/033 placement for the tall Baltic crop).
+  right of the map (027/030/033 placement for the tall Baltic crop). The
+  single-panel copy (supplement) is one map at the full page width with the
+  colorbar under it, 029's where-stranded layout.
 - **Legend** under both panels, three columns, entries in colour order with
   the cell count per subbasin.
 - A table of cells, share of cells and mean land-seeded share per subbasin is
   printed; no export.
 
-`output_root/Figures/036/SeedingMap_r<radius>m.png`, 180 mm × 300 dpi; first
-entry of 032's figure list.
+`output_root/Figures/036/SeedingMap_r<radius>m.png` (two panels) and
+`LandSeededShare_r<radius>m.png` (single panel, supplement), 180 mm × 300 dpi;
+`SeedingMap` is the first entry of 032's figure list.
 
 ## Cross-references
 
