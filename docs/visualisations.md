@@ -169,14 +169,18 @@ maps instead of being normalised away, and Σ dilution · area ≤ 1; the runs
 print `remaining / released` per horizon (and per origin). The 90 %-area
 metric (026 → 035) and the median age keep their normalisation over the
 weight present — they describe the shape and age of the cloud that is there.
-One fixed scale for every dilution figure: `BoundaryNorm` from
-`dilution_floor` = 10⁻⁷ to 1 per km² (all released particle-time in one km²),
-two classes per decade (14), `extend="min"`, hexes below the floor not drawn
-(the colourbar's under triangle left empty, `under="none"`), tick labels on
-whole decades, one shared colourbar per figure. Override: `turbo` sampled
-discretely (one colour per class) instead of the default colormap — seven
-decades must stay distinguishable and read as absolute classes. The runs
-print each panel's below-floor share of its weight. Considered a per-figure
+One fixed scale for every dilution figure: `BoundaryNorm` from the
+parameters `dilution_floor` = 10⁻⁷ to `dilution_top` = 10⁻¹ per km² (whole
+decades; 1 per km² would be all released particle-time in one km²), two
+classes per decade, `extend="both"`, tick labels on whole decades, one shared
+colourbar per figure. Every hex with weight is drawn: below the floor in the
+under colour, above the top in the over colour (the lowest and highest class
+colours); white means no particles, or a hex with no water area. Considered
+masking sub-floor hexes; rejected, the 180 d panel then looked as if material
+vanished. Override: `turbo` sampled discretely (one colour per class) instead
+of the default colormap — six decades must stay distinguishable and read as
+absolute classes. The runs print each panel's share of its weight below the
+floor and above the top. Considered a per-figure
 `LogNorm`; rejected, the same colour meant different dilutions between
 figures.
 
