@@ -1063,12 +1063,13 @@ figure_specs = [
         note="Per-source-hex quantiles of final crow-flies displacement; the map behind table D.",
     ),
     dict(
-        notebook="030", stem="SurvivalFraction_{regime}_r{radius}m_{season}_{member}",
-        name="surviving_fraction_{season}",
+        notebook="030", stem="SurvivalHeatmaps_{regime}_r{radius}m_{season}_{member}",
+        name="occupancy_surviving_fraction_{season}",
         sources=[("survocc", primary_regime, member)],
-        note=f"Surviving (un-beached) fraction per hex in the {age_bin_days} d snapshot bin ending "
-        "at each mapped horizon, on a fixed 0–1 scale: where propagules still drift after the "
-        "coast has taken its share.",
+        note=f"Rows = horizons, each the {age_bin_days} d snapshot bin ending there; left column "
+        "occupancy (% of released drifters in the hex, log bins), right column the surviving "
+        "(un-beached) fraction surv/occ on a fixed 0–1 scale: where propagules still drift after "
+        "the coast has taken its share.",
     ),
 ]
 
