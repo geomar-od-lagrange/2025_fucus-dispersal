@@ -78,11 +78,14 @@ map_horizon_days = 90
 # Isobath to overlay on the maps, in metres of BSH H0 (floor position, see
 # docs/h0_semantics.md). Fucus vesiculosus no longer grows below ~3 m.
 isobath_m = 3.0
-# Floor of the dilution colour scale, fraction of the released particle-time
-# per km², a whole decade. The same in every dilution figure (026, 026a,
-# 034): the authors' fixed scale, two classes per decade up to 1 per km²
-# (docs/visualisations.md). Hexes below it are not drawn.
+# Floor and top of the dilution colour scale, fraction of the released
+# particle-time per km², whole decades. The same in every dilution figure
+# (026, 026a, 034): the authors' fixed scale, two classes per decade
+# (docs/visualisations.md). Every hex with weight is drawn: values below the
+# floor take the under colour, values above the top the over colour; white is
+# only "no particles".
 dilution_floor = 1e-7
+dilution_top = 0.1
 # Map extent (degrees). The 024a key tiles the whole BSH domain including the
 # North Sea, which the bottom regime does not reach; cropping to the Baltic
 # (western Baltic and Belt Sea to the Gulf of Finland and Bothnian Bay) spends
@@ -122,24 +125,23 @@ FIGURE_DPI = 300
 MAP_PAIR_HEIGHT_IN = 220 / 25.4
 
 # Shared dilution scale: two classes per decade from `dilution_floor` up to
-# 1 per km² — all of the released particle-time in one km² of water.
-DILUTION_TOP = 1.0
+# `dilution_top` (at most 1 per km², all of the released particle-time in
+# one km² of water).
 DILUTION_CLASSES_PER_DECADE = 2
-assert np.isclose(np.log10(dilution_floor), round(np.log10(dilution_floor))), (
-    f"dilution_floor {dilution_floor} is not a whole decade"
-)
+for bound in (dilution_floor, dilution_top):
+    assert np.isclose(np.log10(bound), round(np.log10(bound))), f"{bound} is not a whole decade"
 dilution_bounds = np.logspace(
-    np.log10(dilution_floor), np.log10(DILUTION_TOP),
-    round(DILUTION_CLASSES_PER_DECADE * np.log10(DILUTION_TOP / dilution_floor)) + 1,
+    np.log10(dilution_floor), np.log10(dilution_top),
+    round(DILUTION_CLASSES_PER_DECADE * np.log10(dilution_top / dilution_floor)) + 1,
 )
 # turbo, not the default colormap (docs/visualisations.md): dilution is
 # multiplied by a per-site released biomass downstream, so it has to read in
-# absolute terms over seven decades — one high-contrast colour per half
-# decade. Below-floor hexes are not drawn, so the colorbar's extend="min"
-# triangle stays empty.
-dilution_cmap = plt.get_cmap("turbo").resampled(len(dilution_bounds) - 1).with_extremes(
-    under="none"
-)
+# absolute terms over many decades — one high-contrast colour per half
+# decade. Every hex with weight is drawn (masking sub-floor hexes made
+# material look as if it vanished): below the floor in the under colour, above
+# the top in the over colour — the lowest and highest class colours, shown as
+# the colorbar's extend="both" triangles. White is only "no particles".
+dilution_cmap = plt.get_cmap("turbo").resampled(len(dilution_bounds) - 1)
 dilution_norm = BoundaryNorm(dilution_bounds, dilution_cmap.N)
 # Tick labels on the whole decades only; the half-decade edges stay unlabelled.
 decade_format = FuncFormatter(
@@ -308,8 +310,8 @@ particle-time as a fraction of the regime's released particle-time over
 the same ages (`N_released · T`) per km² of hex water area. The two regimes
 are stacked (reference on top) under one colour norm and one colourbar
 under the pair, so the same colour is the same value in both. `dilution`
-is the fixed log scale shared with 026 and 026a, below-floor hexes not
-drawn; `percentage` is
+is the fixed log scale shared with 026 and 026a, below-floor hexes in the
+under colour; `percentage` is
 linear to the pooled 99th percentile. Extent is the Baltic crop of the
 parameters (the key's bounds if all four are 0). Coastline is the outline
 of the BSH HBMnoku wet cells, merged fine-first as in 024a (fine polygons
@@ -427,28 +429,24 @@ both = pd.concat(gdfs.values())
 for regime, g in gdfs.items():
     print(
         f"{regime}: {g.loc[g['dilution'] < dilution_floor, 'percentage'].sum():.3f} % of the "
-        f"weight below the dilution floor (not drawn), "
+        f"weight below the dilution floor (under colour), "
         f"{g.loc[g['dilution'].isna(), 'percentage'].sum():.3f} % on zero-water hexes, "
-        f"{g.loc[g['dilution'] > DILUTION_TOP, 'percentage'].sum():.3f} % above the top"
+        f"{g.loc[g['dilution'] > dilution_top, 'percentage'].sum():.3f} % above the top"
     )
 # Shared across the pair: percentage saturates at the 99th percentile of the
 # pooled panels (a few hexes sit decades above the bulk; the arrow marks
-# it), dilution is the fixed log scale with below-floor hexes not drawn.
+# it), dilution is the fixed log scale, below-floor hexes in the under colour.
 VIEWS = {
     "percentage": (
-        Normalize(vmin=0, vmax=both["percentage"].quantile(0.99)), None, "max", gdfs, {},
+        Normalize(vmin=0, vmax=both["percentage"].quantile(0.99)), None, "max", {},
     ),
-    "dilution": (
-        dilution_norm, dilution_cmap, "min",
-        {r: g[g["dilution"] >= dilution_floor] for r, g in gdfs.items()},
-        {"format": decade_format},
-    ),
+    "dilution": (dilution_norm, dilution_cmap, "both", {"format": decade_format}),
 }
-for column, (norm, cmap, extend, drawn, colorbar_kwargs) in VIEWS.items():
+for column, (norm, cmap, extend, colorbar_kwargs) in VIEWS.items():
     fig, axes = plt.subplots(2, 1, squeeze=False, layout="constrained")
     fig.set_size_inches(FIGURE_WIDTH_IN, MAP_PAIR_HEIGHT_IN)
     for ax, regime in zip(axes.flat, regimes):
-        hex_map(drawn[regime], column, ax, norm, cmap, title=f"{regime}, {map_horizon_days} d")
+        hex_map(gdfs[regime], column, ax, norm, cmap, title=f"{regime}, {map_horizon_days} d")
     # One colourbar for both maps, inset under the lower one at axes-fraction
     # width 1.0: the stacked maps are height-limited, so a bar under the
     # whole figure would run past them to the page edges.
