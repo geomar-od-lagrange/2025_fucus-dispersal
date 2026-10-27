@@ -130,3 +130,19 @@ Bothnian Sea · QUA The Quark · BOB Bothnian Bay
   JJA/SON × (surface_stokes production member, bottom unweighted), 029
   ALL + four seasons, 033 ALL, 036. The 028 raw view (not in the paper) spans
   ~36 decades for the weighted run (tiny `w_obs`); it keeps the full span.
+- 2026-10-27: **P1b done** (026, 026a, 034). Decision: dilution is the
+  released-normalised transfer function — multiply by the per-site released
+  biomass. `dilution` = Σ weight in hex over `[0, T)` / (`N_released` · `T`)
+  / water km², `N_released · T` = age-bin-0 samples (sentinels included; per
+  origin in 026a) × `T / age_bin_days`; 90 %-area and median age keep the
+  cloud-present normalisation. Scale `dilution_floor` 1e-7 to `dilution_top`
+  (parameter, default 0.1), two classes per decade, `extend="both"`, every
+  hex with weight drawn (under/over colours). Commits `c8fb573`, `343695c`
+  (notebooks), `aabcda5`, `5dd8973` (docs). Remaining/released: surface 026
+  0.78/0.70/0.66/0.57 at 30/60/90/180 d; 026a surface per origin 0.32–0.99
+  (30 d) and 0.10–0.92 (180 d; Gdansk 0.10, Kiel Bay 0.11); bottom and 034
+  1.000. Weight below 1e-7 exceeds 1 % in 026 surface 180 d (1.82 %), 026a
+  surface T30 Kiel Bay (1.05 %) and 026a surface T180 (up to 4.09 %,
+  Gdansk; mean 1.49 %); above 0.1: 026 bottom 180 d 0.52 %, 026a bottom
+  T180 up to 3.6 %, 026a surface up to 0.97 %. With sub-floor hexes drawn,
+  the 026a surface T180 panels fill most of the basin in the under colour.
