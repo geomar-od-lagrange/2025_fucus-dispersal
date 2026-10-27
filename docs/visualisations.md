@@ -146,14 +146,28 @@ particle-time (survival-weighted particle-time for a member). `dilution` =
 that share per km² of hex water area
 (`water_area_m2` from the 024a key), so a hex that is mostly land is not
 credited with a whole hex of dilution volume. Percentage is linear,
-dilution log. Absolute counts are dropped from the headline maps — a count
+dilution on the shared decade scale below. Absolute counts are dropped from the headline maps — a count
 is only readable against a release-set size the reader does not have.
 Hexes with `water_area_m2 == 0` carry a percentage but no dilution. The
 percentage scale saturates at the 99th percentile with an over-range
 colorbar arrow: occupancy is concentrated enough that a few hexes sit two
 decades above the bulk, and scaling to the maximum paints every other hex
-the same dark colour; the dilution floor at the 1st percentile is the same
-argument at the other end.
+the same dark colour.
+
+**Shared dilution scale (026, 026a, 034).** Dilution is a transfer function
+the authors multiply by a per-site biomass, so every dilution figure uses one
+absolute scale: `BoundaryNorm` with one class per decade from the floor
+`dilution_floor` = 10⁻⁵ to 10² % per km² (all of the material in one km²),
+`extend="min"`, hexes below the floor not drawn (the colourbar's under
+triangle is left empty, `under="none"`), one shared colourbar per figure with
+`10^n` tick labels. F = 10⁻⁵ is the largest decade that leaves ≥ 99 % of every
+paper panel's weight above it (pooled over 026 ALL both regimes, the 026a
+overviews and the 034 pair: at most 0.8 % below, a 026a origin at 180 d; 10⁻⁴
+would cut up to 13 %); the runs print each panel's below-floor share. Override:
+`turbo` sampled discretely (one colour per decade) instead of the default
+colormap — seven decades must stay distinguishable and read as absolute
+classes. Considered a per-figure `LogNorm` (percentile floor to maximum);
+rejected, it made the same colour mean different dilutions between figures.
 
 **Sentinel rows.** `release_hex` or `target_hex` of -1 (land-seeded
 particles, obs that left the BSH domain) carry no geometry and are dropped
@@ -175,9 +189,11 @@ contour). H0 is NaN over land (see [h0_semantics.md](h0_semantics.md)), so
 `contour(levels=[3.0])` masks land for free. Fine grid takes precedence
 where it covers; the coarse grid is blanked inside the fine bbox.
 Override: magenta at `linewidths=0.3` — anti-viridis, hairline so it does
-not read as a second coastline. It is the top layer (`zorder` above hexes,
-coastline, borders and markers) on every map that carries it, the 026a
-overview included (authors, 2026-10-27).
+not read as a second coastline. It is drawn last at `zorder=10`, above
+hexes, coastline, borders and markers, on every map that carries it: where it
+runs along the coast it must sit on the black line, not be flanked or hidden
+by it (authors, 2026-10-27; checked on 2× crops of the Danish straits and the
+Polish coast).
 
 **Print-ready figures (025–031, 033–036).** Every saved figure is one full
 text-width (180 mm) figure at 300 dpi: `fig.set_size_inches(180/25.4, h)`
@@ -212,6 +228,10 @@ or DPI; they stay per-panel even under a shared norm so columns keep
 identical geometry. The two families place them differently, for the same
 reason read on different axes:
 
+- **Shared colourbar (026, 026a)** — one horizontal colourbar per figure
+  under the whole grid (`fig.colorbar(..., ax=axes, pad=0.01)`; the default
+  pad is a fraction of the grid height, a blank band), every panel on the
+  figure's one norm.
 - **025/026 family** — `ax.inset_axes([0, -0.09, 1, 0.035])`, a horizontal
   bar *under* the map at width 1.0. These grids are up to four columns
   wide, and a side colorbar plus its tick labels would take a quarter of
@@ -237,12 +257,14 @@ Every scoped plot is then a `.sel`/`.sum`/`.groupby` on the lazy array,
 computed once in a shared dask pass. Mean-age reuses the same lazy object
 via an obs-weighted variant.
 
-**Coastline overlay** in the hex-map notebooks is Natural Earth 10 m via
-cartopy's shapereader, clipped once per extent, drawn black at
-`linewidth=0.5` (black reads against the dark low-density band of the
-default colormap, which is where registration matters most). Natural Earth
-is preferred to the BSH wet-cell coastline because the audience reads
-geographic context, not model-grid registration. The cartopy notebooks
+**Coastline overlay** in the hex-map notebooks is the model's own: the
+outline of the BSH HBMnoku wet cells (`data/bsh_hbmnoku_static/coastline.geojson`,
+the polygons 024a takes the hex water area from), merged fine-first as in
+024a (fine polygons plus the coarse ones outside the fine bbox) and drawn
+minus a 0.001° strip along the fine bbox, where the two grids meet in open
+water; black at `linewidth=0.5`. The model coastline rather than Natural
+Earth because the maps show where the model's water is — hexes, isobath and
+coast then register on one grid (authors, 2026-10-27). The cartopy notebooks
 (020/022/023) use `add_feature(cfeature.COASTLINE)` per the AGENTS.md
 default.
 
@@ -312,9 +334,11 @@ target_hex)` reduction as the horizon maps, so a member run is
 survival-weighted and an unweighted run is plain residence. Considered the
 weight-weighted mean of the bin centres; rejected, a skewed per-hex age
 distribution pulls it away from what most of the particle-time looks like,
-and the median reads as "half the particle-time here is younger". Default
-colormap on a linear scale over the mapped range; colorbar label `median
-particle age (d)`. **Mask:** a hex is drawn only if its share of the
+and the median reads as "half the particle-time here is younger". Fixed
+classes, identical for every regime and season: `BoundaryNorm` at 0, 25, …,
+175 d with `extend="max"` (175 d to the window end), the default colormap
+sampled into eight colours (seven classes and the over class); colourbar
+label `days` (the title names the quantity). **Mask:** a hex is drawn only if its share of the
 window's weight (`percentage`) is at or above the 5th percentile of the
 per-hex shares, zero-water hexes excluded (as on the dilution map). At
 production (ALL, 2016–2024) that keeps 10,151 of 10,714 surface and 5,218
@@ -339,10 +363,12 @@ only, the window's `weight, percentage, dilution` plus `median_age_days`).
 side via the key's `helcom_subbasin`, while target hexes still range over
 the whole domain — it answers "where do propagules *from this subbasin*
 go?". `_outside` (-1) and land-seeded releases are reported, not mapped.
-Each origin is normalised and colour-scaled over its own releases
-(cross-origin totals differ by orders of magnitude, so a shared scale
-would wash out the smaller sources); colour is not comparable between
-figures.
+Each origin is normalised over its own releases (cross-origin totals differ
+by orders of magnitude, so a basin-wide normalisation would wash out the
+smaller sources): a dilution colour is the same share of *that origin's*
+particle-time per km² in every panel, on the shared decade scale; the
+percentage figures are linear to the 99th percentile pooled over a figure's
+panels.
 
 **Overview.** Per horizon in `overview_horizons_days_csv` (default
 `"30,180"`), one figure with every mapped origin's log-dilution map in a
@@ -350,15 +376,8 @@ figures.
 name, panels in a hard-coded geographic order (Kattegat → The Quark),
 figure
 `OriginSubbasinOverview_<regime>_<season>_r<radius>m_<member|unweighted>_T<h>d_dilution.png`.
-Each panel is still normalised over its own origin, so a shared scale does
-not hit the source-size problem above: one `LogNorm` for all panels, top =
-99th percentile of the dilution pooled over all panels (`extend="max"`
-above), floor = top / 10⁴; hexes below the floor are **not drawn**, so a
-panel shows the footprint above 10⁻⁴ of the reference (four decades, as
-the stranding map and the connectivity matrices). Considered the per-origin
-rule (1st percentile to maximum); rejected, survival weights `exp(−A)`
-leave vanishing but nonzero values and a sliver-of-water hex sets the
-maximum, so the pooled range spanned ~28 decades. Panels use the
+Each panel is still normalised over its own origin and drawn on the shared
+dilution scale, hexes below the floor not drawn. Panels use the
 shared extent (the run prints each origin's share of drawn weight outside
 it, and the maximum) and the isobath on top. One figure-wide horizontal colorbar
 (`fig.colorbar(..., ax=axes)`). Overrides: panel titles at
@@ -890,9 +909,12 @@ either counts partition raises rather than shrinking one side. Parquet only.
   take the data line's cycle colour; read off the rcParams, not hardcoded.
 - **Map pair** at `map_horizon_days` — 026's percentage and dilution rendering,
   one figure per view, the two regimes **stacked** (reference on top) under
-  **one shared norm** and one horizontal colourbar inset under the lower map,
-  so the same colour is the same share in both; unlike 026's per-panel norms,
-  the comparison is the point here. Shared extent (the validation
+  **one shared norm** and one horizontal colourbar inset under the lower map
+  (the stacked maps are height-limited, so a bar under the whole figure would
+  overrun them), so the same colour is the same share in both; dilution is
+  the shared decade scale, the paper's slowdown figure. The length-ratio
+  figure stays an output but is not in the paper set (its ratios are in the
+  CSV). Shared extent (the validation
   cell prints the particle-time it cuts off — 0 % for 2019). The Baltic is taller than
   wide, so two full-width stacked maps would be ~2.4× the page width tall: the
   figure height is fixed at 220 mm (`MAP_PAIR_HEIGHT_IN`, one page with its
@@ -917,9 +939,13 @@ parquet; it runs after 026 for every regime it draws.
 | `area_quantile` | 0.9 | must be a `q` the CSV holds, else it raises |
 | `hex_radius` | 6000 | labels the figure only; the CSV names carry no radius |
 
-- **Two panels**, area (km²) and √area (km), against the cumulative horizon
-  `T` (ages in `[0, T)`, every age-bin edge 026 exported), y from zero so the
-  regimes compare as ratios.
+- **Two panels stacked** on a shared x axis, area (km²) over √area (km),
+  against the cumulative horizon `T` (ages in `[0, T)`, every age-bin edge
+  026 exported), y from zero so the regimes compare as ratios, top 12 % above
+  the highest band for the labels. No title and no legend: each line is named
+  by a text label in its colour at the first horizon (above the topmost line,
+  below the others — the lines cross later); override `color=` on the label,
+  so it reads as the line's name. The season and the band go in the caption.
 - **One colour per regime** from the default cycle, indexed by its position
   in `regimes_csv` so a regime keeps its colour when another is missing; the
   pooled value is a line with markers (one per exported horizon), the
