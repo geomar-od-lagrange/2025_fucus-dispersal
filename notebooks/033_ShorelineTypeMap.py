@@ -73,11 +73,12 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm, Normalize
+import xarray as xr
+from matplotlib.colors import Normalize
 from pyproj import Transformer
 from scipy.stats import spearmanr
 from shapely.geometry import box
-from cartopy.io.shapereader import natural_earth
+from shapely.ops import unary_union
 
 from hextraj import HexProj
 
@@ -87,7 +88,8 @@ from hextraj import HexProj
 # %% tags=["parameters"]
 # Read root of the hex-aggregate store (key + beaching partitions).
 output_root = "../output"
-# Read root of the data twin (the shoreline-class table).
+# Read root of the data twin (the shoreline-class table, the BSH wet-cell
+# coastline the maps draw).
 data_root = "../data"
 # Shoreline-class table (sub-segment midpoints in EPSG:3035 with a flat
 # fraction each). "" = the data twin's copy under `data_root`, exactly as 024d.
@@ -162,6 +164,8 @@ shoreclass_path = Path(
 )
 if not shoreclass_path.exists():
     raise FileNotFoundError(f"shoreline-class table missing: {shoreclass_path}")
+coastline_path = data_root / "bsh_hbmnoku_static" / "coastline.geojson"
+h0_fine_path = data_root / "bsh_hbmnoku_static" / "static_file_fine" / "H0_file_fine.nc"
 
 if season not in SEASON_MONTHS:
     raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
@@ -191,6 +195,9 @@ FIGURE_DPI = 300
 # Hex seam stroke, as 029: edgecolor="face" plus a ~1 px stroke at the output
 # dpi closes the anti-aliasing seam between adjacent polygons.
 hex_seam_lw = 1.1 * 72 / FIGURE_DPI
+# Vertical inches a full-width map adds to its own height: the title above,
+# the horizontal colorbar with its ticks and label below (029's layout).
+MAP_DECOR_IN = 0.75
 
 figure_dir = output_root / "Figures" / "033"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -405,19 +412,25 @@ print(f"stranded weight within the {max_age_days} d reduction window")
 # %% [markdown]
 # # Rendering helpers
 #
-# 029's hex rendering verbatim — hex polygons + Natural Earth coastline on a
-# plain EPSG:4326 axis, colorbar as an inset axes at axes-fraction height 1.0
-# so it is exactly the map height — with a `cmap` passthrough for the one
-# override this notebook defends (below).
+# 029's where-stranded rendering — hex polygons + the model coastline on a
+# plain EPSG:4326 axis, the map at the full page width with its colorbar as an
+# inset axes under it at axes-fraction width 1.0, so it is exactly the map's
+# width — with a `cmap` passthrough for the one override this notebook defends
+# (below).
 
 # %%
 def hex_map(gdf, ax, norm=None, title=None, label=None, cmap=None):
-    """Hex choropleth of `gdf.value` + coastline on a lon/lat axis."""
+    """Hex choropleth of `gdf.value` + model coastline on a lon/lat axis,
+    colorbar under the map."""
     if not gdf.empty:
-        cax = ax.inset_axes([1.02, 0.0, 0.035, 1.0])
+        cax = ax.inset_axes([0.0, -0.045, 1.0, 0.022])
+        # Bottom-anchored, so constrained_layout's room for the bar under the
+        # map holds; centred, the map drifts down and clips the label.
+        ax.set_anchor("S")
         gdf.plot(
             ax=ax, column="value", norm=norm, cmap=cmap, legend=True, cax=cax,
-            legend_kwds={"label": label} if label else None,
+            legend_kwds={"orientation": "horizontal"}
+            | ({"label": label} if label else {}),
             edgecolor="face", linewidth=hex_seam_lw, zorder=1,
         )
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
@@ -430,10 +443,31 @@ def hex_map(gdf, ax, norm=None, title=None, label=None, cmap=None):
         ax.set_title(title)
 
 
-def grid_height_in(nrows, ncols, aspect, width_in):
-    """Height seed for a grid of fixed-aspect map panels at a fixed figure
-    width; constrained_layout does the packing, no measure-rescale loop."""
-    return 1.10 * nrows * (0.72 * width_in / ncols) / aspect
+# %% [markdown]
+# The coastline is the model's own, as on every map of the pipeline: the
+# outline of the BSH HBMnoku wet cells (`bsh_hbmnoku_static/coastline.geojson`)
+# — the very line the shoreline-class table is built along — with the fine
+# nest taking precedence inside its bounding box (024a's merge) and the nest
+# seam, where the fine grid's water stops in open sea, removed.
+
+# %%
+def model_coastline(clip_box):
+    """BSH wet-cell outline as lines, fine nest first, nest seam removed,
+    clipped to `clip_box`."""
+    wet = gpd.read_file(coastline_path)
+    h0_fine = xr.open_dataset(h0_fine_path)
+    pad_lon = abs(float(h0_fine.lon.diff("lon").mean())) / 2
+    pad_lat = abs(float(h0_fine.lat.diff("lat").mean())) / 2
+    fine_bbox = box(
+        float(h0_fine.lon.min()) - pad_lon, float(h0_fine.lat.min()) - pad_lat,
+        float(h0_fine.lon.max()) + pad_lon, float(h0_fine.lat.max()) + pad_lat,
+    )
+    fine = unary_union(wet.loc[wet["grid"] == "fine", "geometry"].tolist())
+    coarse = unary_union(wet.loc[wet["grid"] == "coarse", "geometry"].tolist())
+    lines = unary_union([fine.boundary, coarse.difference(fine_bbox).boundary])
+    # One fine cell either side of the bbox edge: the seam and nothing else.
+    lines = lines.difference(fine_bbox.exterior.buffer(2 * pad_lat))
+    return gpd.GeoSeries([lines], crs="EPSG:4326").clip(clip_box)
 
 
 # %%
@@ -444,9 +478,7 @@ if any((extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max)):
 else:
     lon_min, lat_min, lon_max, lat_max = key.total_bounds
 extent = [lon_min, lon_max, lat_min, lat_max]
-coast = gpd.read_file(
-    natural_earth(resolution="10m", category="physical", name="coastline")
-).clip(box(lon_min, lat_min, lon_max, lat_max))
+coast = model_coastline(box(lon_min, lat_min, lon_max, lat_max))
 domain_aspect = (
     (lon_max - lon_min) * np.cos(np.radians(0.5 * (lat_min + lat_max)))
 ) / (lat_max - lat_min)
@@ -454,7 +486,8 @@ domain_aspect = (
 # %% [markdown]
 # # Dominant shoreline type
 #
-# The length-weighted mean flat fraction per hex, on a fixed linear 0–1 scale.
+# The length-weighted mean flat fraction per hex, on a fixed linear 0–1 scale:
+# the paper's shoreline-classification figure (Methods).
 #
 # **One styling override, `cmap="coolwarm"` with `Normalize(0, 1)`** (AGENTS.md
 # otherwise forbids `cmap=`): this is not a magnitude but a bounded two-ended
@@ -479,17 +512,14 @@ print(
 )
 
 fig, ax = plt.subplots(layout="constrained")
-fig.set_size_inches(
-    FIGURE_WIDTH_IN, grid_height_in(1, 1, domain_aspect, FIGURE_WIDTH_IN)
-)
+# The map spans the full page width, its colorbar under it at the same width.
+fig.set_size_inches(FIGURE_WIDTH_IN, FIGURE_WIDTH_IN / domain_aspect + MAP_DECOR_IN)
 hex_map(
     gdf_shore, ax, norm=Normalize(vmin=0.0, vmax=1.0), cmap="coolwarm",
-    title=(
-        # Two lines: at 180 mm the default title font cannot shrink, and the
-        # one-line form overran the figure on both sides.
-        "shoreline type per hex, nest seam excluded\n"
-        f"({100 * unattributed_share:.0f}% of coastline unattributed, counted as 0.5)"
-    ),
+    # One short line, so the full-width map stays within the page height; the
+    # nest-seam cut is stated in the caption (docs/visualisations.md).
+    title=f"shoreline type per hex ({100 * unattributed_share:.0f}% of coast "
+    f"unattributed, = 0.5)",
     label="flat fraction (0 = wall, 1 = flat)",
 )
 fig_path = figure_dir / f"ShorelineType_r{hex_radius}m.png"
@@ -506,9 +536,7 @@ plt.show()
 
 # %%
 fig, ax = plt.subplots(layout="constrained")
-fig.set_size_inches(
-    FIGURE_WIDTH_IN, grid_height_in(1, 1, domain_aspect, FIGURE_WIDTH_IN)
-)
+fig.set_size_inches(FIGURE_WIDTH_IN, FIGURE_WIDTH_IN / domain_aspect + MAP_DECOR_IN)
 hex_map(
     shore.assign(value=shore["coast_len_m"] / 1e3).pipe(
         gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326"
