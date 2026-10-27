@@ -107,6 +107,10 @@ time_horizons_days_csv = "30,60,90,180"
 # panel per origin on a shared colour scale), in days: same rules as the map
 # horizons.
 overview_horizons_days_csv = "30,180"
+# Map extent of the overview panels, "lon_min,lon_max,lat_min,lat_max" in
+# degrees: the Baltic plus the Kattegat/Skagerrak entrance. The run prints
+# how much above-floor particle-time falls outside it.
+overview_extent_csv = "8,30.7,53,66"
 
 # Origin subbasins to map, by HELCOM name (comma-separated). Empty ⇒ every
 # named subbasin that seeds releases.
@@ -144,6 +148,8 @@ data_root = Path(data_root)
 store_root = output_root / "HexAggregates"
 time_horizons_days = [int(x) for x in time_horizons_days_csv.split(",") if x]
 overview_horizons_days = [int(x) for x in overview_horizons_days_csv.split(",") if x]
+overview_extent = [float(x) for x in overview_extent_csv.split(",")]
+assert len(overview_extent) == 4, f"overview_extent_csv {overview_extent_csv!r} needs 4 numbers"
 assert max_age_days % age_bin_days == 0, (
     f"max_age_days {max_age_days} d is not a multiple of age_bin_days {age_bin_days} d"
 )
@@ -508,14 +514,18 @@ def extend_of(values, norm):
     }[(over, under)]
 
 
-def hex_map(gdf, column, ax, norm, title=None, cbar_label=True, colorbar=True):
+def hex_map(
+    gdf, column, ax, norm, title=None, cbar_label=True, colorbar=True,
+    isobath=True, extent=domain_extent,
+):
     """Draw one relative-density panel: hex polygons through ``norm``,
     coastline, and the H0 isobath, all on a plain (non-cartopy) lon/lat
     axis. Everything is already EPSG:4326, so no reprojection can push
     hexes, coastline and isobath out of register. An empty ``gdf`` skips
     the hex layer and still renders the backdrop, keeping the grid layout
     stable. ``colorbar=False`` leaves the colorbar to the caller (one
-    shared bar for a whole figure)."""
+    shared bar for a whole figure); ``isobath=False`` drops the isobath;
+    ``extent`` is ``[lon_min, lon_max, lat_min, lat_max]``."""
     if not gdf.empty and gdf[column].notna().any():
         colorbar_kwargs = {}
         if colorbar:
@@ -543,14 +553,15 @@ def hex_map(gdf, column, ax, norm, title=None, cbar_label=True, colorbar=True):
     # One styling override for the isobath: magenta at a hairline width is
     # the canonical anti-viridis, so the 3 m line stays legible over every
     # fill colour and clear of the black coastline.
-    for h0 in (h0_fine, h0_coarse_outside_fine):
+    for h0 in (h0_fine, h0_coarse_outside_fine) if isobath else ():
         ax.contour(
             h0.lon, h0.lat, h0, levels=[isobath_m],
             colors="magenta", linewidths=0.3, zorder=3,
         )
-    ax.set_xlim(domain_lon_min, domain_lon_max)
-    ax.set_ylim(domain_lat_min, domain_lat_max)
-    ax.set_aspect(1 / np.cos(np.radians(0.5 * (domain_lat_min + domain_lat_max))))
+    lon_min, lon_max, lat_min, lat_max = extent
+    ax.set_xlim(lon_min, lon_max)
+    ax.set_ylim(lat_min, lat_max)
+    ax.set_aspect(1 / np.cos(np.radians(0.5 * (lat_min + lat_max))))
     ax.set_xticks([])
     ax.set_yticks([])
     if title is not None:
@@ -621,19 +632,45 @@ for code in origin_codes:
 # # Overview: every origin on one page
 #
 # One figure per `overview_horizons_days` horizon: one dilution panel per
-# origin subbasin in a 4-column grid, panel title = origin name. Each panel
-# is still normalised over its own origin's releases, but every panel draws
-# through **one** log colour scale — floored at the 1st percentile and
-# capped at the maximum of the dilution values pooled over all panels (the
-# `dilution_norm` rule applied to the pool) — under a single colorbar for the
-# whole figure. A colour therefore means the same share of an origin's
-# particle-time per km² in every panel, so a compact cloud (a source whose
-# particle-time stays near home) and a spread-out one read directly against
-# each other.
+# origin subbasin in a 4-column grid, panel title = origin name, panels
+# ordered geographically from the entrance (Kattegat) to the north-east.
+# Each panel is still normalised over its own origin's releases, but every
+# panel draws through **one** log colour scale under a single colorbar for
+# the whole figure, so a colour means the same share of an origin's
+# particle-time per km² in every panel and a compact cloud reads directly
+# against a spread-out one.
+#
+# The scale spans four decades: top = 99.9th percentile of the dilution
+# pooled over all panels (higher values saturate, `extend="max"`), floor =
+# top / 10⁴. Hexes below the floor are not drawn, so each panel shows the
+# footprint above 10⁻⁴ of the reference. Considered the per-origin maps'
+# rule (1st percentile to maximum); rejected here, survival weights
+# `exp(−A)` leave vanishing but nonzero values decades down, and a single
+# hex with a sliver of water sets the maximum, so the pooled range ran over
+# ~28 decades and every cloud rendered in one colour.
+#
+# Panels are cropped to `overview_extent` (Baltic plus the Kattegat /
+# Skagerrak entrance) and carry no isobath: at a quarter of the page width
+# the 3 m contour fills the Danish straits.
 
 # %%
+# West → east, south → north: entrance, western Baltic, Baltic Proper, gulfs,
+# Bothnia. Origins not listed here are appended in code order.
+OVERVIEW_ORDER = [
+    "Kattegat", "The Sound", "Great Belt", "Kiel Bay", "Bay of Mecklenburg",
+    "Arkona Basin", "Bornholm Basin", "Gdansk Basin", "Eastern Gotland Basin",
+    "Western Gotland Basin", "Gulf of Riga", "Northern Baltic Proper",
+    "Gulf of Finland", "Åland Sea", "Bothnian Sea", "The Quark",
+]
+overview_codes = [name_to_id[n] for n in OVERVIEW_ORDER if name_to_id[n] in origin_codes]
+overview_codes += [c for c in origin_codes if c not in overview_codes]
 overview_ncols = 4
-overview_nrows = int(np.ceil(len(origin_codes) / overview_ncols))
+overview_nrows = int(np.ceil(len(overview_codes) / overview_ncols))
+OVERVIEW_DECADES = 4
+ov_lon_min, ov_lon_max, ov_lat_min, ov_lat_max = overview_extent
+overview_aspect = (
+    (ov_lon_max - ov_lon_min) * np.cos(np.radians(0.5 * (ov_lat_min + ov_lat_max)))
+) / (ov_lat_max - ov_lat_min)
 # Vertical inches per row for the panel title, and once per figure for the
 # shared colorbar with its label.
 OVERVIEW_TITLE_IN = 0.25
@@ -645,10 +682,13 @@ for h in overview_horizons_days:
             binned[(binned["origin_subbasin"] == code) & (binned["age_bin"] * age_bin_days < h)],
             key,
         )
-        for code in origin_codes
+        for code in overview_codes
     }
     pooled = pd.concat(gdfs.values())
-    norm = dilution_norm(pooled)
+    top = pooled["dilution"].where(pooled["dilution"] > 0).quantile(0.999)
+    norm = LogNorm(vmin=top / 10**OVERVIEW_DECADES, vmax=top)
+    # Below-floor hexes are masked, not drawn at the floor colour.
+    drawn = {code: g[g["dilution"] >= norm.vmin] for code, g in gdfs.items()}
     fig, axes = plt.subplots(
         nrows=overview_nrows, ncols=overview_ncols, squeeze=False, layout="constrained"
     )
@@ -656,20 +696,24 @@ for h in overview_horizons_days:
     # the extent aspect, as in ``map_grid``.
     fig.set_size_inches(
         FIGURE_WIDTH_IN,
-        overview_nrows * ((FIGURE_WIDTH_IN / overview_ncols) / domain_aspect + OVERVIEW_TITLE_IN)
+        overview_nrows
+        * ((FIGURE_WIDTH_IN / overview_ncols) / overview_aspect + OVERVIEW_TITLE_IN)
         + OVERVIEW_COLORBAR_IN,
     )
-    for ax, code in zip(axes.flat, origin_codes):
-        hex_map(gdfs[code], "dilution", ax, norm, colorbar=False)
+    for ax, code in zip(axes.flat, overview_codes):
+        hex_map(
+            drawn[code], "dilution", ax, norm, colorbar=False, isobath=False,
+            extent=overview_extent,
+        )
         # Panel titles one step below the default size: at four maps per
         # 180 mm row the longest HELCOM names would run into the neighbours.
         ax.set_title(subbasin_id_to_name[code], fontsize="medium")
-    for ax in axes.flat[len(origin_codes):]:
+    for ax in axes.flat[len(overview_codes):]:
         ax.set_visible(False)
     fig.colorbar(
         plt.cm.ScalarMappable(norm=norm), ax=axes,
         orientation="horizontal", label=COLUMN_LABEL["dilution"],
-        extend=extend_of(pooled["dilution"].dropna(), norm),
+        extend="max" if pooled["dilution"].max() > norm.vmax else "neither",
     )
     fig.suptitle(f"by origin subbasin, ages < {h} d")
     fig_path = (
@@ -680,10 +724,22 @@ for h in overview_horizons_days:
     fig.savefig(fig_path, dpi=FIGURE_DPI)
     print(f"wrote {fig_path}")
     plt.show()
-    print(
-        f"  {h} d: {len(gdfs)} origins, shared dilution scale "
-        f"{norm.vmin:.3g}–{norm.vmax:.3g} % per km²"
-    )
+    # What the floor and the crop leave out, per origin: the share of the
+    # origin's particle-time below the floor, and of the above-floor part
+    # lying outside the extent (hex centroid).
+    print(f"  {h} d: shared dilution scale {norm.vmin:.3g}–{norm.vmax:.3g} % per km²")
+    for code in overview_codes:
+        g = drawn[code]
+        centre = g.geometry.representative_point()
+        outside = (
+            (centre.x < ov_lon_min) | (centre.x > ov_lon_max)
+            | (centre.y < ov_lat_min) | (centre.y > ov_lat_max)
+        )
+        print(
+            f"    {subbasin_id_to_name[code]}: {100 - g['percentage'].sum():.2f} % below floor, "
+            f"{g.loc[outside, 'percentage'].sum():.3f} % above floor outside the extent"
+            + (f" (westmost {centre.x.min():.2f}°E)" if len(g) else "")
+        )
 
 # %% [markdown]
 # # Validation prints

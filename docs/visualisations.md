@@ -334,17 +334,25 @@ figures.
 **Overview.** Per horizon in `overview_horizons_days_csv` (default
 `"30,180"`), one figure with every mapped origin's log-dilution map in a
 4-column grid (4 × 4 for the 16 seeding origins), panel title = origin
-name, 3 m isobath as above, figure
+name, panels in a hard-coded geographic order (Kattegat → The Quark),
+figure
 `OriginSubbasinOverview_<regime>_<season>_r<radius>m_<member|unweighted>_T<h>d_dilution.png`.
-Each panel is still normalised over its own origin, so the shared scale
-does not hit the source-size problem above: one `LogNorm` from the
-`dilution_norm` rule applied to all panels' values pooled (1st percentile
-to maximum), one horizontal colorbar for the whole figure
-(`fig.colorbar(..., ax=axes)`), so a colour is the same share of an
-origin's particle-time per km² in every panel. Two overrides: panel titles
-at `fontsize="medium"` (the longest HELCOM names overrun a 45 mm panel at
-the default `large`), and the figure height set from the page width, the
-extent aspect and fixed title/colorbar allowances, as `map_grid` does.
+Each panel is still normalised over its own origin, so a shared scale does
+not hit the source-size problem above: one `LogNorm` for all panels, top =
+99.9th percentile of the dilution pooled over all panels (`extend="max"`
+above), floor = top / 10⁴; hexes below the floor are **not drawn**, so a
+panel shows the footprint above 10⁻⁴ of the reference (four decades, as
+the stranding map and the connectivity matrices). Considered the per-origin
+rule (1st percentile to maximum); rejected, survival weights `exp(−A)`
+leave vanishing but nonzero values and a sliver-of-water hex sets the
+maximum, so the pooled range spanned ~28 decades. Panels are cropped to
+`overview_extent_csv` (default `8,30.7,53,66`: Baltic plus the
+Kattegat/Skagerrak entrance; the run prints each origin's above-floor share
+outside it) and carry no isobath (at 45 mm per panel the 3 m contour fills
+the Danish straits). One figure-wide horizontal colorbar
+(`fig.colorbar(..., ax=axes)`). Override: panel titles at
+`fontsize="medium"` (the longest HELCOM names overrun a 45 mm panel at the
+default `large`).
 
 ## Notebook 026b — per origin subbasin and year (special case)
 
