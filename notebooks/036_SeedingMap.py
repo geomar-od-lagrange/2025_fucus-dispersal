@@ -17,7 +17,7 @@
 # %% [markdown]
 # # Seeding map: release cells by subbasin, and their land-seeded share
 #
-# The release set as the dispersal runs see it, for the paper's Data section:
+# The release set as the dispersal runs see it:
 # the HELCOM REDLIST *Fucus vesiculosus* cells `010` seeds from
 # (`helcom_fucus_redlist/fucus_release_points.geojson`, baked by `000`), in
 # two panels on one figure:
@@ -29,6 +29,9 @@
 # 2. **Land-seeded share per cell** — the share of the cell's seeded particles
 #    that start on BSH land and never move (the sentinel `release_hex = -1`
 #    rows of the `024` counts store), from the trajectory zarrs.
+#
+# The land-seeded share panel is also saved on its own, one map at the full
+# page width, as the paper's supplement figure.
 #
 # Plus a computed table of release cells (and their land-seeded share) per
 # subbasin. Reads the data twin, the `024a` key and the first two time steps
@@ -94,6 +97,9 @@ FIGURE_DPI = 300
 # Vertical inches under the two maps for the subbasin legend (17 entries in
 # three columns) and the panel titles.
 LEGEND_IN = 1.45
+# Vertical inches the full-width single land-share map adds to its own
+# height: the title above, the horizontal colorbar with ticks and label below.
+SINGLE_DECOR_IN = 0.75
 
 figure_dir = output_root / "Figures" / "036"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -286,6 +292,35 @@ fig.legend(
     loc="outside lower center", ncols=3,
 )
 fig_path = figure_dir / f"SeedingMap_r{hex_radius}m.png"
+# Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
+fig.savefig(fig_path, dpi=FIGURE_DPI)
+print(f"wrote {fig_path}")
+plt.show()
+
+# %% [markdown]
+# # Land-seeded share, single panel
+#
+# The right-hand panel above on its own for the supplement: one map at the
+# full page width, its colorbar under it at the same width (029's
+# where-stranded layout), the same fixed 0–100 % default-colormap scale.
+
+# %%
+fig, ax = plt.subplots(layout="constrained")
+fig.set_size_inches(FIGURE_WIDTH_IN, FIGURE_WIDTH_IN / domain_aspect + SINGLE_DECOR_IN)
+# Colorbar under the map at its full width, as 029's where-stranded map; the
+# map is bottom-anchored so constrained_layout's room for the bar holds
+# (centred, the map drifts down and clips the colorbar label).
+cax = ax.inset_axes([0.0, -0.045, 1.0, 0.022])
+ax.set_anchor("S")
+cells.plot(
+    ax=ax, column="land_share_pct", norm=land_norm, legend=True, cax=cax,
+    legend_kwds={"label": "land-seeded share of the cell's particles (%)",
+                 "orientation": "horizontal"},
+    zorder=1,
+)
+backdrop(ax)
+ax.set_title("land-seeded share per release cell")
+fig_path = figure_dir / f"LandSeededShare_r{hex_radius}m.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
 fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")

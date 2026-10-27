@@ -202,7 +202,9 @@ release_marker_size = 2.5
 release_marker_lw = 0.4
 # Vertical inches the full-width where-stranded map adds to its own height:
 # the title above, the horizontal colorbar with its ticks and label below.
-STRANDED_DECOR_IN = 0.9
+# The map is anchored to the bottom of its cell, so a seed that is too tall
+# only leaves a band above the title and never clips the colorbar label.
+STRANDED_DECOR_IN = 0.75
 
 figure_dir = output_root / "Figures" / "029"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -373,6 +375,10 @@ def hex_map(gdf, ax, norm=None, title=None, label=None, cbar_below=False):
         cax = ax.inset_axes(
             [0.0, -0.045, 1.0, 0.022] if cbar_below else [1.02, 0.0, 0.035, 1.0]
         )
+        if cbar_below:
+            # Bottom-anchored, so constrained_layout's room for the bar under
+            # the map holds; centred, the map drifts down and clips the label.
+            ax.set_anchor("S")
         below = norm is not None and bool((gdf["value"] < norm.vmin).any())
         above = norm is not None and bool((gdf["value"] > norm.vmax).any())
         gdf.plot(
