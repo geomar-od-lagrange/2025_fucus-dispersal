@@ -16,8 +16,8 @@ listed here should be dropped.
 | 022 | Distance vs. time | Overlaid (`hue="regime"`) | Global · Per subbasin · German waters · Per quarter |
 | 023 | Density + mean-age maps | Per-run (papermill regime) | Whole Baltic · Per subbasin · German waters · Per quarter |
 | 025 | Hex relative-density maps | Per-run (regime + season + radius + member) | Baltic percentage+dilution · German-waters zoom · per origin subbasin |
-| 026 | Hex time-horizon relative-density maps | Per-run (regime + season + radius + member) | Cumulative elapsed-time horizons (30/60/90/180 d), `release_years` pooled · mean particle age per hex over the window · area holding 90 % of the cloud at every age-bin edge (CSV) |
-| 026a | 026 per origin subbasin | Per-run (regime + season + radius + member) | One percentage and one dilution figure per origin (HELCOM) subbasin |
+| 026 | Hex time-horizon relative-density maps | Per-run (regime + season + radius + member) | Cumulative elapsed-time horizons (30/60/90/180 d), `release_years` pooled · median particle age per hex over the window · area holding 90 % of the cloud at every age-bin edge (CSV) |
+| 026a | 026 per origin subbasin | Per-run (regime + season + radius + member) | One percentage and one dilution figure per origin (HELCOM) subbasin · overview grid of every origin's dilution map on one shared scale per overview horizon (30/180 d) |
 | 026b | 026a per origin subbasin and year | Per-run (regime + season + radius + member) | One percentage and one dilution figure per (origin subbasin, release year) |
 | 027 | Hex distance-quantile maps | Per-run (regime + radius + season) | One 1xN panel row, one panel per quantile (0.1/0.5/0.9), the season's releases pooled across `release_years` |
 | 028 | Subbasin connectivity matrices | Per-run (regime + radius + season + member) | Raw residence over the 180 d window · emission fraction per cumulative horizon (30/60/90/180 d) · interannual range |
@@ -285,25 +285,34 @@ dense horizon set costs one ranking per horizon, not one regrouping. No
 figure here: the CSV feeds 035 (the time series) and 032 (table F, which
 filters the CSV to its own `area_quantile`).
 
-**Mean particle age.** One map per run over the whole window: per hex,
-`Σ age_centre · weight / Σ weight` with `age_centre = (age_bin + 0.5) ·
-age_bin_days`, ages in `[0, max_age_days)`, from the same per-`(age_bin,
+**Median particle age.** One map per run over the whole window: per hex,
+the age at which its weight, accumulated over `age_bin` for ages in
+`[0, max_age_days)`, reaches half its total, interpolated linearly inside
+the crossing 10-d bin (ages uniform within a bin). Same per-`(age_bin,
 target_hex)` reduction as the horizon maps, so a member run is
-survival-weighted and an unweighted run is plain residence. Default
-colormap on a linear scale over the mapped range; colorbar label `mean
-particle age (d)`. **Mask:** a hex is drawn only if its dilution at
-`T = max_age_days` reaches the 1st percentile that floors the window's
-dilution map (`dilution_norm`) — the hexes that map shows above its floor,
-zero-water hexes excluded. At production this drops ~1 % of hexes and
-0.1–0.3 % of the weight. Considered an absolute sample-count cut; rejected,
-a survival weight has no sample count and the two weightings would need two
-rules. The run prints the weight-weighted median of the hex mean ages, the
-unweighted median, the range and the basin-wide mean age. Unweighted, the
-basin-wide mean is the window midpoint (90 d at 180 d) up to the share that
-leaves the domain — a check on the reduction, not a result. Figure
-`MeanAge_<regime>_<season>_r<radius>m_<member|unweighted>.png`, export
-`026_meanage_<regime>_<season>_<member|unweighted>.geojson` (mapped hexes
-only, the window's `weight, percentage, dilution` plus `mean_age_days`).
+survival-weighted and an unweighted run is plain residence. Considered the
+weight-weighted mean of the bin centres; rejected, a skewed per-hex age
+distribution pulls it away from what most of the particle-time looks like,
+and the median reads as "half the particle-time here is younger". Default
+colormap on a linear scale over the mapped range; colorbar label `median
+particle age (d)`. **Mask:** a hex is drawn only if its share of the
+window's weight (`percentage`) is at or above the 5th percentile of the
+per-hex shares, zero-water hexes excluded (as on the dilution map). At
+production (ALL, 2016–2024) that keeps 10,151 of 10,714 surface and 5,218
+of 5,509 bottom hexes, 99.8–99.9 % of the weight (the rest is mostly the
+zero-water hexes). Considered the dilution map's 1st-percentile floor;
+rejected, dilution = share / water area lets near-empty hexes with a sliver
+of water through (Elbe and Ems estuary hexes holding 1–213 of 9.2e10
+weight drew as bright isolated dots). The 1st percentile of share still
+keeps two of those three; the 5th drops all of them. Considered an absolute
+sample-count cut; rejected, a survival weight has no sample count. The run
+prints the weight-weighted and unweighted median of the hex median ages,
+their range and the basin-wide median age. Unweighted, the basin-wide
+median is the window midpoint (90 d at 180 d) up to the share that leaves
+the domain — a check on the reduction, not a result. Figure
+`MedianAge_<regime>_<season>_r<radius>m_<member|unweighted>.png`, export
+`026_medianage_<regime>_<season>_<member|unweighted>.geojson` (mapped hexes
+only, the window's `weight, percentage, dilution` plus `median_age_days`).
 
 ## Notebook 026a — per origin subbasin (special case)
 
@@ -315,6 +324,21 @@ Each origin is normalised and colour-scaled over its own releases
 (cross-origin totals differ by orders of magnitude, so a shared scale
 would wash out the smaller sources); colour is not comparable between
 figures.
+
+**Overview.** Per horizon in `overview_horizons_days_csv` (default
+`"30,180"`), one figure with every mapped origin's log-dilution map in a
+4-column grid (4 × 4 for the 16 seeding origins), panel title = origin
+name, 3 m isobath as above, figure
+`OriginSubbasinOverview_<regime>_<season>_r<radius>m_<member|unweighted>_T<h>d_dilution.png`.
+Each panel is still normalised over its own origin, so the shared scale
+does not hit the source-size problem above: one `LogNorm` from the
+`dilution_norm` rule applied to all panels' values pooled (1st percentile
+to maximum), one horizontal colorbar for the whole figure
+(`fig.colorbar(..., ax=axes)`), so a colour is the same share of an
+origin's particle-time per km² in every panel. Two overrides: panel titles
+at `fontsize="medium"` (the longest HELCOM names overrun a 45 mm panel at
+the default `large`), and the figure height set from the page width, the
+extent aspect and fixed title/colorbar allowances, as `map_grid` does.
 
 ## Notebook 026b — per origin subbasin and year (special case)
 
@@ -335,9 +359,9 @@ GeoJSON (EPSG:4326, hex geometry) under `output_root/Exports/<nb>/`, named
 `<nb>_<regime>_<season>_<member|unweighted>[_T<horizon>d][_<origin>][_<year>].geojson`,
 columns `hex_id, weight, percentage, dilution` plus `origin_subbasin` /
 `release_year` where faceted. GeoJSON over GeoTIFF because the hex
-tessellation is vector. 026's mean-age export
-`026_meanage_<regime>_<season>_<member|unweighted>.geojson` adds
-`mean_age_days` (window-wide, no horizon facet). 026 also writes
+tessellation is vector. 026's median-age export
+`026_medianage_<regime>_<season>_<member|unweighted>.geojson` adds
+`median_age_days` (window-wide, no horizon facet). 026 also writes
 `026_areas_<regime>_<season>_<member|unweighted>.csv` with columns
 `horizon_days, q, scope, area_km2, length_km`, `scope` = `pooled` or a
 release year. Figures follow the same rule —

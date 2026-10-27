@@ -142,7 +142,7 @@ filename.
   release season per run with the `release_years` (2016–2024) pooled, from the 024
   counts (unweighted) or 024f (survival-weighted, via the `member`
   parameter) store (025), the same at cumulative elapsed-time horizons via
-  the `age_bin` axis plus the mean particle age per hex and the water area
+  the `age_bin` axis plus the median particle age per hex and the water area
   holding 90 % of the cloud (026), split per origin subbasin (026a) and per origin subbasin ×
   release year (026b), per-source-hex crow-flies distance
   quantiles via the 024b store (027), the subbasin connectivity views from

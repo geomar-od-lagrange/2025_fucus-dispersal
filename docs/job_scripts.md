@@ -26,8 +26,9 @@ executed notebook:
 output_root/Figures/
   025/  HexRelativeDensity[DE|ByOrigin]_<regime>_<season>_r<radius>m_<member-or-unweighted>[_part<n>].png
   026/  TimeHorizonMaps_<regime>_<season>_r<radius>m_<member-or-unweighted>_<percentage|dilution>.png
-        MeanAge_<regime>_<season>_r<radius>m_<member-or-unweighted>.png
+        MedianAge_<regime>_<season>_r<radius>m_<member-or-unweighted>.png
   026a/ OriginSubbasinTimeHorizonMaps_<regime>_<season>_r<radius>m_<member-or-unweighted>_<subbasin>_<column>.png
+        OriginSubbasinOverview_<regime>_<season>_r<radius>m_<member-or-unweighted>_T<h>d_dilution.png
   026b/ OriginSubbasinYearTimeHorizonMaps_<regime>_<season>_r<radius>m_<member-or-unweighted>_<subbasin>_<year>_<column>.png
   027/  DistanceQuantiles_<regime>_r<radius>m_<season>.png
   028/  SubbasinConnectivity_{raw,emission,interannual}_<regime>_<season>_<member-or-unweighted>_T<h>d.png
@@ -47,8 +48,8 @@ the manuscript figure, not a preview (rationale in
 `025`–`029` and `033` additionally write machine-readable exports under
 `output_root/Exports/<stage>/`: GeoJSON (hex geometry, EPSG:4326) for the map
 products of `025`/`026`/`026a`/`026b`/`027`/`029`/`033`, long-form CSV for
-`028`'s connectivity matrices, `026`'s mean particle age per hex
-(`026_meanage_<regime>_<season>_<member-or-unweighted>.geojson`), its area-holding-a-share table
+`028`'s connectivity matrices, `026`'s median particle age per hex
+(`026_medianage_<regime>_<season>_<member-or-unweighted>.geojson`), its area-holding-a-share table
 (`026_areas_<regime>_<season>_<member-or-unweighted>.csv`) and `029`'s afloat
 share per origin subbasin
 (`afloat_by_origin_<regime>_<season>_<member>.csv`).
