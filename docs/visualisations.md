@@ -22,7 +22,7 @@ listed here should be dropped.
 | 027 | Hex distance-quantile maps | Per-run (regime + radius + season) | One 1xN panel row, one panel per quantile (0.1/0.5/0.9), the season's releases pooled across `release_years` |
 | 028 | Subbasin connectivity matrices | Per-run (regime + radius + season + member) | Raw residence over the 180 d window · emission fraction per cumulative horizon (30/60/90/180 d) · interannual range |
 | 029 | Beaching maps | Per-run (regime + radius + member + season) | Where-stranded with the release sites overlaid · source/sink substrate contrast · stranded share per source hex · cumulative horizons (30/60/90/180 d) · afloat by origin subbasin (table + CSV) · stranded-share curve with interannual band · displacement at stranding |
-| 030 | Survival heatmaps | Per-run (regime + radius + member + season) | Per snapshot bin ending at 30/60/90/180 d: occupancy · survival-weighted (% of released); surviving fraction as a separate 1xN figure; drifting-fraction curve with interannual band |
+| 030 | Survival heatmaps | Per-run (regime + radius + member + season) | Per snapshot bin ending at 30/60/90/180 d: occupancy (% of released) · surviving fraction, both on discrete bins; drifting-fraction curve with interannual band |
 | 031 | Beaching sweep | Per-run (regime + radius + season) | Five statistics across members with interannual bars · where-stranded maps across members |
 | 032 | None — selects, numbers and downscales other notebooks' PNGs | Selection (primary + comparison regime) | Tables A–G · one curated reading order over 025–031 |
 | 033 | Hex shoreline-type map + stranding-vs-substrate panels | Per-run (regime + radius + season + member pair) | Flat fraction per hex · coastline length per hex · stranded weight vs. flat fraction for the production and the substrate-inert member |
@@ -122,14 +122,14 @@ denominator and read without knowing the release-set size. In 029 and 031 the
 denominator is the pooled `Σweight` of the 024e store (deposits + residual per
 release hex = its released drifters). In 030 it is the exact 024f denominator:
 with the `target_hex = -1` sentinel rows kept, a snapshot bin's `Σocc` over all
-origins is `N · age_bin_days · 24`, so `100 · surv / Σocc` is the mean share of
-released drifters afloat in that hex during the bin
+origins is `N · age_bin_days · 24`, so `100 · occ / Σocc` is the mean share of
+released drifters present in that hex during the bin
 ([survival_occupancy.md](survival_occupancy.md)). 029's GeoJSON keeps the
 absolute `stranded_weight` beside `pct_released`.
 
-**Log-scale floors.** Every log map of a share — 028's emission fraction,
-029/031's stranded share, 030's densities — is floored a fixed **four decades
-below its peak**: the `exp(−A)` tail of a weighted quantity runs arbitrarily
+**Log-scale floors.** Every continuous log map of a share — 028's emission
+fraction, 029/031's stranded share — is floored a fixed **four decades below
+its peak** (030's discrete bins are fixed outright, see 030): the `exp(−A)` tail of a weighted quantity runs arbitrarily
 far down, and how far depends on the rate-model member, so a percentile floor
 would give every member its own dynamic range. The 025/026 family's
 **dilution** maps, weighted or not, keep the 1st-percentile floor (below).
@@ -557,14 +557,28 @@ that **ends** at `T` — ages in `[T − age_bin_days, T)`, index
 titles carry the bin's age span. A snapshot, not 026's cumulative `[0, T)`:
 being afloat at `T` is an instantaneous state, and a survival map
 accumulated over `[0, T)` would be a weighted residence map, which 026
-already draws. The two density panels — plain occupancy and
-survival-weighted occupancy (beaching removed) — are in % of the released
-drifters (`100 · occ / Σocc`, `100 · surv / Σocc` with the bin's exact `Σocc`,
-see Units above) and **share one `LogNorm`** floored four decades below the
-peak, so the age-thinning and the beaching-removal read on the same scale;
-the surviving fraction `surv/occ` is a separate 1×N figure on a **fixed
-linear 0–1** scale so it is comparable across horizons. Every panel sums over
+already draws. One grid, a row per horizon: **occupancy** in % of the
+released drifters (`100 · occ / Σocc`, see Units above) and the **surviving
+fraction** `surv / occ`; their product is the survival-weighted share
+afloat, which is therefore not drawn separately. Every panel sums over
 `origin_subbasin`; the `target_hex = -1` sentinel drops at the key join.
+
+**Discrete colour bins, fixed.** Occupancy uses `BoundaryNorm` on log-spaced
+1–3 bounds, 1e-4 … 3 % (`OCC_BOUNDS`), `extend="both"`; the fraction uses
+tenths of [0, 1] (`FRACTION_BOUNDS`). A continuous four-decade `LogNorm` left
+31–63 % of hexes per panel below its floor as uniform slabs and gave no
+readable value per colour; discrete steps make every colour a value range,
+and fixed bounds (not scaled to the peak) put every member and season on the
+same legend. Ticks are formatted `%g`.
+
+**Colormap override (occupancy only): `magma_r`.** Sequential (positive
+shares have no centre, so diverging is meaningless) with a lightness range
+from pale yellow to near-black. Light-for-sparse lets the large sub-1e-3 %
+periphery recede on the white page and the dense coastal hexes carry the ink;
+magma's hue turns from orange through red to purple across the 1e-3–3e-2 %
+bins that hold the open-sea bulk, which a single-hue ramp (tried `YlOrRd`)
+renders as near-identical oranges. The fraction column keeps the default
+colormap, which also keeps the two quantities apart by colour.
 
 A drifting-fraction curve `Σsurv / Σocc` against age, with the
 per-release-year min–max band, closes the notebook. It **keeps** the

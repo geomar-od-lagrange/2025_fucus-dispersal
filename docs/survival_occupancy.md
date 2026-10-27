@@ -100,15 +100,15 @@ contrast is route, not age.
 
 At each horizon `T` (default 30/60/90/180 d), `030` selects the snapshot bin
 *ending* at `T` — `age_bin = T/age_bin_days − 1`, i.e. ages in
-`[T − age_bin_days, T)` — and draws occupancy vs. survival-weighted (shared
-`LogNorm`) vs. surviving fraction (linear 0–1). A snapshot rather than 026's
+`[T − age_bin_days, T)` — and draws occupancy beside the surviving fraction,
+both on discrete bins (their product is the survival-weighted share). A
+snapshot rather than 026's
 cumulative `[0, T)`: being afloat at `T` is an instantaneous state, and a
 survival map accumulated over `[0, T)` is a weighted residence map, which 026
-already draws. The two density columns are in **% of the released drifters**:
-`100 · occ / Σocc` and `100 · surv / Σocc`, with `Σocc` over the bin's rows
-including every origin and the `-1` sentinel, i.e. `N · age_bin_days · 24` —
-the mean share of released drifters present, resp. afloat, in the hex during
-the bin. Per-hex maps sum over `origin_subbasin` and drop the sentinel at the
+already draws. Occupancy is in **% of the released drifters**:
+`100 · occ / Σocc`, with `Σocc` over the bin's rows including every origin
+and the `-1` sentinel, i.e. `N · age_bin_days · 24` — the mean share of
+released drifters present in the hex during the bin. Per-hex maps sum over `origin_subbasin` and drop the sentinel at the
 key join. The domain-wide drifting-fraction curve `Σsurv / Σocc` per age bin
 keeps the sentinel, so it is the mean surviving fraction of *all* released
 drifters, including those that left the BSH domain (they keep the survival

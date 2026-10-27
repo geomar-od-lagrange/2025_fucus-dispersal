@@ -24,20 +24,18 @@
 # threshold, its settings baked into the opaque `member` tag that selects the
 # partitions read here (`docs/beaching.md`). For each elapsed-time horizon `T`
 # it maps the **snapshot** age bin ending at `T` (ages in
-# `[T − age_bin_days, T)`), in three panels:
+# `[T − age_bin_days, T)`), in two panels:
 #
 # 1. **Occupancy** — plain particle-residence density (`occ`), the baseline
-#    (no beaching), on a log scale.
-# 2. **Survival-weighted** — the same, with beaching progressively removed
-#    (`surv = Σ exp(−A)`), on the *same* log scale, so the thinning is legible.
-#
-#    Both are in **% of the released water-seeded drifters**: 024f keeps the
-#    `target_hex = -1` sentinel rows, so `Σocc` over a bin is exactly the
-#    released drifters `N` times the bin's hourly samples, and
-#    `surv / (N · age_bin_days · 24) · 100` is the mean share of released
-#    drifters afloat in that hex during the bin.
-# 3. **Surviving fraction** — `surv / occ` per hex (linear 0–1), i.e. the mean
+#    (no beaching), on discrete log-spaced bins. In **% of the released
+#    water-seeded drifters**: 024f keeps the `target_hex = -1` sentinel rows,
+#    so `Σocc` over a bin is exactly the released drifters `N` times the bin's
+#    hourly samples, and `occ / (N · age_bin_days · 24) · 100` is the mean
+#    share of released drifters present in that hex during the bin.
+# 2. **Surviving fraction** — `surv / occ` per hex (`surv = Σ exp(−A)`, beaching
+#    progressively removed), on discrete bins over 0–1, i.e. the mean
 #    un-beached fraction of the particles *occupying* that hex at that age.
+#    Occupancy × surviving fraction is the survival-weighted share afloat.
 #    Read it as "how depleted is the mass here", NOT "how much beaching
 #    happens here": `A` is a path integral accumulated before arrival, so a
 #    hex reads low because the particles reaching it took wave-exposed
@@ -68,7 +66,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
+from matplotlib.colors import BoundaryNorm
 from shapely.geometry import box
 from cartopy.io.shapereader import natural_earth
 
@@ -159,6 +157,12 @@ FIGURE_DPI = 300
 # the stroke to ~1 px at the output dpi keeps the seam closed while letting
 # the resulting hex dilation shrink as resolution rises.
 hex_seam_lw = 1.1 * 72 / FIGURE_DPI
+# Discrete colour bins (docs/visualisations.md, 030). Occupancy: log-spaced
+# 1–3 steps from 1e-4 % to 3 % of released, fixed rather than scaled to the
+# data so every member and season reads on the same legend; values outside
+# take the extend arrows. Surviving fraction: tenths of [0, 1].
+OCC_BOUNDS = [m * 10.0**e for e in range(-4, 1) for m in (1, 3)]
+FRACTION_BOUNDS = np.linspace(0.0, 1.0, 11)
 
 figure_dir = output_root / "Figures" / "030"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -291,21 +295,17 @@ def frac_gdf(df):
     )
 
 
-def log_norm(values):
-    """Shared LogNorm floored four decades below the peak (survival weights
-    have a long sub-1 tail)."""
-    vmax = float(values.max())
-    vmin = max(float(values[values > 0].min()), vmax / 1e4)
-    return LogNorm(vmin=vmin, vmax=vmax)
-
-
-def hex_map(gdf, ax, norm=None, vmin=None, vmax=None, title=None, label=None):
+def hex_map(gdf, ax, norm, cmap, extend, title, label):
+    """One hex panel through a discrete ``norm`` with its colorbar inset right
+    of the map at the map's height."""
     if not gdf.empty:
         cax = ax.inset_axes([1.02, 0.0, 0.035, 1.0])
         gdf.plot(
-            ax=ax, column="value", norm=norm, vmin=vmin, vmax=vmax,
+            ax=ax, column="value", norm=norm, cmap=cmap,
             legend=True, cax=cax,
-            legend_kwds={"label": label} if label else None,
+            # Format "%g": the log bins span 1e-4 to 3, which a fixed-decimal default
+            # rounds to 0.000 at the low end.
+            legend_kwds={"label": label, "extend": extend, "format": "%g"},
             edgecolor="face", linewidth=hex_seam_lw, zorder=1,
         )
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
@@ -314,8 +314,7 @@ def hex_map(gdf, ax, norm=None, vmin=None, vmax=None, title=None, label=None):
     ax.set_aspect(1 / np.cos(np.radians(0.5 * (extent[2] + extent[3]))))
     ax.set_xticks([])
     ax.set_yticks([])
-    if title is not None:
-        ax.set_title(title)
+    ax.set_title(title)
 
 
 def grid_height_in(nrows, ncols, aspect, width_in):
@@ -343,31 +342,35 @@ domain_aspect = (
 ) / (lat_max - lat_min)
 
 # %% [markdown]
-# # Comparison grid: occupancy vs survival-weighted
+# # Comparison grid: occupancy and surviving fraction
 #
-# Rows = horizons; columns = occupancy, survival-weighted, both in % of the
-# released drifters (mean share present, resp. afloat, in the hex during the
-# bin). Both share one `LogNorm` (across all horizons, floored four decades
-# below the peak) so the age-thinning and the beaching-removal are directly
-# readable against each other.
+# Rows = horizons; columns = occupancy (% of the released drifters present in
+# the hex during the bin) and surviving fraction `surv / occ`. Both on
+# discrete bins, fixed across horizons (and members), so a colour step is a
+# readable value and the age progression compares down each column:
+# occupancy on log-spaced 1–3 bins with `extend="both"`, the fraction on
+# tenths of [0, 1]. The fraction is a history integral, not a local beaching
+# rate (see the header); occupancy × fraction is the survival-weighted share.
 #
-# Surviving fraction is drawn separately below: it is a ratio in [0, 1] on a
-# linear scale, so putting it in this grid forces an unrelated quantity to
-# share a row with two log-density panels and invites reading it as a third
-# density map.
+# The occupancy colormap is a sequential one with a wide lightness range —
+# light for sparse, dark for dense — so the sub-floor periphery recedes and
+# the coastal accumulations stand out; the fraction keeps the default, which
+# also keeps the two quantities apart by colour.
 
 # %%
 # Snapshot bin ending at the horizon: ages in [h − age_bin_days, h).
 horizon_bins = {h: h // age_bin_days - 1 for h in time_horizons_days}
 bin_labels = {h: f"{h - age_bin_days}–{h} d" for h in time_horizons_days}
 occ_gdfs = {h: hex_gdf(survocc[survocc["age_bin"] == b], "occ") for h, b in horizon_bins.items()}
-surv_gdfs = {h: hex_gdf(survocc[survocc["age_bin"] == b], "surv") for h, b in horizon_bins.items()}
 frac_gdfs = {h: frac_gdf(survocc[survocc["age_bin"] == b]) for h, b in horizon_bins.items()}
 
-shared = pd.concat(
-    [g["value"] for g in list(occ_gdfs.values()) + list(surv_gdfs.values()) if not g.empty]
-)
-dens_norm = log_norm(shared)
+# Colormap override (docs/visualisations.md, 030): sequential, lightness from
+# pale yellow (sparse, recedes on the white page) through orange and purple to
+# near-black (dense), its hue turning across the bulk's 1e-3–3e-2 bins.
+occ_cmap = plt.get_cmap("magma_r")
+occ_norm = BoundaryNorm(OCC_BOUNDS, ncolors=occ_cmap.N, extend="both")
+frac_cmap = plt.get_cmap()
+frac_norm = BoundaryNorm(FRACTION_BOUNDS, ncolors=frac_cmap.N)
 
 nrows = len(time_horizons_days)
 fig, axes = plt.subplots(nrows=nrows, ncols=2, layout="constrained", squeeze=False)
@@ -375,48 +378,22 @@ fig.set_size_inches(
     FIGURE_WIDTH_IN, grid_height_in(nrows, 2, domain_aspect, FIGURE_WIDTH_IN)
 )
 for i, h in enumerate(time_horizons_days):
-    hex_map(occ_gdfs[h], axes[i, 0], norm=dens_norm,
+    hex_map(occ_gdfs[h], axes[i, 0], occ_norm, occ_cmap, "both",
             title=f"occupancy — age {bin_labels[h]}", label="present (% of released)")
-    hex_map(surv_gdfs[h], axes[i, 1], norm=dens_norm,
-            title=f"survival-weighted — age {bin_labels[h]}",
-            label="afloat (% of released)")
+    hex_map(frac_gdfs[h], axes[i, 1], frac_norm, frac_cmap, "neither",
+            title=f"surviving fraction — age {bin_labels[h]}",
+            label="surviving fraction")
 fig_path = figure_dir / f"SurvivalHeatmaps_{regime}_r{hex_radius}m_{season}_{member}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
 fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
-plt.show()
-
-# %% [markdown]
-# # Surviving fraction, one panel per horizon
-#
-# `surv / occ` per hex: the mean un-beached fraction of the particles
-# *occupying* that hex at that age — a history integral, not a local beaching
-# rate (see the header). Fixed linear 0–1 across panels so the age progression
-# is readable; the summary below prints the realised range, which for a
-# rare-event member sits well above 0 and makes the fixed scale look flat.
-
-# %%
-ncols = len(time_horizons_days)
-fig, axes = plt.subplots(nrows=1, ncols=ncols, layout="constrained", squeeze=False)
-fig.set_size_inches(
-    FIGURE_WIDTH_IN, grid_height_in(1, ncols, domain_aspect, FIGURE_WIDTH_IN)
-)
-for j, h in enumerate(time_horizons_days):
-    # Panel titles carry the age span alone: the quantity is on every
-    # colorbar, and "surviving fraction — age 10–20 d" is wider than a panel
-    # in a three-column row, so the titles collide.
-    hex_map(frac_gdfs[h], axes[0, j], vmin=0.0, vmax=1.0,
-            title=f"age {bin_labels[h]}", label="surviving fraction")
-fig_path = figure_dir / f"SurvivalFraction_{regime}_r{hex_radius}m_{season}_{member}.png"
-# Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
-fig.savefig(fig_path, dpi=FIGURE_DPI)
-print(f"wrote {fig_path}")
 for h in time_horizons_days:
-    g = frac_gdfs[h]
-    if not g.empty:
-        print(f"  age {bin_labels[h]}: surviving fraction per hex "
-              f"min {g['value'].min():.3f}, median {g['value'].median():.3f}, "
-              f"max {g['value'].max():.3f}")
+    o, f = occ_gdfs[h]["value"], frac_gdfs[h]["value"]
+    print(f"  age {bin_labels[h]}: occupancy % below {OCC_BOUNDS[0]:g} in "
+          f"{(o < OCC_BOUNDS[0]).mean():.1%} of hexes, above {OCC_BOUNDS[-1]:g} in "
+          f"{(o > OCC_BOUNDS[-1]).mean():.1%}, max {o.max():.3f}; surviving "
+          f"fraction per hex min {f.min():.3f}, median {f.median():.3f}, "
+          f"max {f.max():.3f}")
 plt.show()
 
 # %% [markdown]

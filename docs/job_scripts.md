@@ -33,7 +33,7 @@ output_root/Figures/
   027/  DistanceQuantiles_<regime>_r<radius>m_<season>.png
   028/  SubbasinConnectivity_{raw,emission,interannual}_<regime>_<season>_<member-or-unweighted>_T<h>d.png
   029/  <view>_<regime>_r<radius>m_<season>_<member>.png
-  030/  {SurvivalHeatmaps,SurvivalFraction,DriftingFractionCurve}_<regime>_r<radius>m_<season>_<member>.png
+  030/  {SurvivalHeatmaps,DriftingFractionCurve}_<regime>_r<radius>m_<season>_<member>.png
   031/  BeachingSweep{Stats,Maps}_<regime>_r<radius>m_<season>.png
   035/  AreaTimeSeries_<season>_r<radius>m.png
   036/  SeedingMap_r<radius>m.png
