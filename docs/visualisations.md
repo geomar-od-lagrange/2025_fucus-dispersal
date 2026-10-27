@@ -22,7 +22,7 @@ listed here should be dropped.
 | 027 | Hex distance-quantile maps | Per-run (regime + radius + season) | One 1xN panel row, one panel per quantile (0.1/0.5/0.9), the season's releases pooled across `release_years` |
 | 028 | Subbasin connectivity matrices | Per-run (regime + radius + season + member) | Raw residence over the 180 d window · emission fraction per cumulative horizon (30/60/90/180 d) · interannual range |
 | 029 | Beaching maps | Per-run (regime + radius + member + season) | Where-stranded with the release sites overlaid · source/sink substrate contrast · stranded share per source hex · cumulative horizons (30/60/90/180 d) · afloat by origin subbasin (table + CSV) · stranded-share curve with interannual band · displacement at stranding |
-| 030 | Survival heatmaps | Per-run (regime + radius + member + season) | Per snapshot bin ending at 30/60/90/180 d: occupancy (% of released) · surviving fraction, both on discrete bins; drifting-fraction curve with interannual band |
+| 030 | Survival heatmaps | Per-run (regime + radius + member + season) | 2 × 4 grid, a column per snapshot bin ending at 30/60/90/180 d: occupancy (% of released) row · surviving fraction row, both on discrete bins, one colorbar per row; drifting-fraction curve with interannual band |
 | 031 | Beaching sweep | Per-run (regime + radius + season) | Five statistics across members with interannual bars · where-stranded maps across members |
 | 032 | None — selects, numbers and downscales other notebooks' PNGs | Selection (primary + comparison regime) | Tables A–G · one curated reading order over 025–031 |
 | 033 | Hex shoreline-type map + stranding-vs-substrate panels | Per-run (regime + radius + season + member pair) | Flat fraction per hex · coastline length per hex · stranded weight vs. flat fraction for the production and the substrate-inert member |
@@ -232,11 +232,16 @@ reason read on different axes:
   under the whole grid (`fig.colorbar(..., ax=axes, pad=0.01)`; the default
   pad is a fraction of the grid height, a blank band), every panel on the
   figure's one norm.
+- **One colourbar per row (030)** — `fig.colorbar(..., ax=axes[i, :],
+  location="bottom", aspect=40)` under each row, the row being one quantity
+  on one norm. The maps are width-limited, so the bar spans the full figure
+  width; `aspect=40` (default 20) keeps a full-width bar ~4.5 mm thick
+  instead of ~9 mm. 180 × 149 mm.
 - **025/026 family** — `ax.inset_axes([0, -0.09, 1, 0.035])`, a horizontal
   bar *under* the map at width 1.0. These grids are up to four columns
   wide, and a side colorbar plus its tick labels would take a quarter of
   the page width per column.
-- **027/029/030/031/033** — `ax.inset_axes([1.02, 0, 0.035, 1.0])`, a vertical
+- **027/029/031/033** — `ax.inset_axes([1.02, 0, 0.035, 1.0])`, a vertical
   bar *right* of the map at height 1.0. These rows are short and the
   shared extent is taller than wide, so the maps are tall and narrow: a bar under the map would be far wider than the values need
   and would eat the row height the tall maps want.
@@ -262,7 +267,9 @@ outline of the BSH HBMnoku wet cells (`data/bsh_hbmnoku_static/coastline.geojson
 the polygons 024a takes the hex water area from), merged fine-first as in
 024a (fine polygons plus the coarse ones outside the fine bbox) and drawn
 minus a 0.001° strip along the fine bbox, where the two grids meet in open
-water; black at `linewidth=0.5`. The model coastline rather than Natural
+water (026/026a/034), or unioned on a 1e-3° precision grid, which closes
+the slivers the two grids' 1e-4°-rounded cell edges leave along the seam
+(025/026b/027/030/031); black at `linewidth=0.5`. The model coastline rather than Natural
 Earth because the maps show where the model's water is — hexes, isobath and
 coast then register on one grid (authors, 2026-10-27). The cartopy notebooks
 (020/022/023) use `add_feature(cfeature.COASTLINE)` per the AGENTS.md
@@ -616,9 +623,10 @@ that **ends** at `T` — ages in `[T − age_bin_days, T)`, index
 titles carry the bin's age span. A snapshot, not 026's cumulative `[0, T)`:
 being afloat at `T` is an instantaneous state, and a survival map
 accumulated over `[0, T)` would be a weighted residence map, which 026
-already draws. One grid, a row per horizon: **occupancy** in % of the
-released drifters (`100 · occ / Σocc`, see Units above) and the **surviving
-fraction** `surv / occ`; their product is the survival-weighted share
+already draws. One 2 × 4 grid, a column per horizon (titled with the bin's age span):
+row 1 **occupancy** in % of the released drifters (`100 · occ / Σocc`, see
+Units above), row 2 the **surviving fraction** `surv / occ`, one colorbar
+under each row (the row is one quantity on one norm); their product is the survival-weighted share
 afloat, which is therefore not drawn separately. Every panel sums over
 `origin_subbasin`; the `target_hex = -1` sentinel drops at the key join.
 
@@ -636,7 +644,7 @@ from pale yellow to near-black. Light-for-sparse lets the large sub-1e-3 %
 periphery recede on the white page and the dense coastal hexes carry the ink;
 magma's hue turns from orange through red to purple across the 1e-3–3e-2 %
 bins that hold the open-sea bulk, which a single-hue ramp (tried `YlOrRd`)
-renders as near-identical oranges. The fraction column keeps the default
+renders as near-identical oranges. The fraction row keeps the default
 colormap, which also keeps the two quantities apart by colour.
 
 A drifting-fraction curve `Σsurv / Σocc` against age, with the
@@ -1004,7 +1012,7 @@ right-hand panel on its own as the paper's supplement figure.
   so a border reads neither as coastline (black, as 025–033) nor as a
   category fill.
 - **Land-share panel**: default colormap, fixed `Normalize(0, 100)`, colorbar
-  right of the map (027/030/033 placement for the tall Baltic crop). The
+  right of the map (027/033 placement for the tall Baltic crop). The
   single-panel copy (supplement) is one map at the full page width with the
   colorbar under it, 029's where-stranded layout.
 - **Legend** under both panels, three columns, entries in colour order with
