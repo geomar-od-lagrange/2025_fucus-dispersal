@@ -146,3 +146,42 @@ Bothnian Sea · QUA The Quark · BOB Bothnian Bay
   Gdansk; mean 1.49 %); above 0.1: 026 bottom 180 d 0.52 %, 026a bottom
   T180 up to 3.6 %, 026a surface up to 0.97 %. With sub-floor hexes drawn,
   the 026a surface T180 panels fill most of the basin in the under colour.
+- 2026-10-27: **P3 done** (025, 026b, 027, 030, 031; G1/G2, Fig 18, G6) —
+  `288c675` (030), `25fa0ac` (025), `771ff9f` (027), `6186945` (026b, 031),
+  `925dd82` (docs; two 025/027 doc lines landed in `b9d5b86`), `0f69ed1`
+  (032 Fig 18 caption). Coastline: fine-first wet-cell outline unioned on a
+  1e-3° precision grid (closes the seam slivers without a strip). Isobath
+  (025/026b) at zorder 10, drawn last, checked on 2× crops. Fig 18:
+  2 × 4, one `aspect=40` colourbar under each row, 180 × 149 mm
+  (2125 × 1757 px). Reruns: 030 ALL + 4 seasons; 025, 027, 031 ALL + 4
+  seasons; 026b ALL × both regimes; 035 ALL (stale after the 026 rerun); 032
+  last — HEADLINE has no Gaps. 020–023 left on cartopy `coastlines()` (not
+  on the paper path, heavy Dask reruns).
+- **G6 findings (read-only, `tmp_figreview_r2/g6*.py`).** (a) Subbasin −1,
+  2016–2024 ALL: 024g surface member origin −1 0.12 % n_obs / 0.16 % w_obs,
+  target −1 2.03 % / 1.82 %. At hex level (024f) target −1 inside the
+  extent 1.45 % occ / 1.34 % surv, of which 1.38 / 1.29 % in the Skagerrak
+  (W of 12 °E, N of 57.5 °N: 265 of the 306 wet key −1 hexes in the extent,
+  top hexes 11.3 °E 58.9 °N, 11.5 °E 58.3 °N, 11.6 °E 58.1 °N, 0.1–0.17 %
+  each); outside the Skagerrak only 0.05–0.07 %, mostly one hex at 23.0 °E
+  63.7 °N (Quark coast, 10 km² water, 0.04–0.05 %). Bottom (024 counts,
+  land seeds excluded — 024c's −1/−1 row is the 35 % land-seed sentinel):
+  origin −1 0.12 %, target −1 in extent 0.41 % (0.39 % Skagerrak). Origin
+  −1 = four release hexes at 11.0–11.14 °E, 58.8–58.9 °N (Koster area, N of
+  the HELCOM Kattegat polygon). (b) Gdansk zero-water share is one hex,
+  13128 (18.25–18.43 °E, 54.68–54.78 °N, west shore of Puck Bay): 1.68 %
+  of Gdansk occ, 4.5 % of surv, 0.56 % bottom; its particle-time peaks at
+  age 0–20 d and fades by 100 d. Every coarse H0 cell in it is land; the
+  nearest wet cell (Puck Bay, H0 2 m) lies 0.0015° east. So the key is
+  right (no model water); the particles sit on model land within half a
+  cell of the wet edge, where the interpolated velocity is still non-zero.
+  Not lagoons (Vistula/Curonian are absent from the coarse grid). Other
+  origins: ≤ 0.46 % (NBP), overall 0.15 % surface / 0.13 % bottom, 28
+  zero-water hexes with weight. **Recommendation:** not a dilated wet mask
+  — a half-cell dilation gives 217 in-extent zero-water hexes water but
+  inflates coastal hexes' water area by a median 1.38× (p90 5.4×), biasing
+  coastal dilution low. Instead add a key column mapping each zero-water hex
+  to its nearest hex with water (024a, seconds) and remap `target_hex`
+  through it in the dilution consumers (025/026/026a/026b/034; reruns of
+  minutes, 026b ~20 min each); or leave as is and state the 0.15 % / Gdansk
+  4.5 % in the caption.
