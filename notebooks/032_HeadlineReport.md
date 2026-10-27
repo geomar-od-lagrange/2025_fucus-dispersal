@@ -1066,10 +1066,10 @@ figure_specs = [
         notebook="030", stem="SurvivalHeatmaps_{regime}_r{radius}m_{season}_{member}",
         name="occupancy_surviving_fraction_{season}",
         sources=[("survocc", primary_regime, member)],
-        note=f"Rows = horizons, each the {age_bin_days} d snapshot bin ending there; left column "
-        "occupancy (% of released drifters in the hex, log bins), right column the surviving "
-        "(un-beached) fraction surv/occ on a fixed 0–1 scale: where propagules still drift after "
-        "the coast has taken its share.",
+        note=f"Columns = horizons, each the {age_bin_days} d snapshot bin ending there; top row "
+        "occupancy (% of released drifters in the hex, log bins), bottom row the surviving "
+        "(un-beached) fraction surv/occ on a fixed 0–1 scale, one colourbar per row: where "
+        "propagules still drift after the coast has taken its share.",
     ),
 ]
 ```
