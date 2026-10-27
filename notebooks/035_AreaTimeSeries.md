@@ -45,7 +45,7 @@ output_root = "../output"
 # Hex radius 026 ran at. Labels the figure only: the 026 area CSV names
 # carry no radius, so this must match the 026 run that wrote them.
 hex_radius = 6000
-# Regimes to draw, in legend order, and each one's 026 weighting tag (a 024f
+# Regimes to draw, in drawing order, and each one's 026 weighting tag (a 024f
 # rate-model member, or "unweighted"), position by position.
 regimes_csv = "surface_stokes,bottom"
 tags_csv = "step_wc0p1_ts3_tcinf_tf1_tw0,unweighted"
@@ -141,10 +141,14 @@ print(table.round(1).to_string())
 
 # Figure
 
-Two panels, area and `√area`, against the horizon `T`; one colour per
-regime, by its position in `regimes_csv` in the default cycle (so a regime
-keeps its colour when another one's export is missing), shared by the
-regime's line and its band.
+Two panels stacked on a shared horizon axis, area over `√area`; one colour
+per regime, by its position in `regimes_csv` in the default cycle (so a
+regime keeps its colour when another one's export is missing), shared by
+the regime's line, its band and its label. Each line is named by a text
+label in its colour at its first horizon instead of a legend box, which at
+print width covers curves or eats a strip of the page. No title and no
+band key: the season and the band (per-release-year min–max) go in the
+caption.
 
 ```python
 PANELS = {
@@ -153,10 +157,9 @@ PANELS = {
 }
 colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
-fig, axes = plt.subplots(1, len(PANELS), layout="constrained")
-# Print-ready width; a line panel at the default 4:3 per-panel aspect.
-fig.set_size_inches(FIGURE_WIDTH_IN, 0.75 * FIGURE_WIDTH_IN / len(PANELS))
-legend_handles = {}
+fig, axes = plt.subplots(len(PANELS), 1, sharex=True, layout="constrained")
+# Print-ready width; two stacked line panels at 0.4 of the page width each.
+fig.set_size_inches(FIGURE_WIDTH_IN, 0.8 * FIGURE_WIDTH_IN)
 for ax, (value, ylabel) in zip(axes, PANELS.items()):
     for regime in drawn:
         color = colors[regimes.index(regime)]
@@ -165,25 +168,26 @@ for ax, (value, ylabel) in zip(axes, PANELS.items()):
         weighting = "unweighted" if tag == "unweighted" else "survival-weighted"
         # The band takes the line's colour so each regime reads as one
         # object; alpha keeps the other regime's line visible through it.
-        band = ax.fill_between(
+        ax.fill_between(
             t.index, t[f"{value}_year_min"], t[f"{value}_year_max"],
             color=color, alpha=0.3,
         )
         # Markers mark the horizons the 026 table actually holds.
-        (line,) = ax.plot(t.index, t[value], marker="o", color=color)
-        legend_handles[f"{regime} ({weighting})"] = (band, line)
-    ax.set_xlabel("horizon T (d), ages in [0, T)")
+        ax.plot(t.index, t[value], marker="o", color=color)
+        # Inline label in the line's colour at the first horizon, where the
+        # regimes are furthest apart (they cross later): above the topmost
+        # line, below every other, so it names the line without a legend.
+        topmost = t[value].iloc[0] >= max(table.loc[r, value].iloc[0] for r in drawn)
+        ax.annotate(
+            f"{regime} ({weighting})", (t.index[0], t[value].iloc[0]),
+            xytext=(4, 10 if topmost else -10), textcoords="offset points",
+            ha="left", va="bottom" if topmost else "top", color=color,
+        )
     ax.set_ylabel(ylabel)
-    # From zero, so the two regimes' areas compare as ratios by eye.
-    ax.set_ylim(0, None)
-# One entry per regime (band + pooled line), below the panels: inside an
-# axes it covers the curves at print width.
-fig.legend(
-    list(legend_handles.values()), list(legend_handles),
-    loc="outside lower center", ncols=len(legend_handles),
-    title="pooled (line) and per-year min–max (band)",
-)
-fig.suptitle(f"release season {season}")
+    # From zero, so the two regimes' areas compare as ratios by eye; the top
+    # leaves a text line of headroom over the highest band for its label.
+    ax.set_ylim(0, 1.12 * max(table.loc[r, f"{value}_year_max"].max() for r in drawn))
+axes[-1].set_xlabel("horizon T (d), ages in [0, T)")
 fig_path = figure_dir / f"AreaTimeSeries_{season}_r{hex_radius}m.png"
 fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
