@@ -33,9 +33,9 @@ identical row set (see
 
 Three views:
 
-1. **Raw matrix**, log scale, pooled over the whole reduction window
-   `age < max_age_days` — the magnitude picture. Rows differ by orders of
-   magnitude.
+1. **Raw matrix**, half-decade log classes, pooled over the whole reduction
+   window `age < max_age_days` — the magnitude picture. Rows differ by
+   orders of magnitude.
 2. **Emission fraction** `x / x.sum(axis=1)` — the fraction of an origin's
    particle-time that sits in each target, one figure per age horizon
    `T` (cumulative, half-open `age < T` days, the same convention as 026's
@@ -57,8 +57,9 @@ unweighted raw matrix would cover different ages.
 
 Connectivity here is **residence** (particle-timesteps in the target
 subbasin), not particle flux. Subbasin id `-1` = unnamed/outside and is
-excluded from every matrix (reported as a dropped fraction). No Dask
-cluster; parquet-only.
+excluded from every matrix (reported as a dropped fraction). Both axes run
+west → east and carry three-letter subbasin codes (the key is 029's
+where-stranded map). No Dask cluster; parquet-only.
 
 ```python
 import json
@@ -68,7 +69,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
+from matplotlib.colors import BoundaryNorm
 ```
 
 # Parameters
@@ -382,15 +383,33 @@ if member:
 
 The row/column order is fixed once, from the whole season-filtered frame, so
 every per-horizon and per-year matrix is the same shape and directly
-stackable.
+stackable. The order is geographic, west → east along the basin's transport
+path (Kattegat through the Belts and the Baltic Proper to the Gulfs and the
+Bothnian Bay), as 026a's overview; a subbasin present in the store but
+missing from the list is an error, not a silently unordered row.
 
 ```python
-named_ids = sorted(
-    set(conn.loc[conn["origin_subbasin"] >= 0, "origin_subbasin"])
-    | set(conn.loc[conn["target_subbasin"] >= 0, "target_subbasin"])
+# Three-letter subbasin codes, west → east: the axis order and tick labels.
+SUBBASIN_CODE = {
+    "Kattegat": "KAT", "The Sound": "SOU", "Great Belt": "GRB", "Kiel Bay": "KIE",
+    "Bay of Mecklenburg": "MEC", "Arkona Basin": "ARK", "Bornholm Basin": "BOR",
+    "Gdansk Basin": "GDA", "Eastern Gotland Basin": "EGB",
+    "Western Gotland Basin": "WGB", "Gulf of Riga": "GRI",
+    "Northern Baltic Proper": "NBP", "Gulf of Finland": "GFI", "Åland Sea": "ALA",
+    "Bothnian Sea": "BOS", "The Quark": "QUA", "Bothnian Bay": "BOB",
+}
+
+present = set(conn.loc[conn["origin_subbasin"] >= 0, "origin_subbasin"]) | set(
+    conn.loc[conn["target_subbasin"] >= 0, "target_subbasin"]
 )
+uncoded = sorted(subbasin_id_to_name[i] for i in present
+                 if subbasin_id_to_name[i] not in SUBBASIN_CODE)
+assert not uncoded, f"subbasins without a code / west-east position: {uncoded}"
+name_to_id = {v: k for k, v in subbasin_id_to_name.items()}
+named_ids = [name_to_id[n] for n in SUBBASIN_CODE if name_to_id[n] in present]
 id_names = [subbasin_id_to_name[i] for i in named_ids]
-print(f"{len(named_ids)} named subbasins on each axis")
+print(f"{len(named_ids)} named subbasins on each axis, west → east: "
+      f"{[SUBBASIN_CODE[n] for n in id_names]}")
 
 
 def matrix(df, horizon, column):
@@ -444,33 +463,97 @@ def emission_matrix(horizon, year=None):
     return emission_fraction(m)
 
 
-def draw(ax, values, columns, norm=None):
-    """imshow one origin × target matrix with subbasin names as tick labels.
+def code(c):
+    """Tick label of an axis entry: the subbasin code, or the column name."""
+    return SUBBASIN_CODE[subbasin_id_to_name[c]] if c in subbasin_id_to_name else c
+
+
+def draw(ax, values, columns, norm):
+    """imshow one origin × target matrix with subbasin codes as tick labels.
 
     A trailing stranded column is set off from the subbasins by one blank
-    (NaN) column.
+    (NaN) column, labelled above the matrix (a label under it would push the
+    axis label down by its own length), and each of its cells carries the
+    share as a whole percentage: the stranded shares crowd the top class or
+    two, where the colour alone cannot rank them.
     """
     values = np.asarray(values, dtype=float)
     xpos = list(range(len(columns)))
     if columns[-1] == STRANDED:
         values = np.insert(values, len(columns) - 1, np.nan, axis=1)
         xpos[-1] += 1
+        for i, v in enumerate(values[:, -1]):
+            if np.isfinite(v):
+                ax.text(xpos[-1], i, f"{100 * v:.0f}", ha="center", va="center")
     im = ax.imshow(values, norm=norm)
     # Tick labels set at plot time only (AGENTS.md: don't mutate the frame
     # index for presentation).
-    ax.set_xticks(xpos)
-    ax.set_xticklabels([subbasin_id_to_name.get(c, c) for c in columns], rotation=90)
-    ax.set_yticks(range(len(id_names)))
-    ax.set_yticklabels(id_names)
+    if columns[-1] == STRANDED:
+        ax.set_xticks(xpos[:-1], [code(c) for c in columns[:-1]])
+        top = ax.secondary_xaxis("top")
+        top.set_xticks([xpos[-1]], ["stranded (%)"])
+        # Right-aligned on the column: centred, it would run off the page.
+        top.get_xticklabels()[0].set_horizontalalignment("right")
+    else:
+        ax.set_xticks(xpos, [code(c) for c in columns])
+    ax.set_yticks(range(len(id_names)), [code(i) for i in named_ids])
     ax.set_xlabel("target subbasin")
     ax.set_ylabel("origin subbasin")
     return im
+
+
+def half_decade(x, up):
+    """Exponent k of the half-decade edge 10**(k/2) at or above (`up`) or at
+    or below `x`; the 1e-9 slack keeps an exact edge on itself."""
+    k = 2 * np.log10(x)
+    return int(np.ceil(k - 1e-9)) if up else int(np.floor(k + 1e-9))
+
+
+def class_norm(k_lo, k_hi, extend):
+    """Discrete log scale: one class per half decade between the edges
+    10**(k_lo/2) and 10**(k_hi/2), the default colormap sampled across them."""
+    edges = 10.0 ** (np.arange(k_lo, k_hi + 1) / 2)
+    return BoundaryNorm(edges, ncolors=plt.get_cmap().N, extend=extend)
+
+
+def colorbar(fig, ax, im, label):
+    """Shared-width colorbar under the matrix, decades labelled."""
+    cb = fig.colorbar(im, ax=ax, location="bottom", label=label)
+    edges = im.norm.boundaries
+    decades = [e for e in edges if np.isclose(np.log10(e), np.round(np.log10(e)))]
+    cb.set_ticks(decades, labels=[f"$10^{{{int(np.round(np.log10(e)))}}}$" for e in decades])
+    return cb
 
 
 # Print-ready: full text width (180 mm) at 300 dpi. This overrides the
 # project's "no figsize/dpi" default because these panels go into the
 # manuscript at a fixed column width (rationale in docs/visualisations.md).
 PAGE_WIDTH_IN = 180 / 25.4
+# Margins (in) around the cell grid at that width: the code tick labels and
+# axis label at the left; the titles above; tick labels, axis label and the
+# colorbar below, plus the stranded column's label above where there is one.
+# The figure height follows from square cells filling the remaining width, so
+# the matrix spans the page with minimal white space.
+MARGIN_LEFT_IN, MARGIN_RIGHT_IN = 0.65, 0.05
+MARGIN_TOP_IN, MARGIN_BOTTOM_IN = 0.8, 1.1
+STRANDED_LABEL_IN = 0.25
+
+
+def matrix_figure(columns):
+    """Figure + axes sized so the origin × target matrix over `columns`, in
+    square cells, fills the page width; a stranded column brings a blank gap
+    column and the room for its label above the matrix."""
+    has_stranded = columns[-1] == STRANDED
+    cell = (PAGE_WIDTH_IN - MARGIN_LEFT_IN - MARGIN_RIGHT_IN) / (
+        len(columns) + has_stranded
+    )
+    fig, ax = plt.subplots(layout="constrained")
+    fig.set_size_inches(
+        PAGE_WIDTH_IN,
+        len(named_ids) * cell + MARGIN_TOP_IN + MARGIN_BOTTOM_IN
+        + has_stranded * STRANDED_LABEL_IN,
+    )
+    return fig, ax
 
 
 def save(fig, name):
@@ -481,9 +564,11 @@ def save(fig, name):
 
 # View 1 — raw residence matrix, log scale
 
-Pooled over the whole window, ages `< max_age_days`. `LogNorm` is not cosmetic: the
-within-subbasin diagonal dominates by orders of magnitude, so a linear scale
-washes out every cross-subbasin entry. Zeros are masked to NaN so empty
+Pooled over the whole window, ages `< max_age_days`. The log scale is not
+cosmetic: the within-subbasin diagonal dominates by orders of magnitude, so a
+linear scale washes out every cross-subbasin entry. One discrete class per
+half decade, as the emission views, but spanning every non-zero cell (no
+floor): this is the magnitude picture. Zeros are masked to NaN so empty
 cells render blank rather than as the bottom of the colour scale.
 
 ```python
@@ -493,16 +578,19 @@ dropped = 1.0 - raw.to_numpy().sum() / total
 print(f"raw matrix {raw.shape}, {dropped:.1%} of {value_col} dropped as -1 "
       f"origin/target")
 
-fig, ax = plt.subplots(layout="constrained")
-im = draw(ax, np.where(raw.to_numpy() > 0, raw.to_numpy(), np.nan), named_ids,
-          norm=LogNorm())
-fig.colorbar(im, ax=ax, label=f"residence ({value_col})")
-# Run context on the figure (centred on the page), horizon on the axes: an
-# axes title is centred on the axes box, which the long subbasin tick labels
-# push right, and the combined string then overruns the 180 mm page.
+raw_values = raw.to_numpy()
+raw_norm = class_norm(
+    half_decade(raw_values[raw_values > 0].min(), up=False),
+    half_decade(raw_values.max(), up=True),
+    extend="neither",
+)
+fig, ax = matrix_figure(named_ids)
+im = draw(ax, np.where(raw_values > 0, raw_values, np.nan), named_ids, norm=raw_norm)
+colorbar(fig, ax, im, f"residence ({value_col})")
+# Run context on the figure, horizon on the axes: the combined string
+# overruns the 180 mm page.
 fig.suptitle(f"{regime} — {season} — {member_tag}")
 ax.set_title(f"age < {max_age_days} d")
-fig.set_size_inches(PAGE_WIDTH_IN, PAGE_WIDTH_IN * 0.80)
 save(fig, f"SubbasinConnectivity_raw_{regime}_{season}_{member_tag}_T{max_age_days}d.png")
 ```
 
@@ -514,33 +602,36 @@ very different release counts are directly comparable. In a
 survival-weighted run the row includes the **stranded** column (last,
 after a blank gap): the denominator is then the origin's unweighted
 particle-time and the stranded cell the share of it lost to beaching.
-One figure per
-horizon, on a `LogNorm` shared across horizons — the off-diagonal shares
-span several decades, and a common scale makes the horizons comparable
-figure to figure.
+One figure per horizon, on one discrete log scale shared across horizons —
+the off-diagonal shares span several decades, and a common scale makes the
+horizons comparable figure to figure. Discrete half-decade classes rather
+than a continuous ramp: a cell's class is read off the colorbar, where a
+continuous viridis gradient blurs neighbouring shares into one hue.
 
 ```python
 emission = {h: emission_matrix(h) for h in time_horizons_days}
 targets = emission[time_horizons_days[0]].columns.tolist()
 
-# Shared LogNorm across horizons, floored four decades below the peak: the
-# thinnest off-diagonal shares run to 1e-7 and would otherwise stretch the
-# scale until every meaningful cell reads the same colour (same treatment as
-# 029's stranding maps).
+# Shared scale across horizons, floored four decades below the peak (the
+# peak rounded up to its half-decade edge): the thinnest off-diagonal shares
+# run to 1e-7 and would otherwise stretch the scale until every meaningful
+# cell reads the same colour (same treatment as 029's stranding maps). Eight
+# half-decade classes; shares under the floor take the `extend="min"` colour.
+FLOOR_DECADES = 4
 stacked = np.concatenate([e.to_numpy().ravel() for e in emission.values()])
-vmax = np.nanmax(stacked)
-norm = LogNorm(vmin=vmax / 1e4, vmax=vmax)
+k_peak = half_decade(np.nanmax(stacked), up=True)
+norm = class_norm(k_peak - 2 * FLOOR_DECADES, k_peak, extend="min")
+print(f"emission classes: edges {[f'{e:.3g}' for e in norm.boundaries]}")
 
-# One figure per horizon rather than a panel grid: the axis carries 17 HELCOM
-# subbasin names, which are illegible once four panels share a 180 mm page.
+# One figure per horizon rather than a panel grid: 17 codes per axis need
+# cells of a few mm, which a four-panel grid on a 180 mm page cannot give.
 for h in time_horizons_days:
     values = emission[h].to_numpy()
-    fig, ax = plt.subplots(layout="constrained")
+    fig, ax = matrix_figure(targets)
     im = draw(ax, np.where(values > 0, values, np.nan), targets, norm=norm)
-    fig.colorbar(im, ax=ax, label="emission fraction")
+    colorbar(fig, ax, im, "emission fraction")
     fig.suptitle(f"{regime} — {season} — {member_tag}")
     ax.set_title(f"age < {h} d")
-    fig.set_size_inches(PAGE_WIDTH_IN, PAGE_WIDTH_IN * 0.80)
     save(fig, f"SubbasinConnectivity_emission_{regime}_{season}_{member_tag}_T{h}d.png")
 ```
 
@@ -582,7 +673,7 @@ for h in time_horizons_days:
 
 for h in time_horizons_days:
     mean = spread[h]["mean"]
-    fig, ax = plt.subplots(layout="constrained")
+    fig, ax = matrix_figure(targets)
     im = draw(ax, np.where(mean > 0, mean, np.nan), targets, norm=norm)
     if len(named_ids) <= ANNOTATE_MAX_N:
         for i in range(len(named_ids)):
@@ -594,10 +685,9 @@ for h in time_horizons_days:
                         f"{spread[h]['max'][i, j]:.1g}",
                         ha="center", va="center",
                     )
-    fig.colorbar(im, ax=ax, label="emission fraction (mean over years)")
+    colorbar(fig, ax, im, "emission fraction (mean over years)")
     fig.suptitle(f"{regime} — {season} — {member_tag}")
     ax.set_title(f"age < {h} d — {len(years)}-year mean")
-    fig.set_size_inches(PAGE_WIDTH_IN, PAGE_WIDTH_IN * 0.80)
     save(fig, f"SubbasinConnectivity_interannual_{regime}_{season}_{member_tag}_T{h}d.png")
 ```
 
