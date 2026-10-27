@@ -30,7 +30,7 @@ two panels on one figure:
    rows of the `024` counts store), from the trajectory zarrs.
 
 The land-seeded share panel is also saved on its own, one map at the full
-page width, as the paper's supplement figure.
+page width.
 
 Plus a computed table of release cells (and their land-seeded share) per
 subbasin. Reads the data twin, the `024a` key and the first two time steps
@@ -322,7 +322,7 @@ plt.show()
 
 # Land-seeded share, single panel
 
-The right-hand panel above on its own for the supplement: one map at the
+The right-hand panel above on its own: one map at the
 full page width, its colorbar under it at the same width (029's
 where-stranded layout), the same fixed 0–100 % default-colormap scale.
 
