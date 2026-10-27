@@ -66,6 +66,31 @@ pairs) give way to W5.
   Fig 10: release-site markers drawn over the map, or real data?
 - **Q5** — How do stranded particles enter the 024g weighted connectivity?
 
+## Findings
+
+Diagnostics in `tmp_figreview_dispersal/` (untracked, replicates 026 exactly;
+90 % areas match `Exports/026/026_areas_*.csv`).
+
+- **Q3:** the decline is not a survival-weighting artefact — the unweighted
+  surface curve falls too (90 %: 199k → 97k km² from T = 20 d to 180 d). The
+  surface cloud concentrates with age: per 10-d bin the 90 % area drops from
+  194k km² (0–10 d) to 12k km² (170–180 d), with the 200 densest hexes going
+  from 26 % to 84 % of the weight, mostly partly-land coastal hexes (stalling
+  against the shore under onshore Stokes). Bottom does not concentrate and is
+  monotone at every threshold. At 99 % the pooled surface curve still peaks
+  (T = 50 d, 378k km²) and falls 6 % to 355k km² by 180 d, and every
+  single year is non-monotone. So 99 % flattens the decline but does not
+  remove it; a curve that cannot fall needs a different metric (e.g. the
+  cumulative footprint of hexes reached, untested).
+- **Q4:** the Wadden Sea dots are real hexes, not markers — three hexes in
+  the Elbe and Ems estuaries with mean age ≥ 170 d and almost no weight (1,
+  49, 213 of 9.2e10), passing 026's map floor because that floor is on
+  dilution (1st percentile, `026:564-565`) and their water area is tiny.
+  Fix: floor on share, not dilution. Median age from the 10-d `age_bin`
+  CDF is ~5 lines next to `026:556`; surface median is 10–15 d younger than
+  the mean across the Baltic Proper (median − mean p50 = −8.7 d), bottom
+  within ±5 d; spatial pattern unchanged (Spearman ≥ 0.987).
+
 ## Status
 
-- 2026-10-27: plan written; Q1–Q5 being investigated.
+- 2026-10-27: plan written; Q3, Q4 answered; Q0 (user), Q1, Q2, Q5 open.
