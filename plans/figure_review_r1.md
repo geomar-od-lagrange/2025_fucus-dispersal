@@ -126,7 +126,57 @@ Beaching diagnostics in `tmp_figreview_beaching/` (untracked).
   (1e-4 … 3 %) with `extend="both"`; right column as the surviving
   fraction surv/occ on discrete bins 0–1 (`030:399-411` already computes it).
 
+## Decisions (authors, 2026-10-27)
+
+- Q0: Fig 1's land-seeded share panel moves to a supplement figure.
+- Fig 4: removed (no supplement).
+- Fig 7: stays at 90 %; the caption/FACTS explain the decline as coastal
+  accumulation of the surviving surface cloud (Q3 numbers).
+- Fig 30–31: gain a "stranded" target column.
+
+## Implementation
+
+One agent per notebook group (disjoint files); each commits its own paths,
+reruns its notebook(s) on NESH for the paper configuration (release years
+2016–2024, season ALL, production member for surface), and reports output
+PNG paths. Every saved figure stays print-ready (180 mm, 300 dpi,
+`od-cartopy-maps` for map grids). Then one paper pass, then review.
+
+- **A — 029 + 036 (W1, Q0).** 029 where-stranded map: HELCOM subbasin
+  outlines (unannotated, no fill), release cells as now, one horizontal
+  colourbar at the bottom spanning the full width, `extend="min"` for the
+  110 below-floor hexes. 036: a single-panel land-seeded share figure for
+  the supplement; the subbasin-coloured panel is no longer needed in the
+  paper (036 may keep producing it).
+- **B — 026 + 026a (W4, W5).** 026: median age per hex (linear
+  interpolation within the crossing 10-d bin of the per-hex cumulative
+  weight) replaces mean age in the age maps and exports; the age-map mask
+  floors on share, not dilution. 026a: new parameter
+  `overview_horizons_days_csv` (default `"30,180"`); per horizon one
+  multipanel figure with one log-dilution map per origin subbasin (all
+  named origins, 4 × 4 for 16), shared colour scale across panels. The
+  per-origin 2 × 2 figures stay as collaborator deliverables.
+- **C — 034 + 030 (W6, W7, W9).** 034: length panel shows the ratio
+  0.8× / 1× against horizon (single line, 1 marked); map pair stacked 2 × 1.
+  030: discrete `BoundaryNorm` on log-spaced bounds (1e-4 … 3 %),
+  `extend="both"`, a sequential map with wide lightness range; the right
+  column becomes the surviving fraction surv/occ on discrete bins 0–1.
+  Colormap override rationale in `docs/visualisations.md`.
+- **D — 028 (W8).** Surface (weighted) emission matrices gain a
+  `stranded` column so each row adds up to the origin's *unweighted*
+  particle-time over [0, T). Stranded particle-time per origin =
+  Σ over 024e deposits with `beach_age_bin` < T/10 d of
+  `weight · (T − age_mid) · 24 h`, origin from the key's `helcom_subbasin`
+  of `release_hex` (same assignment as 024g). This equals
+  Σ_hours (1 − exp(−A)), the particle-time removed by the weighting, at
+  10-d bin resolution. Unweighted (bottom) matrices unchanged.
+- **E — paper.** After A–D: copy figures, drop Fig 1 (→ supplement), Fig 4,
+  Fig 5, Fig 8, Fig 14–29; add the 026a overview figures (surface 180 d,
+  surface 30 d, bottom 180 d); rewrite affected captions and FACTS (Fig 2
+  value translation from Q1, Fig 7 decline from Q3, Fig 10/11 median,
+  Fig 30–31 stranded column). Commit inside `paper/` locally; push only
+  when told.
+
 ## Status
 
-- 2026-10-27: plan written; Q1–Q6 answered. Awaiting author decisions on
-  Q0, Fig 4, Fig 7 metric, Fig 30 sink column before implementation.
+- 2026-10-27: Q1–Q6 answered, decisions taken; A–D launched.
