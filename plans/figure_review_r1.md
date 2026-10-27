@@ -193,3 +193,12 @@ PNG paths. Every saved figure stays print-ready (180 mm, 300 dpi,
   30–180 d; map pair stacked at 220 mm height on a Baltic crop (9–30.7°E,
   53–66°N), each map ~1.6× the old area. 030 on `magma_r` discrete log bins,
   right column = surviving fraction; Fig 35 caption must say so.
+- A done (`69ad70d`, `c287fa0`, docs `a472962`, `114966c`): 029 full-width
+  map with shared-edge subbasin borders, bottom colourbar, `extend="min"`
+  (figure is 180 × 231 mm, LaTeX scales it to 0.85 textheight); 036
+  `LandSeededShare_r6000m.png` for the supplement.
+- 026a overview v1 unreadable (scale 1e-26…1e2, North Sea half the panel,
+  isobath blobs); being redone: 99.9th-percentile top, floor top/1e4 with
+  sub-floor hexes masked, Baltic crop, no isobath, geographic panel order.
+- E (paper) running with placeholders for the overview figures; 032
+  Table C drop of `stranded` rows running.
