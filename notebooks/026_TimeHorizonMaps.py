@@ -38,14 +38,19 @@
 # particle-time the cloud has accumulated by `T`, not a 10-day snapshot at
 # `T`.
 #
-# Density is relative, as in 025:
+# Two views per horizon:
 #
-# - `percentage` — 100 · weight(hex) / Σ weight, normalised **per horizon**,
-#   so each panel shows that horizon's own share of particle-time. Linear
-#   colour scale, one per figure.
-# - `dilution` — that share per km² of hex water area (`water_area_m2`
-#   from the 024a key). The fixed decade scale shared by every dilution
-#   figure of the pipeline (`dilution_floor` to 100 % per km²).
+# - `percentage` — 100 · weight(hex) / Σ weight, normalised **per horizon**
+#   over the particle-time still mapped, so each panel shows the shape of
+#   the cloud present. Linear colour scale, one per figure.
+# - `dilution` — weight(hex) / released particle-time / water area (km²,
+#   `water_area_m2` from the 024a key): the fraction of the **released**
+#   particle-time over `[0, T)`, `N_released · T`, per km² of water. A
+#   transfer function — multiplied by a site's released biomass it gives
+#   biomass-time per km² — so stranding loss (survival weights) and domain
+#   exits lower it instead of being normalised away, and Σ dilution · area
+#   ≤ 1. The fixed log scale shared by every dilution figure of the
+#   pipeline (`dilution_floor` to 1 per km², two classes per decade).
 
 # %%
 import re
@@ -106,11 +111,11 @@ area_quantiles_csv = "0.9"
 # see docs/h0_semantics.md). Fucus vesiculosus no longer grows below ~3 m.
 isobath_m = 3.0
 
-# Floor of the dilution colour scale, % per km², a whole decade. The same in
-# every dilution figure (026, 026a, 034): chosen once from the paper figures'
-# pooled data so that ≥ 99 % of every panel's weight lies above it
+# Floor of the dilution colour scale, fraction of the released particle-time
+# per km², a whole decade. The same in every dilution figure (026, 026a,
+# 034): the authors' fixed scale, two classes per decade up to 1 per km²
 # (docs/visualisations.md). Hexes below it are not drawn.
-dilution_floor = 1e-5
+dilution_floor = 1e-7
 
 # Map extent (degrees), one for every map of the pipeline: the Baltic with
 # the Belt Sea and Kattegat, North Sea cropped (docs/visualisations.md). Set
@@ -179,23 +184,35 @@ COLORBAR_IN = 0.6
 # the spare width becomes side margin.
 MAX_FIGURE_HEIGHT_IN = 230 / 25.4
 
-# Shared dilution scale: one class per decade from `dilution_floor` up to
-# 100 % per km² — all of the material in one km² of water.
-DILUTION_TOP = 1e2
-dilution_exponents = np.arange(round(np.log10(dilution_floor)), round(np.log10(DILUTION_TOP)) + 1)
-assert np.isclose(10.0 ** dilution_exponents[0], dilution_floor), (
+# Shared dilution scale: two classes per decade from `dilution_floor` up to
+# 1 per km² — all of the released particle-time in one km² of water.
+DILUTION_TOP = 1.0
+DILUTION_CLASSES_PER_DECADE = 2
+assert np.isclose(np.log10(dilution_floor), round(np.log10(dilution_floor))), (
     f"dilution_floor {dilution_floor} is not a whole decade"
 )
+dilution_bounds = np.logspace(
+    np.log10(dilution_floor), np.log10(DILUTION_TOP),
+    round(DILUTION_CLASSES_PER_DECADE * np.log10(DILUTION_TOP / dilution_floor)) + 1,
+)
 # turbo, not the default colormap (docs/visualisations.md): dilution is
-# multiplied by a per-site biomass downstream, so it has to read in absolute
-# terms over seven decades — one high-contrast colour per decade. Below-floor
-# hexes are not drawn, so the colorbar's extend="min" triangle stays empty.
-dilution_cmap = plt.get_cmap("turbo").resampled(len(dilution_exponents) - 1).with_extremes(
+# multiplied by a per-site released biomass downstream, so it has to read in
+# absolute terms over seven decades — one high-contrast colour per half
+# decade. Below-floor hexes are not drawn, so the colorbar's extend="min"
+# triangle stays empty.
+dilution_cmap = plt.get_cmap("turbo").resampled(len(dilution_bounds) - 1).with_extremes(
     under="none"
 )
-dilution_norm = BoundaryNorm(10.0 ** dilution_exponents, dilution_cmap.N)
-decade_format = FuncFormatter(lambda x, _: f"$10^{{{np.log10(x):.0f}}}$")
-print(f"dilution scale: {dilution_floor:g}–{DILUTION_TOP:g} % per km², {dilution_cmap.N} decades")
+dilution_norm = BoundaryNorm(dilution_bounds, dilution_cmap.N)
+# Tick labels on the whole decades only; the half-decade edges stay unlabelled.
+decade_format = FuncFormatter(
+    lambda x, _: f"$10^{{{round(np.log10(x))}}}$"
+    if np.isclose(np.log10(x), round(np.log10(x))) else ""
+)
+print(
+    f"dilution scale: {dilution_floor:g}–{DILUTION_TOP:g} per km² of released particle-time, "
+    f"{dilution_cmap.N} classes"
+)
 
 figure_dir = output_root / "Figures" / "026"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -274,6 +291,12 @@ parts = []
 store_attrs = []
 weight_raw = 0.0
 weight_sentinel = 0.0
+# Released particle-time per age bin: every released water-seeded drifter
+# contributes one sample per output step to age bin 0, sentinel rows
+# included (024f's exact denominator, docs/survival_occupancy.md; the counts
+# store holds the same identity over `release_hex ≥ 0`). Horizon T then
+# releases this times T / age_bin_days.
+released_per_bin = 0.0
 for f, year, month in partitions:
     if month is not None and month not in season_months:
         continue
@@ -281,13 +304,17 @@ for f, year, month in partitions:
     season_doys = set(days[days.month.isin(season_months)].dayofyear.tolist())
     filters = [("release_doy", "in", season_doys), ("age_bin", "<", n_age_bins)]
     if member:
-        df = pd.read_parquet(f, columns=["target_hex", "age_bin", "surv"], filters=filters)
+        df = pd.read_parquet(f, columns=["target_hex", "age_bin", "surv", "occ"], filters=filters)
         store_attrs.append(df.attrs)
-        df = df.rename(columns={"surv": "weight"})
+        released_per_bin += float(df.loc[df["age_bin"] == 0, "occ"].sum())
+        df = df.drop(columns="occ").rename(columns={"surv": "weight"})
         sentinel = df["target_hex"] < 0
     else:
         df = pd.read_parquet(
             f, columns=["release_hex", "target_hex", "age_bin", "n_obs"], filters=filters
+        )
+        released_per_bin += float(
+            df.loc[(df["age_bin"] == 0) & (df["release_hex"] >= 0), "n_obs"].sum()
         )
         df = df.rename(columns={"n_obs": "weight"})
         sentinel = (df["release_hex"] < 0) | (df["target_hex"] < 0)
@@ -350,6 +377,10 @@ for y in sorted(set(partition_years) - set(years)):
 print(f"key: {len(key):,} hexes; season {season} (months {season_months}), years {years}")
 print(f"{len(binned):,} (release_year, age_bin, target) rows")
 print(
+    f"released: {released_per_bin / (age_bin_days * 24):,.0f} water-seeded drifters "
+    f"({released_per_bin:,.0f} samples per {age_bin_days} d age bin)"
+)
+print(
     f"sentinel (-1) hexes excluded: {weight_sentinel:,.0f} of {weight_raw:,.0f} weight "
     f"({100 * weight_sentinel / weight_raw:.4f} %)"
 )
@@ -358,19 +389,21 @@ print(
 # # Relative density
 #
 # `to_hex_gdf` sums `weight` per target hex over a selected release set,
-# joins the key geometry and derives both relative views. The
-# normalisation is over whatever subset is passed in, so each horizon
-# panel reads as that horizon's own share of particle-time.
+# joins the key geometry and derives both views: `percentage` normalised
+# over the weight passed in (each horizon panel reads as that horizon's own
+# share of the particle-time present), `dilution` over the released
+# particle-time `released` of the same release set and horizon.
 #
 # Hexes whose wet polygon has no water area (`water_area_m2` 0 — the hex
 # is all land in the BSH coastline, yet a sub-grid trajectory position
 # fell inside it) get no `dilution`; they still carry a `percentage`.
 
 # %%
-def to_hex_gdf(binned_df, key_df):
+def to_hex_gdf(binned_df, key_df, released):
     """Per-target-hex relative density as a GeoDataFrame. ``percentage``
-    is the share of the passed-in release set's particle-time; ``dilution``
-    is that share per km² of hex water area."""
+    is the share of the passed-in particle-time; ``dilution`` is the hex's
+    weight as a fraction of ``released`` (the release set's released
+    particle-time over the same ages, in samples) per km² of water."""
     gdf = (
         binned_df.groupby("target_hex", as_index=False)["weight"].sum()
         .merge(
@@ -380,7 +413,7 @@ def to_hex_gdf(binned_df, key_df):
         .pipe(gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326")
     )
     gdf["percentage"] = 100 * gdf["weight"] / gdf["weight"].sum()
-    gdf["dilution"] = gdf["percentage"] / (
+    gdf["dilution"] = gdf["weight"] / released / (
         gdf["water_area_m2"].where(gdf["water_area_m2"] > 0) / 1e6
     )
     return gdf
@@ -388,7 +421,7 @@ def to_hex_gdf(binned_df, key_df):
 
 COLUMN_LABEL = {
     "percentage": "share of particle-time (%)",
-    "dilution": "dilution (% per km² water)",
+    "dilution": "fraction of released particle-time per km²",
 }
 
 # %% [markdown]
@@ -557,15 +590,26 @@ def export_geojson(gdf, name, **extra_columns):
 # `percentage` is linear from 0 to the 99th percentile pooled over the
 # panels: occupancy is concentrated enough that a few hexes sit two decades
 # above the bulk, and scaling to the maximum would paint every other hex one
-# colour; the over-range arrow marks the saturation. `dilution` is the fixed
-# decade scale: hexes below `dilution_floor` are not drawn, and the share of
+# colour; the over-range arrow marks the saturation. `dilution` is the fixed log
+# scale: hexes below `dilution_floor` are not drawn, and the share of
 # each panel's weight they hold is printed.
 
 # %%
 gdfs = {
-    h: to_hex_gdf(binned[binned["age_bin"] * age_bin_days < h], key)
+    h: to_hex_gdf(
+        binned[binned["age_bin"] * age_bin_days < h], key,
+        released_per_bin * h // age_bin_days,
+    )
     for h in time_horizons_days
 }
+for h in time_horizons_days:
+    # Σ mapped weight / released particle-time: what stranding (survival
+    # weights) and domain exits have taken by T. Σ dilution · area is the
+    # same ratio minus the zero-water hexes.
+    print(
+        f"{h} d: remaining / released particle-time "
+        f"{gdfs[h]['weight'].sum() / (released_per_bin * h // age_bin_days):.4f}"
+    )
 for h in time_horizons_days:
     print(f"{h} d: {share_outside_extent(gdfs[h]):.3f} % of the mapped weight outside the map extent")
 
@@ -673,7 +717,11 @@ median_age = median_age_days(
     .reindex(columns=range(n_age_bins), fill_value=0)
     .loc[hex_weight > 0]
 )
-gdf_age = to_hex_gdf(binned, key).join(median_age, on="target_hex")
+# Median age describes the age of the cloud present, so it stays on the
+# weight present; `released` only feeds the zero-water filter's dilution.
+gdf_age = to_hex_gdf(binned, key, released_per_bin * n_age_bins).join(
+    median_age, on="target_hex"
+)
 gdf_age = gdf_age[gdf_age["dilution"] > 0]
 # 5th percentile, not the 1st that floors the dilution colour scale: the
 # isolated estuary hexes sit at the 0.2nd–4.3rd percentile of share (surface,
@@ -743,6 +791,11 @@ print(
 # `pooled` ranks the weights summed over every release year; each year is
 # the same reduction on that year's releases alone, so their min–max is the
 # interannual range (a pooled value need not lie inside it).
+#
+# The area keeps its own normalisation (shares of the weight present, not
+# of the released particle-time): it measures the shape of the cloud that
+# is there, and stranding loss would otherwise shrink it for the wrong
+# reason.
 #
 # The table runs at `area_horizons_days` (default: every age-bin edge), not
 # the four map horizons, so 035 can draw it as a time series. Each scope's

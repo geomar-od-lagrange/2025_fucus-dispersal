@@ -78,11 +78,11 @@ map_horizon_days = 90
 # Isobath to overlay on the maps, in metres of BSH H0 (floor position, see
 # docs/h0_semantics.md). Fucus vesiculosus no longer grows below ~3 m.
 isobath_m = 3.0
-# Floor of the dilution colour scale, % per km², a whole decade. The same in
-# every dilution figure (026, 026a, 034): chosen once from the paper figures'
-# pooled data so that ≥ 99 % of every panel's weight lies above it
+# Floor of the dilution colour scale, fraction of the released particle-time
+# per km², a whole decade. The same in every dilution figure (026, 026a,
+# 034): the authors' fixed scale, two classes per decade up to 1 per km²
 # (docs/visualisations.md). Hexes below it are not drawn.
-dilution_floor = 1e-5
+dilution_floor = 1e-7
 # Map extent (degrees). The 024a key tiles the whole BSH domain including the
 # North Sea, which the bottom regime does not reach; cropping to the Baltic
 # (western Baltic and Belt Sea to the Gulf of Finland and Bothnian Bay) spends
@@ -121,21 +121,31 @@ FIGURE_DPI = 300
 # maps take the width that height leaves them.
 MAP_PAIR_HEIGHT_IN = 220 / 25.4
 
-# Shared dilution scale: one class per decade from `dilution_floor` up to
-# 100 % per km² — all of the material in one km² of water.
-DILUTION_TOP = 1e2
-dilution_exponents = np.arange(round(np.log10(dilution_floor)), round(np.log10(DILUTION_TOP)) + 1)
-assert np.isclose(10.0 ** dilution_exponents[0], dilution_floor), (
+# Shared dilution scale: two classes per decade from `dilution_floor` up to
+# 1 per km² — all of the released particle-time in one km² of water.
+DILUTION_TOP = 1.0
+DILUTION_CLASSES_PER_DECADE = 2
+assert np.isclose(np.log10(dilution_floor), round(np.log10(dilution_floor))), (
     f"dilution_floor {dilution_floor} is not a whole decade"
 )
+dilution_bounds = np.logspace(
+    np.log10(dilution_floor), np.log10(DILUTION_TOP),
+    round(DILUTION_CLASSES_PER_DECADE * np.log10(DILUTION_TOP / dilution_floor)) + 1,
+)
 # turbo, not the default colormap (docs/visualisations.md): dilution is
-# multiplied by a per-site biomass downstream, so it has to read in absolute
-# terms over seven decades — one high-contrast colour per decade. Below-floor
-# hexes are not drawn, so the colorbar's extend="min" triangle stays empty.
-dilution_cmap = plt.get_cmap("turbo").resampled(len(dilution_exponents) - 1).with_extremes(
+# multiplied by a per-site released biomass downstream, so it has to read in
+# absolute terms over seven decades — one high-contrast colour per half
+# decade. Below-floor hexes are not drawn, so the colorbar's extend="min"
+# triangle stays empty.
+dilution_cmap = plt.get_cmap("turbo").resampled(len(dilution_bounds) - 1).with_extremes(
     under="none"
 )
-dilution_norm = BoundaryNorm(10.0 ** dilution_exponents, dilution_cmap.N)
+dilution_norm = BoundaryNorm(dilution_bounds, dilution_cmap.N)
+# Tick labels on the whole decades only; the half-decade edges stay unlabelled.
+decade_format = FuncFormatter(
+    lambda x, _: f"$10^{{{round(np.log10(x))}}}$"
+    if np.isclose(np.log10(x), round(np.log10(x))) else ""
+)
 
 figure_dir = output_root / "Figures" / "034"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -165,6 +175,10 @@ key = gpd.read_parquet(store_root / f"HexAgg_key_r{hex_radius}m.parquet")
 # dict.fromkeys de-duplicates while keeping order: regime_var == regime_ref
 # (a dry run of this notebook before the variant exists) reads one partition.
 counts = {}
+# Released particle-time per age bin: every released water-seeded drifter
+# contributes one sample per output step to age bin 0 (`release_hex ≥ 0`,
+# sentinel targets included), the same denominator as 026.
+released_per_bin = {}
 for regime in dict.fromkeys(regimes):
     path = store_root / f"HexAgg_counts_r{hex_radius}m_{regime}_{year}.parquet"
     df = pd.read_parquet(
@@ -176,6 +190,9 @@ for regime in dict.fromkeys(regimes):
     if missing:
         raise ValueError(f"{path.name}: release doys {missing} absent")
     valid = (df["release_hex"] >= 0) & (df["target_hex"] >= 0)
+    released_per_bin[regime] = float(
+        df.loc[(df["age_bin"] == 0) & (df["release_hex"] >= 0), "n_obs"].sum()
+    )
     counts[regime] = (
         df[valid].groupby(["age_bin", "target_hex"], as_index=False)["n_obs"].sum()
     )
@@ -285,12 +302,14 @@ plt.show()
 
 # Map pair at one horizon
 
-026's relative-density rendering, notebook-local: `percentage` is the share
-of the regime's particle-time in `[0, map_horizon_days)`, `dilution` that
-share per km² of hex water area. The two regimes are stacked (reference on
-top) under one colour norm and one colourbar under the pair, so the same
-colour is the same share in both. `dilution` is the fixed decade scale
-shared with 026 and 026a, below-floor hexes not drawn; `percentage` is
+026's rendering, notebook-local: `percentage` is the share of the regime's
+particle-time present in `[0, map_horizon_days)`, `dilution` the hex's
+particle-time as a fraction of the regime's released particle-time over
+the same ages (`N_released · T`) per km² of hex water area. The two regimes
+are stacked (reference on top) under one colour norm and one colourbar
+under the pair, so the same colour is the same value in both. `dilution`
+is the fixed log scale shared with 026 and 026a, below-floor hexes not
+drawn; `percentage` is
 linear to the pooled 99th percentile. Extent is the Baltic crop of the
 parameters (the key's bounds if all four are 0). Coastline is the outline
 of the BSH HBMnoku wet cells, merged fine-first as in 024a (fine polygons
@@ -299,8 +318,9 @@ bbox where the grids meet in open water); the isobath is the BSH H0 3 m
 contour, fine grid taking precedence where it covers.
 
 ```python
-def to_hex_gdf(counts_df, key_df):
-    """Per-target-hex relative density as a GeoDataFrame."""
+def to_hex_gdf(counts_df, key_df, released):
+    """Per-target-hex relative density as a GeoDataFrame; ``released`` is
+    the released particle-time (samples) over the same ages."""
     gdf = (
         counts_df.groupby("target_hex", as_index=False)["n_obs"].sum()
         .merge(
@@ -310,7 +330,7 @@ def to_hex_gdf(counts_df, key_df):
         .pipe(gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326")
     )
     gdf["percentage"] = 100 * gdf["n_obs"] / gdf["n_obs"].sum()
-    gdf["dilution"] = gdf["percentage"] / (
+    gdf["dilution"] = gdf["n_obs"] / released / (
         gdf["water_area_m2"].where(gdf["water_area_m2"] > 0) / 1e6
     )
     return gdf
@@ -318,7 +338,7 @@ def to_hex_gdf(counts_df, key_df):
 
 COLUMN_LABEL = {
     "percentage": "share of particle-time (%)",
-    "dilution": "dilution (% per km² water)",
+    "dilution": "fraction of released particle-time per km²",
 }
 
 if any((extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max)):
@@ -392,9 +412,17 @@ def hex_map(gdf, column, ax, norm, cmap, title):
 
 
 gdfs = {
-    regime: to_hex_gdf(c[c["age_bin"] * age_bin_days < map_horizon_days], key)
+    regime: to_hex_gdf(
+        c[c["age_bin"] * age_bin_days < map_horizon_days], key,
+        released_per_bin[regime] * map_horizon_days // age_bin_days,
+    )
     for regime, c in counts.items()
 }
+for regime, g in gdfs.items():
+    print(
+        f"{regime}: remaining / released particle-time "
+        f"{g['n_obs'].sum() / (released_per_bin[regime] * map_horizon_days // age_bin_days):.4f}"
+    )
 both = pd.concat(gdfs.values())
 for regime, g in gdfs.items():
     print(
@@ -405,7 +433,7 @@ for regime, g in gdfs.items():
     )
 # Shared across the pair: percentage saturates at the 99th percentile of the
 # pooled panels (a few hexes sit decades above the bulk; the arrow marks
-# it), dilution is the fixed decade scale with below-floor hexes not drawn.
+# it), dilution is the fixed log scale with below-floor hexes not drawn.
 VIEWS = {
     "percentage": (
         Normalize(vmin=0, vmax=both["percentage"].quantile(0.99)), None, "max", gdfs, {},
@@ -413,7 +441,7 @@ VIEWS = {
     "dilution": (
         dilution_norm, dilution_cmap, "min",
         {r: g[g["dilution"] >= dilution_floor] for r, g in gdfs.items()},
-        {"format": FuncFormatter(lambda x, _: f"$10^{{{np.log10(x):.0f}}}$")},
+        {"format": decade_format},
     ),
 }
 for column, (norm, cmap, extend, drawn, colorbar_kwargs) in VIEWS.items():
