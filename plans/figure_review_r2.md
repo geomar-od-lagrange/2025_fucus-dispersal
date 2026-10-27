@@ -212,3 +212,26 @@ sample = every third zarr, 1.42 M drifters per regime).
   reducers, ~20 core-hours, plus the 024 counts rebuild for bottom; a
   methods decision); (3) fix the corner trap in 010 and rerun everything.
 - Status: awaiting the authors' decision; dilution colour range on hold.
+
+## Stall audit (2026-10-27, `tmp_stall_audit/`, verified with the 010 fieldset)
+
+- Stopped for good (no hourly step ≥ 10 m for the last ≥ 7 d before
+  day 180; water-seeded drifters; 2019 sample, 4 releases × 87,200
+  drifters): surface_stokes 83.4 % (median stop day 75; 44.8 % of
+  particle-hours after the stop), surface 37.8 %, bottom 17.9 %.
+- Mechanism: C-grid interpolation drives the wall-normal velocity linearly
+  to zero at a zero-flux coast face, so onshore flow pulls drifters
+  exponentially close to the wall (~1e-12 cell). They stall for good where
+  the along-wall component is zero too: concave coast corners (59.8 % of
+  stopped surface_stokes drifters) or cells open on one side (32.9 %).
+  The 2D surface (+ Stokes) field is convergent, so corners are genuinely
+  attracting — not the divergence-free saddle of corner_theory.md, not a
+  Parcels bug, not the edge mask (a no-op on coarse), not registration
+  (99.9–100 % match), not float32 (positions are float64). Production
+  reruns bit-identically (Parcels 3.0.6 container).
+- Minor: nest-boundary coast mismatch puts ~1 % into fine land cells;
+  int16 velocity storage zeroes |u| < 0.5 mm/s and 003 then zeroes Stokes
+  there (0.5 % coarse / 2 % fine of open-water face steps).
+- Reading: beaching under onshore convergence that never reverses. Fix
+  candidates: post-process stalled drifters as stranded (no rerun of 010),
+  or a beaching kernel in 010. Awaiting the authors' decision.
