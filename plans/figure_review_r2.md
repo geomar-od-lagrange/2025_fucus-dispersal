@@ -235,3 +235,32 @@ sample = every third zarr, 1.42 M drifters per regime).
 - Reading: beaching under onshore convergence that never reverses. Fix
   candidates: post-process stalled drifters as stranded (no rerun of 010),
   or a beaching kernel in 010. Awaiting the authors' decision.
+
+## Stokes face mask audit (2026-10-27, `tmp_stokes_faces/`, verified)
+
+- 003 (`notebooks/003_prepare_2d_fields.py` ~L305–309) zeroes Stokes where
+  `u_surf` is NaN or exactly 0, sums, then re-applies the land edge mask to
+  the total. On land faces the Stokes mask is redundant (the edge mask
+  already zeroes them); its only independent effect is dropping Stokes on
+  open-water faces where the int16 current rounds to 0 (0.38 % coarse /
+  2.45 % fine of face steps, 0.3 % / 1.6 % of Stokes |flux|). Re-running
+  003's functions on 24 stems of 2019 reproduces production to 2.2e-16;
+  no wall face is nonzero.
+- A zero wall face stops flux *through* the wall, not flux *toward* it:
+  the wall-normal velocity is linear between the open face (onshore Stokes
+  ~60 % of the time) and 0 at the wall (u/d constant from d = 0.9 to 1e-12,
+  sampled with Parcels). Drifters approach exponentially (0.2–3.3 e-folds/d
+  at the sites, +104 to +1490 net over 450 d) and are then frozen by
+  float64 rounding: at ~1e-12 cell a 5-min step is below half an ulp unless
+  the open-face velocity exceeds ~0.2 m/s.
+- Trapping condition per cell: no face carries outflow. Share of time it
+  holds (current+Stokes / current only): 2-wall cells 14 % / 9 % coarse,
+  3-wall cells 45 % / 43 % coarse. Stokes roughly doubles it at corners.
+- Land entry: 0.93 % of water-seeded surface_stokes drifters (2019) enter a
+  land cell, 1,175 at nest switches, 957 within one grid by diagonal steps
+  (suspected RK4 sub-step leak at convex corners, not traced).
+- Options unchanged: post-process stalls as stranded (recommended, no 010
+  rerun); random walk with reflecting walls (rerun); zero onshore Stokes in
+  the whole wall cell (moves the problem one cell, unphysical). Cheap 003
+  cleanup: mask Stokes on the land mask, not `u_surf == 0`; fix the
+  "no-slip walls" wording in docs/stokes_drift.md.
