@@ -50,7 +50,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize, to_hex
 from matplotlib.patches import Patch
 from shapely.geometry import box
-from cartopy.io.shapereader import natural_earth
+from shapely.ops import unary_union
 
 from hextraj import HexProj
 
@@ -60,7 +60,8 @@ from hextraj import HexProj
 # %% tags=["parameters"]
 # Read root of the hex key and the trajectory zarrs; write root for the figure.
 output_root = "../output"
-# Read root of the data twin: the release cells and the HELCOM subbasins.
+# Read root of the data twin: the release cells, the HELCOM subbasins and the
+# BSH wet-cell coastline.
 data_root = "../data"
 # Hex radius of the 024a key whose subbasin assignment colours the cells.
 hex_radius = 6000
@@ -88,6 +89,8 @@ output_root = Path(output_root)
 data_root = Path(data_root)
 release_cells_path = data_root / "helcom_fucus_redlist" / "fucus_release_points.geojson"
 subbasins_path = data_root / "helcom_subbasins_2022" / "HELCOM_subbasins_2022_level2.shp"
+coastline_path = data_root / "bsh_hbmnoku_static" / "coastline.geojson"
+h0_fine_path = data_root / "bsh_hbmnoku_static" / "static_file_fine" / "H0_file_fine.nc"
 zarr_dir = output_root / "Trajectories" / land_regime / str(land_release_year)
 
 # Print-ready output: one full text-width (180 mm) figure at 300 dpi, so the
@@ -220,15 +223,35 @@ print(table.round(1).to_string())
 # a southern and a northern subbasin and never to neighbours.
 #
 # Right: the land-seeded share per cell on the default colormap, fixed 0–100 %.
-# Both panels draw the subbasin borders and the Natural Earth coastline.
+# Both panels draw the subbasin borders and the model coastline: the outline
+# of the BSH HBMnoku wet cells, fine nest first inside its bounding box
+# (024a's merge), with the nest seam — where the fine grid's water stops in
+# open sea — removed.
 
 # %%
+def model_coastline(clip_box):
+    """BSH wet-cell outline as lines, fine nest first, nest seam removed,
+    clipped to `clip_box`."""
+    wet = gpd.read_file(coastline_path)
+    h0_fine = xr.open_dataset(h0_fine_path)
+    pad_lon = abs(float(h0_fine.lon.diff("lon").mean())) / 2
+    pad_lat = abs(float(h0_fine.lat.diff("lat").mean())) / 2
+    fine_bbox = box(
+        float(h0_fine.lon.min()) - pad_lon, float(h0_fine.lat.min()) - pad_lat,
+        float(h0_fine.lon.max()) + pad_lon, float(h0_fine.lat.max()) + pad_lat,
+    )
+    fine = unary_union(wet.loc[wet["grid"] == "fine", "geometry"].tolist())
+    coarse = unary_union(wet.loc[wet["grid"] == "coarse", "geometry"].tolist())
+    lines = unary_union([fine.boundary, coarse.difference(fine_bbox).boundary])
+    # One fine cell either side of the bbox edge: the seam and nothing else.
+    lines = lines.difference(fine_bbox.exterior.buffer(2 * pad_lat))
+    return gpd.GeoSeries([lines], crs="EPSG:4326").clip(clip_box)
+
+
 lon_min, lon_max, lat_min, lat_max = (
     extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max
 )
-coast = gpd.read_file(
-    natural_earth(resolution="10m", category="physical", name="coastline")
-).clip(box(lon_min, lat_min, lon_max, lat_max))
+coast = model_coastline(box(lon_min, lat_min, lon_max, lat_max))
 domain_aspect = (
     (lon_max - lon_min) * np.cos(np.radians(0.5 * (lat_min + lat_max)))
 ) / (lat_max - lat_min)
@@ -254,9 +277,9 @@ colour = dict(zip(order, palette)) | {subbasin_name[-1]: cycle[GREY]}
 def backdrop(ax):
     """Subbasin borders, coastline, extent and aspect on a plain lon/lat
     axis (everything is EPSG:4326, so nothing is reprojected)."""
-    # Override: neutral mid-grey hairline borders, so a subbasin border reads
-    # neither as coastline (black) nor as one of the category fills.
-    basin_borders.plot(ax=ax, color="0.5", linewidth=0.4, zorder=2)
+    # Override: neutral mid-grey thin borders (029's width), so a subbasin
+    # border reads neither as coastline (black) nor as one of the category fills.
+    basin_borders.plot(ax=ax, color="0.5", linewidth=0.52, zorder=2)
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=3)
     ax.set_xlim(lon_min, lon_max)
     ax.set_ylim(lat_min, lat_max)
