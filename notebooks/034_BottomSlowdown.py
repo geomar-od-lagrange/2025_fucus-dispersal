@@ -79,7 +79,8 @@ map_horizon_days = 90
 isobath_m = 3.0
 # Map extent (degrees). The 024a key tiles the whole BSH domain including the
 # North Sea, which the bottom regime does not reach; cropping to the Baltic
-# proper spends the page on the hexes that carry particle-time. Set all four
+# (western Baltic and Belt Sea to the Gulf of Finland and Bothnian Bay) spends
+# the page on the hexes that carry particle-time. Set all four
 # to 0 to fall back to the key's full bounds.
 extent_lon_min = 9.0
 extent_lon_max = 30.7
@@ -316,7 +317,6 @@ h0_coarse_outside_fine = h0_coarse.where(
 coast = gpd.read_file(
     natural_earth(resolution="10m", category="physical", name="coastline")
 ).clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
-
 
 
 def hex_map(gdf, column, ax, norm, title):
