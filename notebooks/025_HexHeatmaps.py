@@ -61,8 +61,8 @@ import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm, Normalize
+import shapely
 from shapely.geometry import box
-from cartopy.io.shapereader import natural_earth
 
 # %% [markdown]
 # # Parameters
@@ -388,8 +388,15 @@ COLUMN_LABEL = {
 # %% [markdown]
 # # Map backdrop: coastline and the 3 m isobath
 #
-# Coastline is Natural Earth 10 m via cartopy's shapereader (cached
-# locally), clipped once per extent.
+# Coastline is the model's: the BSH HBMnoku wet-cell outline
+# (`coastline.geojson`, the water 024a's key areas and the particles'
+# advection use), so the hexes are read against the water they are
+# registered on. The file holds both grids' wet polygons; the coarse grid is
+# masked inside the fine nest except an overlap strip, so the merge is the
+# fine polygons plus the coarse ones outside the fine bbox (half a fine cell
+# beyond the outermost fine centres), unioned on a 1e-3° precision grid —
+# the cell edges are stored rounded to 1e-4°, and an exact union leaves a
+# sliver outline along the nest seam.
 #
 # The isobath comes from the BSH static H0 grids, *not* from the key's
 # `mean_depth_m` — a hex mean over a 6 km cell cannot resolve a 3 m
@@ -413,13 +420,25 @@ h0_coarse_outside_fine = h0_coarse.where(
     )
 )
 
-_coast_gdf = gpd.read_file(
-    natural_earth(resolution="10m", category="physical", name="coastline")
+half_lon = 0.5 * abs(float(h0_fine.lon.diff("lon").mean()))
+half_lat = 0.5 * abs(float(h0_fine.lat.diff("lat").mean()))
+fine_bbox = box(
+    float(h0_fine.lon.min()) - half_lon, float(h0_fine.lat.min()) - half_lat,
+    float(h0_fine.lon.max()) + half_lon, float(h0_fine.lat.max()) + half_lat,
 )
-coast_baltic = _coast_gdf.clip(
+wet = gpd.read_file(data_root / "bsh_hbmnoku_static/coastline.geojson")
+model_water = shapely.union_all(
+    [
+        *wet.loc[wet["grid"] == "fine", "geometry"],
+        *wet.loc[wet["grid"] == "coarse", "geometry"].difference(fine_bbox),
+    ],
+    grid_size=1e-3,
+)
+_coast = gpd.GeoSeries([model_water], crs="EPSG:4326").boundary
+coast_baltic = _coast.clip(
     box(extent_lon_min, extent_lat_min, extent_lon_max, extent_lat_max)
 )
-coast_de = _coast_gdf.clip(box(de_lon_min, de_lat_min, de_lon_max, de_lat_max))
+coast_de = _coast.clip(box(de_lon_min, de_lat_min, de_lon_max, de_lat_max))
 
 baltic_extent = [extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max]
 de_extent = [de_lon_min, de_lon_max, de_lat_min, de_lat_max]
@@ -521,13 +540,13 @@ def hex_map(gdf, column, ax, extent, norm, coast, title=None, cbar_label=True):
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
     # One styling override for the isobath: magenta at a hairline width is
     # the canonical anti-viridis, so the 3 m line stays legible over every
-    # fill colour and clear of the black coastline.
+    # fill colour and clear of the black coastline. Drawn last and at a
+    # zorder above every other artist, so where it runs along the coast it
+    # sits on the black line rather than under it.
     for h0 in (h0_fine, h0_coarse_outside_fine):
         ax.contour(
             h0.lon, h0.lat, h0, levels=[isobath_m],
-            colors="magenta", linewidths=0.3,
-            # Top layer, above hexes and coastline, on every map.
-            zorder=3,
+            colors="magenta", linewidths=0.3, zorder=10,
         )
     lon_min_, lon_max_, lat_min_, lat_max_ = extent
     ax.set_xlim(lon_min_, lon_max_)
