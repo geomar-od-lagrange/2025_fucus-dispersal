@@ -175,7 +175,9 @@ contour). H0 is NaN over land (see [h0_semantics.md](h0_semantics.md)), so
 `contour(levels=[3.0])` masks land for free. Fine grid takes precedence
 where it covers; the coarse grid is blanked inside the fine bbox.
 Override: magenta at `linewidths=0.3` — anti-viridis, hairline so it does
-not read as a second coastline.
+not read as a second coastline. It is the top layer (`zorder` above hexes,
+coastline, borders and markers) on every map that carries it, the 026a
+overview included (authors, 2026-10-27).
 
 **Print-ready figures (025–031, 033–036).** Every saved figure is one full
 text-width (180 mm) figure at 300 dpi: `fig.set_size_inches(180/25.4, h)`
@@ -196,7 +198,8 @@ across all maps, so panels compare place for place. The key tiles the whole
 BSH domain, so each map notebook prints the share of its mapped weight on
 hexes (representative point) outside the extent, per figure or horizon, for
 the captions. Exceptions: 025's German-waters zoom, and the per-trajectory
-020/023 maps (5–32 °E, not on the manuscript path).
+020/023 maps (5–32 °E, not on the manuscript path). Every map with the
+3 m isobath draws it on top of all other layers (see the overlay above).
 
 **Panel layout and colorbar placement.** Grids are `layout="constrained"`,
 each map's aspect fixed by its extent, and the panel height derived from
@@ -357,8 +360,7 @@ rule (1st percentile to maximum); rejected, survival weights `exp(−A)`
 leave vanishing but nonzero values and a sliver-of-water hex sets the
 maximum, so the pooled range spanned ~28 decades. Panels use the
 shared extent (the run prints each origin's share of drawn weight outside
-it, and the maximum) and carry no isobath (at 45 mm per panel the 3 m contour fills
-the Danish straits). One figure-wide horizontal colorbar
+it, and the maximum) and the isobath on top. One figure-wide horizontal colorbar
 (`fig.colorbar(..., ax=axes)`). Overrides: panel titles at
 `fontsize="medium"` (the longest HELCOM names overrun a 45 mm panel at the
 default `large`); colorbar `pad=0.01` (the default 0.05 is a fraction of
