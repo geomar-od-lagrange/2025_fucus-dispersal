@@ -339,7 +339,7 @@ figure
 `OriginSubbasinOverview_<regime>_<season>_r<radius>m_<member|unweighted>_T<h>d_dilution.png`.
 Each panel is still normalised over its own origin, so a shared scale does
 not hit the source-size problem above: one `LogNorm` for all panels, top =
-99.9th percentile of the dilution pooled over all panels (`extend="max"`
+99th percentile of the dilution pooled over all panels (`extend="max"`
 above), floor = top / 10⁴; hexes below the floor are **not drawn**, so a
 panel shows the footprint above 10⁻⁴ of the reference (four decades, as
 the stranding map and the connectivity matrices). Considered the per-origin

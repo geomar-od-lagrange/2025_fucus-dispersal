@@ -640,7 +640,7 @@ for code in origin_codes:
 # particle-time per km² in every panel and a compact cloud reads directly
 # against a spread-out one.
 #
-# The scale spans four decades: top = 99.9th percentile of the dilution
+# The scale spans four decades: top = 99th percentile of the dilution
 # pooled over all panels (higher values saturate, `extend="max"`), floor =
 # top / 10⁴. Hexes below the floor are not drawn, so each panel shows the
 # footprint above 10⁻⁴ of the reference. Considered the per-origin maps'
@@ -685,7 +685,7 @@ for h in overview_horizons_days:
         for code in overview_codes
     }
     pooled = pd.concat(gdfs.values())
-    top = pooled["dilution"].where(pooled["dilution"] > 0).quantile(0.999)
+    top = pooled["dilution"].where(pooled["dilution"] > 0).quantile(0.99)
     norm = LogNorm(vmin=top / 10**OVERVIEW_DECADES, vmax=top)
     # Below-floor hexes are masked, not drawn at the floor colour.
     drawn = {code: g[g["dilution"] >= norm.vmin] for code, g in gdfs.items()}
