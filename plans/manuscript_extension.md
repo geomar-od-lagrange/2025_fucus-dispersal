@@ -185,8 +185,9 @@ Each item: what the note asks, what exists, what is proposed.
   as supplement. Notes Fig 4 shows **mean age** per cell, not density —
   computable per hex from the counts `age_bin` axis. The post-reproduction
   biomass loss argues for foregrounding SON.
-- **Done (`cbc29c8`):** `Figures/026/MeanAge_<regime>_<season>_r6000m_<tag>.png`
-  for both regimes × 5 seasons, `Exports/026/026_meanage_*.geojson`, 032
+- **Done (`cbc29c8`, median since `8f0eec5`):**
+  `Figures/026/MedianAge_<regime>_<season>_r6000m_<tag>.png` for both
+  regimes × 5 seasons, `Exports/026/026_medianage_*.geojson`, 032
   figures 6–7 (ALL); see [visualisations.md](../docs/visualisations.md) § 026.
 - **Decided (WR, 2026-10-20): yes.** Mean particle age per hex,
   weight-weighted over ages in `[0, max_age_days)` (`Σ age·w / Σ w`, age at
