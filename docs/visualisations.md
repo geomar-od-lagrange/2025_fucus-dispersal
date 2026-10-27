@@ -188,10 +188,22 @@ parameters: the manuscript's text width is not a per-run knob, and the
 inline display size in an executed notebook is irrelevant to the PNG.
 Nothing mutates `mpl.rcParams`.
 
+**Map extent (025–036).** Every hex map shares one extent, 9–30.7 °E,
+53–66 °N (the Baltic with the Belt Sea and Kattegat, North Sea and
+Skagerrak cropped), as the four `extent_lon_min/max`, `extent_lat_min/max`
+parameters (all 0 ⇒ the 024a key's full bounds): the authors want one zoom
+across all maps, so panels compare place for place. The key tiles the whole
+BSH domain, so each map notebook prints the share of its mapped weight on
+hexes (representative point) outside the extent, per figure or horizon, for
+the captions. Exceptions: 025's German-waters zoom, and the per-trajectory
+020/023 maps (5–32 °E, not on the manuscript path).
+
 **Panel layout and colorbar placement.** Grids are `layout="constrained"`,
 each map's aspect fixed by its extent, and the panel height derived from
 page width ÷ ncols ÷ extent aspect plus a fixed decoration allowance — no
-draw-measure-rescale loop. Per-panel colorbars are inset axes whose
+draw-measure-rescale loop. The 025/026 family caps the height at one page
+(230 mm); a taller grid's maps turn height-limited and the spare width
+becomes side margin (026/026a/026b 2 × 2 grids, 026a overview). Per-panel colorbars are inset axes whose
 axes-fraction extent equals the map's, so they track the map at any size
 or DPI; they stay per-panel even under a shared norm so columns keep
 identical geometry. The two families place them differently, for the same
@@ -202,9 +214,8 @@ reason read on different axes:
   wide, and a side colorbar plus its tick labels would take a quarter of
   the page width per column.
 - **027/029/030/031/033** — `ax.inset_axes([1.02, 0, 0.035, 1.0])`, a vertical
-  bar *right* of the map at height 1.0. These rows are short and their
-  extent is cropped to the Baltic proper (9–30.7 °E), so the maps are tall
-  and narrow: a bar under the map would be far wider than the values need
+  bar *right* of the map at height 1.0. These rows are short and the
+  shared extent is taller than wide, so the maps are tall and narrow: a bar under the map would be far wider than the values need
   and would eat the row height the tall maps want.
 - **Single full-width maps** (029 where-stranded, 036 land-seeded share) —
   `ax.inset_axes([0, -0.045, 1, 0.022])`, a horizontal bar under a map that
@@ -251,9 +262,8 @@ carries the linear percentage and log dilution scales.
 
 ## Notebook 026 — Time-horizon relative-density maps (special case)
 
-025's hex rendering re-keyed by the counts store's `age_bin` axis over the
-full hex-key domain (the BSH model bbox, North Sea included, so the
-geometry rather than a hardcoded box sets the range). A horizon `T` is
+025's hex rendering re-keyed by the counts store's `age_bin` axis, on the
+shared extent. A horizon `T` is
 **cumulative**: every `age_bin` whose window starts before `T`, i.e.
 elapsed time in `[0, T)`, so panels nest and `T` reads as "by 100 days".
 Each horizon is normalised to its own 100 %, so the panels show how the
@@ -345,10 +355,9 @@ panel shows the footprint above 10⁻⁴ of the reference (four decades, as
 the stranding map and the connectivity matrices). Considered the per-origin
 rule (1st percentile to maximum); rejected, survival weights `exp(−A)`
 leave vanishing but nonzero values and a sliver-of-water hex sets the
-maximum, so the pooled range spanned ~28 decades. Panels are cropped to
-`overview_extent_csv` (default `8,30.7,53,66`: Baltic plus the
-Kattegat/Skagerrak entrance; the run prints each origin's above-floor share
-outside it) and carry no isobath (at 45 mm per panel the 3 m contour fills
+maximum, so the pooled range spanned ~28 decades. Panels use the
+shared extent (the run prints each origin's share of drawn weight outside
+it, and the maximum) and carry no isobath (at 45 mm per panel the 3 m contour fills
 the Danish straits). One figure-wide horizontal colorbar
 (`fig.colorbar(..., ax=axes)`). Overrides: panel titles at
 `fontsize="medium"` (the longest HELCOM names overrun a 45 mm panel at the
@@ -792,8 +801,8 @@ on flat coast because the model puts it there" from "stranding is on flat coast
 because that is where the drift goes" — the latter is the only thing the inert
 member can show.
 
-- **Flat fraction per hex** — the headline map, 029's hex registration and
-  Baltic extent verbatim. **One styling override: `cmap="coolwarm"` with a
+- **Flat fraction per hex** — the headline map, 029's hex registration on
+  the shared extent. **One styling override: `cmap="coolwarm"` with a
   fixed `Normalize(0, 1)`.** Justified because this is not a magnitude but a
   bounded two-ended axis (0 = fully walled, 1 = fully flat) with a
   *distinguished midpoint*: 0.5 is exactly what the pipeline assigns coastline
@@ -881,9 +890,8 @@ either counts partition raises rather than shrinking one side. Parquet only.
   one figure per view, the two regimes **stacked** (reference on top) under
   **one shared norm** and one horizontal colourbar inset under the lower map,
   so the same colour is the same share in both; unlike 026's per-panel norms,
-  the comparison is the point here. The extent is cropped to the Baltic
-  proper (`extent_*` parameters, 030's defaults; the validation cell prints
-  the particle-time a crop cuts off — 0 % for 2019). The Baltic is taller than
+  the comparison is the point here. Shared extent (the validation
+  cell prints the particle-time it cuts off — 0 % for 2019). The Baltic is taller than
   wide, so two full-width stacked maps would be ~2.4× the page width tall: the
   figure height is fixed at 220 mm (`MAP_PAIR_HEIGHT_IN`, one page with its
   caption) and the maps take the width that leaves them (~95 mm), still about
@@ -932,7 +940,7 @@ comparison is the point.
 [`036_SeedingMap`](../notebooks/036_SeedingMap.py) draws the release set: the
 872 REDLIST cells `010` seeds from
 (`data/helcom_fucus_redlist/fucus_release_points.geojson`), as filled cell
-polygons on 029's Baltic extent, in two side-by-side panels, plus the
+polygons on the shared extent, in two side-by-side panels, plus the
 right-hand panel on its own as the paper's supplement figure.
 
 | panel | value | source |
