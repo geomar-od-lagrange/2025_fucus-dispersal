@@ -65,11 +65,11 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import shapely
 import xarray as xr
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm, Normalize
 from shapely.geometry import box
-from cartopy.io.shapereader import natural_earth
 ```
 
 # Parameters
@@ -433,9 +433,16 @@ COLUMN_LABEL = {
 
 The `extent_*` parameters decide the extent, shared by every map of the
 pipeline. The key tiles the full BSH model domain (North Sea included), so
-some weight can lie outside it; each map prints that share. Coastline is
-Natural Earth 10 m via cartopy's shapereader (cached locally), clipped to
-the extent once.
+some weight can lie outside it; each map prints that share.
+
+Coastline is the model's: the BSH HBMnoku wet-cell outline
+(`coastline.geojson`, the water 024a's key areas and the particles'
+advection use). The file holds both grids' wet polygons; the coarse grid is
+masked inside the fine nest except an overlap strip, so the merge is the
+fine polygons plus the coarse ones outside the fine bbox (half a fine cell
+beyond the outermost fine centres), unioned on a 1e-3° precision grid —
+the cell edges are stored rounded to 1e-4°, and an exact union leaves a
+sliver outline along the nest seam.
 
 The isobath comes from the BSH static H0 grids, *not* from the key's
 `mean_depth_m` — a hex mean over a 6 km cell cannot resolve a 3 m
@@ -466,9 +473,24 @@ h0_coarse_outside_fine = h0_coarse.where(
     )
 )
 
-coast = gpd.read_file(
-    natural_earth(resolution="10m", category="physical", name="coastline")
-).clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
+half_lon = 0.5 * abs(float(h0_fine.lon.diff("lon").mean()))
+half_lat = 0.5 * abs(float(h0_fine.lat.diff("lat").mean()))
+fine_bbox = box(
+    float(h0_fine.lon.min()) - half_lon, float(h0_fine.lat.min()) - half_lat,
+    float(h0_fine.lon.max()) + half_lon, float(h0_fine.lat.max()) + half_lat,
+)
+wet = gpd.read_file(data_root / "bsh_hbmnoku_static/coastline.geojson")
+model_water = shapely.union_all(
+    [
+        *wet.loc[wet["grid"] == "fine", "geometry"],
+        *wet.loc[wet["grid"] == "coarse", "geometry"].difference(fine_bbox),
+    ],
+    grid_size=1e-3,
+)
+coast = (
+    gpd.GeoSeries([model_water], crs="EPSG:4326")
+    .boundary.clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
+)
 
 # Width/height of the extent in visually equal degrees — 1° lon at the
 # extent's mid-latitude against 1° lat.
@@ -565,13 +587,13 @@ def hex_map(gdf, column, ax, norm, title=None, cbar_label=True):
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
     # One styling override for the isobath: magenta at a hairline width is
     # the canonical anti-viridis, so the 3 m line stays legible over every
-    # fill colour and clear of the black coastline.
+    # fill colour and clear of the black coastline. Drawn last and at a
+    # zorder above every other artist, so where it runs along the coast it
+    # sits on the black line rather than under it.
     for h0 in (h0_fine, h0_coarse_outside_fine):
         ax.contour(
             h0.lon, h0.lat, h0, levels=[isobath_m],
-            colors="magenta", linewidths=0.3,
-            # Top layer, above hexes and coastline, on every map.
-            zorder=3,
+            colors="magenta", linewidths=0.3, zorder=10,
         )
     ax.set_xlim(domain_lon_min, domain_lon_max)
     ax.set_ylim(domain_lat_min, domain_lat_max)

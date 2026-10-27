@@ -46,15 +46,18 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import shapely
+import xarray as xr
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from shapely.geometry import box
-from cartopy.io.shapereader import natural_earth
 ```
 
 # Parameters
 
 ```python tags=["parameters"]
+# Read root of the data twin (BSH wet-cell coastline and fine-grid H0).
+data_root = "../data"
 output_root = "../output"
 regime = "surface_stokes"
 hex_radius = 6000
@@ -102,6 +105,7 @@ SEASON_MONTHS = {
     "ALL": list(range(1, 13)),
 }
 
+data_root = Path(data_root)
 output_root = Path(output_root)
 if season not in SEASON_MONTHS:
     raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
@@ -407,6 +411,13 @@ floored four decades below the peak, so the change is in the pattern and
 not in the colour scale. Each panel's colorbar is an inset axes at
 axes-fraction height 1.0, exactly the map height.
 
+The coastline is the model's: the BSH HBMnoku wet-cell outline
+(`coastline.geojson`), the water the particles strand against. Fine
+polygons plus the coarse ones outside the fine bbox (the coarse grid is
+masked inside the nest except an overlap strip), unioned on a 1e-3°
+precision grid so the two grids' 1e-4°-rounded cell edges leave no sliver
+outline along the nest seam.
+
 ```python
 if any((extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max)):
     lon_min, lat_min, lon_max, lat_max = (
@@ -415,9 +426,27 @@ if any((extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max)):
 else:
     lon_min, lat_min, lon_max, lat_max = key.total_bounds
 extent = [lon_min, lon_max, lat_min, lat_max]
-coast = gpd.read_file(
-    natural_earth(resolution="10m", category="physical", name="coastline")
-).clip(box(lon_min, lat_min, lon_max, lat_max))
+h0_fine = xr.open_dataset(
+    data_root / "bsh_hbmnoku_static/static_file_fine/H0_file_fine.nc"
+).H0
+half_lon = 0.5 * abs(float(h0_fine.lon.diff("lon").mean()))
+half_lat = 0.5 * abs(float(h0_fine.lat.diff("lat").mean()))
+fine_bbox = box(
+    float(h0_fine.lon.min()) - half_lon, float(h0_fine.lat.min()) - half_lat,
+    float(h0_fine.lon.max()) + half_lon, float(h0_fine.lat.max()) + half_lat,
+)
+wet = gpd.read_file(data_root / "bsh_hbmnoku_static/coastline.geojson")
+model_water = shapely.union_all(
+    [
+        *wet.loc[wet["grid"] == "fine", "geometry"],
+        *wet.loc[wet["grid"] == "coarse", "geometry"].difference(fine_bbox),
+    ],
+    grid_size=1e-3,
+)
+coast = (
+    gpd.GeoSeries([model_water], crs="EPSG:4326")
+    .boundary.clip(box(lon_min, lat_min, lon_max, lat_max))
+)
 domain_aspect = (
     (lon_max - lon_min) * np.cos(np.radians(0.5 * (lat_min + lat_max)))
 ) / (lat_max - lat_min)
