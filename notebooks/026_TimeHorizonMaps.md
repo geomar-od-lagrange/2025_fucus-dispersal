@@ -18,8 +18,8 @@ jupyter:
 
 Hex relative-density maps at successive elapsed-time horizons (e.g. 30,
 60, 90, 180 days), showing how the dispersal cloud spreads and thins
-over time, the weight-weighted mean particle age per hex over the whole
-window, and the water area that holds a given share of the cloud at
+over time, the median particle age per hex over the whole window, and
+the water area that holds a given share of the cloud at
 every age-bin edge (a dense series for 035). One regime and one release
 season per run, pooled over the `release_years` range; no trajectory zarrs,
 no Dask cluster.
@@ -532,69 +532,104 @@ for h in time_horizons_days:
     export_geojson(gdfs[h], f"026_{regime}_{season}_{member_tag}_T{h}d")
 ```
 
-# Mean particle age per hex
+# Median particle age per hex
 
 The same per-`(age_bin, target_hex)` weights read the other way: per hex,
-the weight-weighted mean age over the whole window `[0, max_age_days)`,
-pooled over the release years and the season,
+the median age of its particle-time over the whole window
+`[0, max_age_days)`, pooled over the release years and the season — the
+age at which the hex's weight, accumulated over `age_bin`, reaches half its
+total. Ages are taken as uniform within a bin, so the median is
+interpolated linearly inside the crossing bin:
 
-    mean_age = Σ age_centre · weight / Σ weight,
-    age_centre = (age_bin + 0.5) · age_bin_days.
+    median_age = (b + (W/2 − C_{b−1}) / w_b) · age_bin_days,
+
+with `w_b` the hex's weight in bin `b`, `C_b` its cumulative weight, `W`
+the total and `b` the first bin with `C_b ≥ W/2`. The median rather than
+the mean: a hex's age distribution need not be symmetric, and the median
+reads directly as "half of the particle-time here is younger than this".
 
 Young water sits where the releases are; old water where material arrives
 late or lingers. A hex reached by a handful of samples gets an arbitrary
-mean age, so the map keeps only the hexes the window's dilution map shows
-above its floor: dilution at `T = max_age_days` at or above the 1st
-percentile (the floor of `dilution_norm`), which also drops the zero-water
-hexes that carry no dilution. Default colormap, linear scale over the
-mapped range. Exported as `026_meanage_<regime>_<season>_<tag>.geojson`,
-mapped hexes only.
+age, so the map floors on **share**: a hex is drawn only if its share of
+the window's weight (`percentage`) is at or above the 5th percentile of the
+per-hex shares. A dilution floor would let near-empty hexes with a tiny
+water area through (dilution = share / area), which in the Elbe and Ems
+estuaries are bright isolated old-age dots. Zero-water hexes carry no
+dilution and stay out, as on the dilution maps. Default colormap, linear
+scale over the mapped range. Exported as
+`026_medianage_<regime>_<season>_<tag>.geojson`, mapped hexes only.
 
 ```python
+def median_age_days(weight_by_bin):
+    """Median age (d) per row of a (rows × age_bin) weight table: the age at
+    which the row's cumulative weight reaches half its total, linear within
+    the crossing bin (ages uniform within a bin)."""
+    w = weight_by_bin.to_numpy(dtype=float)
+    cum = np.cumsum(w, axis=1)
+    half = 0.5 * cum[:, -1]
+    # First bin whose cumulative weight reaches half the total.
+    b = (cum < half[:, None]).sum(axis=1)
+    rows = np.arange(len(w))
+    below = cum[rows, b] - w[rows, b]
+    return pd.Series(
+        (b + (half - below) / w[rows, b]) * age_bin_days,
+        index=weight_by_bin.index, name="median_age_days",
+    )
+
+
 hex_weight = binned.groupby("target_hex")["weight"].sum()
-mean_age = (
-    ((binned["age_bin"] + 0.5) * age_bin_days * binned["weight"])
-    .groupby(binned["target_hex"]).sum()
-    .div(hex_weight)
-    .rename("mean_age_days")
+median_age = median_age_days(
+    binned.groupby(["target_hex", "age_bin"])["weight"].sum()
+    .unstack("age_bin", fill_value=0)
+    .reindex(columns=range(n_age_bins), fill_value=0)
+    .loc[hex_weight > 0]
 )
-gdf_age = to_hex_gdf(binned, key).join(mean_age, on="target_hex")
-age_floor = dilution_norm(gdf_age).vmin
-gdf_age = gdf_age[gdf_age["dilution"] >= age_floor]
-COLUMN_LABEL["mean_age_days"] = "mean particle age (d)"
+gdf_age = to_hex_gdf(binned, key).join(median_age, on="target_hex")
+gdf_age = gdf_age[gdf_age["dilution"] > 0]
+# 5th percentile, not the 1st that floors the dilution colour scale: the
+# isolated estuary hexes sit at the 0.2nd–4.3rd percentile of share (surface,
+# ALL, 2016–2024, production member).
+age_share_floor = gdf_age["percentage"].quantile(0.05)
+gdf_age = gdf_age[gdf_age["percentage"] >= age_share_floor]
+COLUMN_LABEL["median_age_days"] = "median particle age (d)"
 
 fig, axes = map_grid(1, 1)
 hex_map(
-    gdf_age, "mean_age_days", axes[0, 0],
-    Normalize(vmin=gdf_age["mean_age_days"].min(), vmax=gdf_age["mean_age_days"].max()),
-    title=f"mean particle age, ages < {max_age_days} d",
+    gdf_age, "median_age_days", axes[0, 0],
+    Normalize(vmin=gdf_age["median_age_days"].min(), vmax=gdf_age["median_age_days"].max()),
+    title=f"median particle age, ages < {max_age_days} d",
 )
-fig_path = figure_dir / f"MeanAge_{regime}_{season}_r{hex_radius}m_{member_tag}.png"
+fig_path = figure_dir / f"MedianAge_{regime}_{season}_r{hex_radius}m_{member_tag}.png"
 # Print-ready: full 180 mm page width at 300 dpi (see the parse cell).
 fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
 plt.show()
 
 export_geojson(
-    gdf_age, f"026_meanage_{regime}_{season}_{member_tag}",
-    mean_age_days=gdf_age["mean_age_days"],
+    gdf_age, f"026_medianage_{regime}_{season}_{member_tag}",
+    median_age_days=gdf_age["median_age_days"],
 )
 
-# Weighted median of the hex mean ages: the hex age the median unit of
+# Weighted median of the hex median ages: the hex age the median unit of
 # particle-time sits in.
-by_age = gdf_age.sort_values("mean_age_days")
+by_age = gdf_age.sort_values("median_age_days")
 cum_weight = by_age["weight"].cumsum() / by_age["weight"].sum()
-weighted_median_age = by_age["mean_age_days"].iloc[int(np.searchsorted(cum_weight, 0.5))]
+weighted_median_age = by_age["median_age_days"].iloc[int(np.searchsorted(cum_weight, 0.5))]
+basin_median_age = median_age_days(
+    binned.groupby("age_bin")["weight"].sum()
+    .reindex(range(n_age_bins), fill_value=0)
+    .to_frame().T
+).iloc[0]
 print(
-    f"{regime}, {season}, {member_tag}: {len(gdf_age):,} of {len(mean_age):,} hexes mapped "
-    f"(dilution ≥ {age_floor:.3g} % per km²), holding "
+    f"{regime}, {season}, {member_tag}: {len(gdf_age):,} of {len(median_age):,} hexes mapped "
+    f"(share ≥ {age_share_floor:.3g} %), holding "
     f"{100 * gdf_age['weight'].sum() / hex_weight.sum():.3f} % of the weight"
 )
 print(
-    f"  hex mean age: weight-weighted median {weighted_median_age:.1f} d, "
-    f"unweighted median {gdf_age['mean_age_days'].median():.1f} d, "
-    f"range {gdf_age['mean_age_days'].min():.1f}–{gdf_age['mean_age_days'].max():.1f} d; "
-    f"basin-wide mean age {(mean_age * hex_weight).sum() / hex_weight.sum():.1f} d"
+    f"  hex median age: weight-weighted median {weighted_median_age:.1f} d, "
+    f"unweighted median {gdf_age['median_age_days'].median():.1f} d, "
+    f"range {gdf_age['median_age_days'].min():.1f}–{gdf_age['median_age_days'].max():.1f} d; "
+    f"basin-wide median age {basin_median_age:.1f} d"
 )
 ```
 

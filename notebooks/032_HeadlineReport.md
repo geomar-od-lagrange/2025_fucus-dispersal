@@ -990,20 +990,21 @@ figure_specs = [
         pairs_with="horizons_{regime}_{season}",
     ),
     dict(
-        notebook="026", stem="MeanAge_{regime}_{pooled}_r{radius}m_{tag}",
-        name="mean_age_{regime}_{pooled}",
+        notebook="026", stem="MedianAge_{regime}_{pooled}_r{radius}m_{tag}",
+        name="median_age_{regime}_{pooled}",
         sources=heatmap_sources(primary_regime),
-        note=f"Mean particle age per hex over ages < {max_age_days} d, "
-        f"{weighting_phrase(figure_fields['tag'])}: the weight-weighted mean of the age-bin "
-        "centres, release years pooled.",
+        note=f"Median particle age per hex over ages < {max_age_days} d, "
+        f"{weighting_phrase(figure_fields['tag'])}: the age at which the hex's cumulative "
+        "weight over the age bins reaches half its total (linear within the crossing bin), "
+        "release years pooled.",
     ),
     dict(
-        notebook="026", stem="MeanAge_{other_regime}_{pooled}_r{radius}m_{other_tag}",
-        name="mean_age_{other_regime}_{pooled}",
+        notebook="026", stem="MedianAge_{other_regime}_{pooled}_r{radius}m_{other_tag}",
+        name="median_age_{other_regime}_{pooled}",
         sources=heatmap_sources(other_regime),
         note="The same for the comparison regime "
         f"({weighting_phrase(figure_fields['other_tag']) if other_regime else '—'}).",
-        pairs_with="mean_age_{regime}_{pooled}",
+        pairs_with="median_age_{regime}_{pooled}",
     ),
     dict(
         notebook="035", stem="AreaTimeSeries_{pooled}_r{radius}m", name="area_time_series_{pooled}",
