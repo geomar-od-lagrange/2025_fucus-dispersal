@@ -350,9 +350,12 @@ maximum, so the pooled range spanned ~28 decades. Panels are cropped to
 Kattegat/Skagerrak entrance; the run prints each origin's above-floor share
 outside it) and carry no isobath (at 45 mm per panel the 3 m contour fills
 the Danish straits). One figure-wide horizontal colorbar
-(`fig.colorbar(..., ax=axes)`). Override: panel titles at
+(`fig.colorbar(..., ax=axes)`). Overrides: panel titles at
 `fontsize="medium"` (the longest HELCOM names overrun a 45 mm panel at the
-default `large`).
+default `large`); colorbar `pad=0.01` (the default 0.05 is a fraction of
+the whole grid's height, a ~10 mm blank band above the bar). The run also
+prints each origin's share on zero-water hexes (NaN dilution, not drawn),
+apart from the below-floor share.
 
 ## Notebook 026b — per origin subbasin and year (special case)
 

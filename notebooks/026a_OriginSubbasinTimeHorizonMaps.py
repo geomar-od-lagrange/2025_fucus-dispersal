@@ -710,10 +710,13 @@ for h in overview_horizons_days:
         ax.set_title(subbasin_id_to_name[code], fontsize="medium")
     for ax in axes.flat[len(overview_codes):]:
         ax.set_visible(False)
+    # pad override: the default 0.05 is a fraction of the whole map grid's
+    # height (~0.4 in here), a blank band between the last row and the bar.
     fig.colorbar(
         plt.cm.ScalarMappable(norm=norm), ax=axes,
         orientation="horizontal", label=COLUMN_LABEL["dilution"],
         extend="max" if pooled["dilution"].max() > norm.vmax else "neither",
+        pad=0.01,
     )
     fig.suptitle(f"by origin subbasin, ages < {h} d")
     fig_path = (
@@ -725,18 +728,23 @@ for h in overview_horizons_days:
     print(f"wrote {fig_path}")
     plt.show()
     # What the floor and the crop leave out, per origin: the share of the
-    # origin's particle-time below the floor, and of the above-floor part
-    # lying outside the extent (hex centroid).
+    # origin's particle-time below the floor, on hexes with no water area
+    # (NaN dilution, never drawn either), and of the above-floor part lying
+    # outside the extent (hex centroid).
     print(f"  {h} d: shared dilution scale {norm.vmin:.3g}–{norm.vmax:.3g} % per km²")
     for code in overview_codes:
         g = drawn[code]
+        dilution = gdfs[code]["dilution"]
+        below = gdfs[code].loc[dilution < norm.vmin, "percentage"].sum()
+        no_water = gdfs[code].loc[dilution.isna(), "percentage"].sum()
         centre = g.geometry.representative_point()
         outside = (
             (centre.x < ov_lon_min) | (centre.x > ov_lon_max)
             | (centre.y < ov_lat_min) | (centre.y > ov_lat_max)
         )
         print(
-            f"    {subbasin_id_to_name[code]}: {100 - g['percentage'].sum():.2f} % below floor, "
+            f"    {subbasin_id_to_name[code]}: {below:.2f} % below floor, "
+            f"{no_water:.2f} % on zero-water hexes, "
             f"{g.loc[outside, 'percentage'].sum():.3f} % above floor outside the extent"
             + (f" (westmost {centre.x.min():.2f}°E)" if len(g) else "")
         )
