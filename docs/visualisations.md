@@ -468,8 +468,9 @@ resulting hex dilation shrink as resolution rises.
   single full-width layout above); the colorbar carries `extend="min"`
   because the floor clips hexes (production `ALL`: 110 of 1 221, < 0.01 % of
   the stranded weight). `hex_map` sets `extend` from the data against the
-  norm on every panel, so the horizon row's shared norm gets the arrow too. `shore_type` is deliberately **not shown at all** — neither
-  faceted nor broken out in the summary. It is a threshold label on the
+  norm on every panel, so the horizon row's shared norm gets the arrow too.
+  `shore_type` is deliberately **not shown at all** — neither faceted nor
+  broken out in the summary. It is a threshold label on the
   HELCOM BRISK + CLMS flat fraction `ff` at the stranding hour (`flat` if
   `ff >= 50%` else `wall`), a coarser cut than the rate, which scales
   continuously with `ff` through `trap_wall + (trap_flat − trap_wall)·ff/100`
@@ -917,8 +918,8 @@ comparison is the point.
 
 ## Notebook 036 — Seeding map (special case)
 
-[`036_SeedingMap`](../notebooks/036_SeedingMap.py) draws the release set for
-the paper's Data section: the 872 REDLIST cells `010` seeds from
+[`036_SeedingMap`](../notebooks/036_SeedingMap.py) draws the release set: the
+872 REDLIST cells `010` seeds from
 (`data/helcom_fucus_redlist/fucus_release_points.geojson`), as filled cell
 polygons on 029's Baltic extent, in two side-by-side panels, plus the
 right-hand panel on its own as the paper's supplement figure.
