@@ -145,8 +145,9 @@ years, and the age horizon or facet the panel covers) — the share of
 particle-time (survival-weighted particle-time for a member). `dilution` =
 that share per km² of hex water area
 (`water_area_m2` from the 024a key), so a hex that is mostly land is not
-credited with a whole hex of dilution volume. Percentage is linear,
-dilution on the shared decade scale below. Absolute counts are dropped from the headline maps — a count
+credited with a whole hex of dilution volume; in 026, 026a and 034 it is
+instead normalised by the *released* particle-time (below). Percentage is
+linear. Absolute counts are dropped from the headline maps — a count
 is only readable against a release-set size the reader does not have.
 Hexes with `water_area_m2 == 0` carry a percentage but no dilution. The
 percentage scale saturates at the 99th percentile with an over-range
@@ -154,20 +155,30 @@ colorbar arrow: occupancy is concentrated enough that a few hexes sit two
 decades above the bulk, and scaling to the maximum paints every other hex
 the same dark colour.
 
-**Shared dilution scale (026, 026a, 034).** Dilution is a transfer function
-the authors multiply by a per-site biomass, so every dilution figure uses one
-absolute scale: `BoundaryNorm` with one class per decade from the floor
-`dilution_floor` = 10⁻⁵ to 10² % per km² (all of the material in one km²),
-`extend="min"`, hexes below the floor not drawn (the colourbar's under
-triangle is left empty, `under="none"`), one shared colourbar per figure with
-`10^n` tick labels. F = 10⁻⁵ is the largest decade that leaves ≥ 99 % of every
-paper panel's weight above it (pooled over 026 ALL both regimes, the 026a
-overviews and the 034 pair: at most 0.8 % below, a 026a origin at 180 d; 10⁻⁴
-would cut up to 13 %); the runs print each panel's below-floor share. Override:
-`turbo` sampled discretely (one colour per decade) instead of the default
-colormap — seven decades must stay distinguishable and read as absolute
-classes. Considered a per-figure `LogNorm` (percentile floor to maximum);
-rejected, it made the same colour mean different dilutions between figures.
+**Dilution (026, 026a, 034): released-normalised transfer function.**
+`dilution` = Σ weight in the hex over ages `[0, T)` / (`N_released` · `T`) /
+water area (km²) — the fraction of the released particle-time per km² of
+water, so multiplied by a site's released biomass it gives biomass-time per
+km² (authors, 2026-10-27). Weight is survival-weighted (`exp(−A)`) for a
+024f member and plain for the counts store. `N_released · T` is the
+age-bin-0 samples of the pooled releases (sentinel targets included; per
+origin in 026a) times `T / age_bin_days`: 024f's exact denominator
+([survival_occupancy.md](survival_occupancy.md)), held by the counts store
+over `release_hex ≥ 0`. Stranding loss and domain exits therefore lower the
+maps instead of being normalised away, and Σ dilution · area ≤ 1; the runs
+print `remaining / released` per horizon (and per origin). The 90 %-area
+metric (026 → 035) and the median age keep their normalisation over the
+weight present — they describe the shape and age of the cloud that is there.
+One fixed scale for every dilution figure: `BoundaryNorm` from
+`dilution_floor` = 10⁻⁷ to 1 per km² (all released particle-time in one km²),
+two classes per decade (14), `extend="min"`, hexes below the floor not drawn
+(the colourbar's under triangle left empty, `under="none"`), tick labels on
+whole decades, one shared colourbar per figure. Override: `turbo` sampled
+discretely (one colour per class) instead of the default colormap — seven
+decades must stay distinguishable and read as absolute classes. The runs
+print each panel's below-floor share of its weight. Considered a per-figure
+`LogNorm`; rejected, the same colour meant different dilutions between
+figures.
 
 **Sentinel rows.** `release_hex` or `target_hex` of -1 (land-seeded
 particles, obs that left the BSH domain) carry no geometry and are dropped
@@ -373,8 +384,8 @@ the whole domain — it answers "where do propagules *from this subbasin*
 go?". `_outside` (-1) and land-seeded releases are reported, not mapped.
 Each origin is normalised over its own releases (cross-origin totals differ
 by orders of magnitude, so a basin-wide normalisation would wash out the
-smaller sources): a dilution colour is the same share of *that origin's*
-particle-time per km² in every panel, on the shared decade scale; the
+smaller sources): a dilution colour is the same fraction of *that origin's*
+released particle-time per km² in every panel, on the shared scale; the
 percentage figures are linear to the 99th percentile pooled over a figure's
 panels.
 
@@ -412,7 +423,8 @@ is the product's axis.
 
 GeoJSON (EPSG:4326, hex geometry) under `output_root/Exports/<nb>/`, named
 `<nb>_<regime>_<season>_<member|unweighted>[_T<horizon>d][_<origin>][_<year>].geojson`,
-columns `hex_id, weight, percentage, dilution` plus `origin_subbasin` /
+columns `hex_id, weight, percentage, dilution` (026/026a: dilution as
+fraction of released particle-time per km²) plus `origin_subbasin` /
 `release_year` where faceted. GeoJSON over GeoTIFF because the hex
 tessellation is vector. 026's median-age export
 `026_medianage_<regime>_<season>_<member|unweighted>.geojson` adds
@@ -944,8 +956,8 @@ either counts partition raises rather than shrinking one side. Parquet only.
   one figure per view, the two regimes **stacked** (reference on top) under
   **one shared norm** and one horizontal colourbar inset under the lower map
   (the stacked maps are height-limited, so a bar under the whole figure would
-  overrun them), so the same colour is the same share in both; dilution is
-  the shared decade scale, the paper's slowdown figure. The length-ratio
+  overrun them), so the same colour is the same value in both; dilution is
+  released-normalised on the shared scale, the paper's slowdown figure. The length-ratio
   figure stays an output but is not in the paper set (its ratios are in the
   CSV). Shared extent (the validation
   cell prints the particle-time it cuts off — 0 % for 2019). The Baltic is taller than
