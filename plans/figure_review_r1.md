@@ -91,6 +91,42 @@ Diagnostics in `tmp_figreview_dispersal/` (untracked, replicates 026 exactly;
   the mean across the Baltic Proper (median − mean p50 = −8.7 d), bottom
   within ±5 d; spatial pattern unchanged (Spearman ≥ 0.987).
 
+Beaching diagnostics in `tmp_figreview_beaching/` (untracked).
+
+- **Q1:** Fig 2 value per hex = `100 · stranded weight / total released`
+  (`029:321`, `:341-348`), deposits at any age < 180 d. Production member,
+  2016–2024, season ALL: 37,296,956 water-seeded drifters released, 54.3 %
+  stranded, 1,221 hexes receive weight. 1e-3 % = 1 in 100,000 ≈ 373
+  drifters, i.e. ~10 per million released strand on that 6 km stretch
+  within 180 d. Peak hex ≈ 0.98 %; hexes ≥ 1e-3 % hold 99.9 % of stranded
+  weight. 110 hexes sit below the four-decade floor without an `extend`
+  arrow — fix in W1.
+- **Q2:** at tc = inf the rate is `ff/100 · r(w_on) / 3 h` (`024e:229-250`),
+  so ff = 0 strands nothing (verified on 2019 sidecars). The x ≈ 0 column
+  in Fig 4 comes from (a) small-but-nonzero ff integrating over 180 d and
+  (b) a definition mismatch: the rate uses the nearest 500 m land cell's ff
+  (`024d:301-323`), the deposit is binned at the particle's water hex
+  (`024e:321`), and 033's hex ff is the length-weighted mean of sub-segments
+  in that hex (`033:264-286`). Hexes with hex ff < 0.05 receive 1.4 % of
+  stranded weight; 83 % of stranded weight has ff ≥ 50 at deposit. With the
+  rate ∝ ff, the plot mostly hands back the input assumption → **remove**
+  (supplement only with the explainer and the `tcinf` substrate-inert
+  member alongside).
+- **Q5:** 024g weights particle-hours by `exp(−A)` at the particle's current
+  hex (`024g:288-303`); stranded mass vanishes from particle-time, has no
+  sink column, and 028 row-normalises (`028:334-336`), so Fig 30–31 show
+  shares of *surviving* particle-time and per-origin beaching loss
+  (surviving share 0.10–0.92 at 180 d) is normalised away. No double
+  counting. Fig 32–33 (bottom) are unweighted. A "stranded" sink column is
+  available from 024e's `beach_hex` mapped to subbasins.
+- **Q6:** Fig 35 is viridis with one shared LogNorm (vmax 2.02 %, four
+  decades), no `extend`; 31–63 % of hexes per panel fall below the floor
+  and render as uniform dark slabs. Diverging is not meaningful for
+  positive shares. Proposal: discrete `BoundaryNorm` on log-spaced bounds
+  (1e-4 … 3 %) with `extend="both"`; right column as the surviving
+  fraction surv/occ on discrete bins 0–1 (`030:399-411` already computes it).
+
 ## Status
 
-- 2026-10-27: plan written; Q3, Q4 answered; Q0 (user), Q1, Q2, Q5 open.
+- 2026-10-27: plan written; Q1–Q6 answered. Awaiting author decisions on
+  Q0, Fig 4, Fig 7 metric, Fig 30 sink column before implementation.
