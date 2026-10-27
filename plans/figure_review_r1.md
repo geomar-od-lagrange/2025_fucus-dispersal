@@ -180,11 +180,10 @@ PNG paths. Every saved figure stays print-ready (180 mm, 300 dpi,
 ## Status
 
 - 2026-10-27: Q1–Q6 answered, decisions taken; A–D launched.
-- D done (`a5d3296`, `8ff6804`): closure −1.0 % pooled at 30 d, −0.19 % at
-  180 d; stranded share of row 0.08 (Bothnian Sea) – 0.90 (Great Belt) at
-  180 d. Follow-up: 032 Table C reads the 028 T60d emission CSV and must
-  drop the `stranded` rows (within-row ranks are otherwise unchanged by
-  the new denominator).
+- D done (`a5d3296`, `8ff6804`): per-origin closure −4.8 %…+0.05 % at
+  30 d, −0.82 %…+0.01 % at 180 d (028 ALL print); stranded share of row
+  0.08 (Bothnian Sea) – 0.90 (Great Belt) at 180 d. 032 Table C drops the
+  `stranded` rows (`bc924f7`).
 - B: 026 done (`8f0eec5`, median age, share floor at the 5th percentile —
   the 1st kept two estuary hexes); 026a overview code in (`e2d6ef4`),
   production runs checked; overview top at the pooled 99th percentile (`43cd079`;
@@ -198,8 +197,9 @@ PNG paths. Every saved figure stays print-ready (180 mm, 300 dpi,
   (figure is 180 × 231 mm, LaTeX scales it to 0.85 textheight); 036
   `LandSeededShare_r6000m.png` for the supplement.
 - 026a overview v1 unreadable (scale 1e-26…1e2, North Sea half the panel,
-  isobath blobs); being redone: 99th-percentile top, floor top/1e4 with
-  sub-floor hexes masked, Baltic crop, no isobath, geographic panel order.
+  isobath blobs); redone (`e2d6ef4`, `43cd079`): 99th-percentile top, floor
+  top/1e4 with sub-floor hexes masked, Baltic crop, no isobath, geographic
+  panel order.
 - E done (paper `5360545`, `331fc64`; 35 → 19 figures incl. supplement); 032
   Table C drops `stranded` rows (`bc924f7`).
 - Review (2026-10-27) — must fix: seasonal 028/030/026 outputs are still
@@ -209,4 +209,14 @@ PNG paths. Every saved figure stays print-ready (180 mm, 300 dpi,
   per-origin closure (−4.8 %…+0.05 % at 30 d, −0.82 %…+0.01 % at 180 d).
   Also: delete `MeanAge_*`/`026_meanage_*` outputs, rename
   `fig:r5_surviving`, surface overview order T30 → T180, 026a colourbar gap.
-  Fix pass F running.
+  Fixed in pass F (next bullet).
+- Fix pass F done: 028/030/026 seasonal reruns (DJF–SON, surface_stokes
+  member + bottom unweighted for 026), `MeanAge_*`/`026_meanage_*` deleted;
+  032 spec → `SurvivalHeatmaps_*` (`fb16a03`), rerun with 0 gaps, Table C on
+  the new denominator throughout; 026a colourbar `pad=0.01` and zero-water
+  share printed apart from below-floor (`9789a28`), ALL reruns; 034 comment
+  (`34da18c`); manuscript_extension P7 line (`2678249`); paper `c86f721`
+  (bump `54c7b51`): Table C FACTS, ≈ row-sum captions with per-origin
+  closure, `fig:r5_occupancy_surviving`, overviews T30 → T180 regenerated.
+  New: Gdansk Basin puts 3.1 % (30 d) / 4.5 % (180 d) of its particle-time
+  on zero-water hexes (026a surface ALL print) — check before quoting.
