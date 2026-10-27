@@ -220,6 +220,19 @@ PNG paths. Every saved figure stays print-ready (180 mm, 300 dpi,
   closure, `fig:r5_occupancy_surviving`, overviews T30 → T180 regenerated.
   New: Gdansk Basin puts 3.1 % (30 d) / 4.5 % (180 d) of its particle-time
   on zero-water hexes (026a surface ALL print) — check before quoting.
+- W10 done: one extent 9–30.7°E, 53–66°N (`extent_*` params) in 025, 026,
+  026a (per-origin + overview, `overview_extent_csv` gone), 026b, 027, 033
+  (`79ca1d9`); 3 m isobath is the top layer on every map that carries it,
+  back on the 026a overview (`737982a`); only hexes touching the extent are
+  drawn (off-extent patches pushed the 026 median-age title off the page,
+  `8a0ef03`); grids capped at 230 mm, 025 per-origin grid 4 columns; docs
+  `6036658`, `bf29d2e`. Reruns: 026 ALL+seasons × both regimes, 026a ALL,
+  025/027/033 ALL, 034, 035 (stale after 026), 032 with no Gaps. 026b
+  code-only (~15–22 min per run). Weight outside the extent (max): 026
+  surface 0.49 %, bottom 0.004 %; 026a overview surface T30 3.3 %, T180
+  6.4 %, bottom T180 0.05 % (all Kattegat origin); 034 0 %. Paper `3871373`
+  (bump `97899d2`). Open: 025's German-waters zoom (surface) clips its title
+  and colourbar label; 020/023 stay at 5–32°E.
 
 ## Addendum (authors, 2026-10-27): one map extent everywhere
 
