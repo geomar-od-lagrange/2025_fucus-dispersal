@@ -264,3 +264,24 @@ sample = every third zarr, 1.42 M drifters per regime).
   the whole wall cell (moves the problem one cell, unphysical). Cheap 003
   cleanup: mask Stokes on the land mask, not `u_surf == 0`; fix the
   "no-slip walls" wording in docs/stokes_drift.md.
+
+## Pinned time (2026-10-27, `tmp_pinned_time/`, headline numbers re-derived)
+
+Hourly classification of every water-seeded drifter (2019, 4 releases,
+~226 k per regime, 0–180 d): pinned = hourly step < 1 m and within 1e-3
+cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
+
+| | bottom | surface | surface_stokes |
+|---|---|---|---|
+| pinned share of particle-hours, 0–30 / 0–90 / 0–180 d | 0.4 / 3.0 / 7.1 % | 2.6 / 11.1 / 20.7 % | 12.9 / 33.3 / 52.0 % |
+| drifters pinned at day 30 / 90 / 180 | 1.0 / 7.5 / 16.4 % | 5.8 / 23.2 / 39.4 % | 22.0 / 61.3 / 82.5 % |
+| final pin length, median (pinned at end) | 47 d | 59 d | 97 d |
+| final pin ≤ 7 d / ≥ 30 d | 17 / 61 % | 18 / 66 % | 6 / 82 % |
+
+- Not a late artefact: with Stokes half of all particle-hours are pinned and
+  the median final pin starts at day 82. Earlier pin episodes mostly release
+  within hours (median 4 h with Stokes); ~6 % last > 7 d.
+- 10 m step threshold changes the shares by ≤ 4 points. Release spread
+  (surface_stokes, 0–180 d): 38 % (April) to 65 % (October).
+- Stalled in land cells ≤ 0.7 % of particle-hours; stalled in open water
+  ≤ 3 %.
