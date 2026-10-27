@@ -394,6 +394,11 @@ window in the attrs, so without the cut the weighted and the unweighted raw
 matrix would cover different ages.
 Row-normalising is the point of view 2: raw rows differ by orders of
 magnitude with release count, so only the normalised rows compare origins.
+In a survival-weighted run views 2 and 3 gain a last target column
+`stranded` (particle-time removed by beaching, from the 024e store), drawn
+after one blank NaN column so it reads apart from the subbasins without a
+styled separator line; derivation in
+[hexbinning_and_connectivity.md](hexbinning_and_connectivity.md#connectivity-views-028).
 
 Overrides: 180 mm × 300 dpi as above; one figure per horizon, not a panel
 grid (17 HELCOM names are illegible once four panels share a page); run

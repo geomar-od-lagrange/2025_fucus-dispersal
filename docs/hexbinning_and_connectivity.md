@@ -168,6 +168,24 @@ from the matrix and reports the dropped fraction. Three views:
 - **Interannual range** — the emission fraction recomputed per release year,
   reduced to mean / min / max per (origin, target, horizon).
 
+**Stranded column (survival-weighted runs).** `w_obs` counts each hour at
+`exp(−A)`, so a weighted row falls short of the unweighted one by
+`Σ_hours (1 − exp(−A))`. Since `1 − exp(−A(t))` is the weight stranded by age
+`t`, that shortfall over `[0, T)` equals `Σ_deposits weight · (T − age)`. 028
+rebuilds it from the [024e beaching store](beaching.md#store-schema) of the
+same member (same release years and season; deposit age at the
+`beach_age_bin` midpoint; origin = the key's `helcom_subbasin` of
+`release_hex`, as in 024g; `-1` origins dropped) and appends it to views 2
+and 3 as a last target column `stranded`, so the row denominator is
+`Σ w_obs` over named targets + stranded ≈ the origin's unweighted
+particle-time. Without it, row-normalising would show shares of the
+*surviving* particle-time and hide per-origin beaching loss. The notebook
+prints the closure `(Σw_obs + stranded)/Σn_obs − 1` per origin (all targets);
+for the production member, 2016–2024, ALL it is −4.8 %…+0.05 % at 30 d and
+−0.8 %…+0.01 % at 180 d (10-d deposit-age binning). The 024e partitions must
+agree with the 024g ones on window, binning, `output_dt_hours` and the
+rate-model point. Unweighted runs carry no stranded column.
+
 Both stores are cut to one window, ages `< max_age_days` (a 028 parameter,
 default 180 d; horizons default 30/60/90/180 d): 024g records its own window
 in each partition's `df.attrs` and 028 asserts that every pooled partition
@@ -177,7 +195,9 @@ unweighted raw matrix would cover different ages.
 
 Exports land under `output_root/Exports/028/` as long-form CSV,
 `connectivity_<regime>_<season>_<member-or-unweighted>_T<horizon>d_` +
-`{n_obs, emission_fraction, emission_fraction_by_year}.csv`; figures under
+`{n_obs, emission_fraction, emission_fraction_by_year}.csv` (the two
+emission-fraction files carry `target_subbasin == "stranded"` rows in a
+survival-weighted run); figures under
 `output_root/Figures/028/` with the same tags in the filename.
 
 ## Key file (geoparquet, one row per hex)
