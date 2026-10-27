@@ -319,3 +319,24 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
   land-guard kernel with sub-stepping in 010 (rerun); smaller dt (5×
   cost, only reduces); AdvectionAnalytical (Scipy-only in 3.0.6, no
   NestedField).
+
+## Pin sites: grid or physics? (2026-10-28, `tmp_pin_sites/`, key numbers checked in the logs)
+
+- Verdict: mixed. Which coast stretch pins is physical; the exact pin cell is
+  a grid artefact.
+- Physical: 94 % of surface_stokes pins sit on walls with land to the E/N
+  (52 % of walls), where the 2019 mean Stokes is onshore (+1.9 / +1.1 cm/s
+  coarse). Bottom pins sit on W/S walls. Top sites are bay heads and
+  downwind archipelago coasts.
+- Grid: pins form only in corner / dead-end cells (99.9 %; straight walls
+  0.1 %); staircase corners of diagonal coasts hold 24 %, one-cell dead
+  ends 26 %. 30 % of top-90 % pins sit on a wall standing on ≥25 % real
+  water (GSHHS full).
+- Resolution test (the BSH coarse grid is land under the fine nest, so a
+  coarse-only run is impossible): the fine surface_stokes field coarsened
+  6×6 conserving face transport, two releases × ~13.8 k drifters, 180 d.
+  Same drifter's pin site on the two grids: median 13–31 km apart.
+  Distribution overlap cross-grid vs same-grid: 2 km 0.00 vs 0.52–0.66;
+  6 km 0.15 vs 0.63–0.66; 15 km 0.32 vs 0.68; 30 km 0.63–0.65 vs 0.72–0.75.
+- Consequence: per-cell / per-hex hot spots (incl. dilution peaks) are not
+  robust; coast segments ≥ 30 km or subbasins are.
