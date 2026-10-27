@@ -535,6 +535,9 @@ def hex_map(gdf, column, ax, norm, title=None, cbar_label=True):
     hexes, coastline and isobath out of register. An empty ``gdf`` skips
     the hex layer and still renders the backdrop, keeping the grid layout
     stable."""
+    # Only hexes touching the extent: off-extent patches still count in
+    # constrained_layout's bounding box and push the title off the page.
+    gdf = gdf.cx[domain_lon_min:domain_lon_max, domain_lat_min:domain_lat_max]
     if not gdf.empty and gdf[column].notna().any():
         # Colorbar as an inset *under* the map at axes-fraction width 1.0,
         # so it is exactly the map width at any figure size and the panels

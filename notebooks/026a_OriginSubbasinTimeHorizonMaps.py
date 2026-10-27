@@ -547,6 +547,9 @@ def hex_map(
     the hex layer and still renders the backdrop, keeping the grid layout
     stable. ``colorbar=False`` leaves the colorbar to the caller (one
     shared bar for a whole figure)."""
+    # Only hexes touching the extent: off-extent patches still count in
+    # constrained_layout's bounding box and push the title off the page.
+    gdf = gdf.cx[domain_lon_min:domain_lon_max, domain_lat_min:domain_lat_max]
     if not gdf.empty and gdf[column].notna().any():
         colorbar_kwargs = {}
         if colorbar:

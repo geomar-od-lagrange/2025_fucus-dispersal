@@ -321,6 +321,9 @@ coast = gpd.read_file(
 def hex_map(gdf, column, ax, norm, title):
     """One relative-density panel on a plain lon/lat axis: hexes through
     ``norm``, coastline, H0 isobath."""
+    # Only hexes touching the extent: off-extent patches still count in
+    # constrained_layout's bounding box and push the title off the page.
+    gdf = gdf.cx[domain_lon_min:domain_lon_max, domain_lat_min:domain_lat_max]
     gdf.plot(
         ax=ax, column=column, norm=norm,
         missing_kwds={"color": "none"},
