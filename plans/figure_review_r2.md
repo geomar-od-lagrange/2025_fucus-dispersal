@@ -110,3 +110,23 @@ Bothnian Sea · QUA The Quark · BOB Bothnian Bay
   the two lowest decades (10⁻⁵–10⁻³), and the darkest turbo class sits close
   to the black coastline; captions for Fig 4 must carry the season and the
   band (per-release-year min–max).
+- 2026-10-27: **P2 done** (028, 029, 033, 036; G1–G3, Fig 1, 13–16, new
+  Fig 19) — `61da86c`, `a23994a` (028), `05e741a` (029), `b15e018` (033),
+  `13992f4`, `9e64c31` (036), `b9d5b86` (docs; it also swept in two
+  025/027 "model coastline" doc lines another agent had left unstaged).
+  Coastline: same fine-first wet-cell outline, seam strip one fine cell
+  (0.0083°) wide. G2 n/a: none of 028/029/033/036 draws the isobath.
+  Fig 1: borders 0.52, codes at `fontsize=6` at the representative point;
+  KAT, MEC, GDA, ALA nudged off hexes/coast; SOU, GRB, KIE (straits full of
+  hexes) on a white alpha-0.8 backing — leader lines from adjacent land were
+  tried and crossed more hexes. Fig 13–16: west→east codes, cells fill the
+  width (180 × 200 mm with stranded column, 180 × 210 mm without), half-decade
+  `BoundaryNorm` edges 1e-4, 3.16e-4, …, 0.316, 1 (eight classes, peak
+  rounded up to its half-decade edge, four-decade floor, `extend="min"`) in
+  every run; the stranded column sits in the top one or two classes, so each
+  cell prints its share in % and the column is labelled `stranded (%)` on a
+  top axis. Fig 19 replacement: `Figures/033/ShorelineType_r6000m.png`
+  (180 × 231 mm, colourbar below, one-line title). Reruns: 028 ALL/DJF/MAM/
+  JJA/SON × (surface_stokes production member, bottom unweighted), 029
+  ALL + four seasons, 033 ALL, 036. The 028 raw view (not in the paper) spans
+  ~36 decades for the weighted run (tiny `w_obs`); it keeps the full span.
