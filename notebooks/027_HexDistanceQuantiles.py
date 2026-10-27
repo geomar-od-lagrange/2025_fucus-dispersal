@@ -38,15 +38,18 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import shapely
+import xarray as xr
 import matplotlib.pyplot as plt
 from shapely.geometry import box
-from cartopy.io.shapereader import natural_earth
 
 # %% [markdown]
 # # Parameters
 
 # %% tags=["parameters"]
 # Read root of the hex-aggregate store.
+# Read root of the data twin (BSH wet-cell coastline and fine-grid H0).
+data_root = "../data"
 output_root = "../output"
 # Which regime's distance partitions to read; one regime per run.
 regime = "surface"
@@ -89,6 +92,7 @@ SEASON_MONTHS = {
     "ALL": list(range(1, 13)),
 }
 
+data_root = Path(data_root)
 output_root = Path(output_root)
 if season not in SEASON_MONTHS:
     raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
@@ -247,13 +251,40 @@ def grid_height_in(nrows, ncols, aspect, width_in):
     return 1.10 * nrows * (0.72 * width_in / ncols) / aspect
 
 
+# %% [markdown]
+# # Map backdrop: the model coastline
+#
+# The BSH HBMnoku wet-cell outline (`coastline.geojson`, the water the
+# particles were advected on), not a geographic coastline. The file holds
+# both grids' wet polygons; the coarse grid is masked inside the fine nest
+# except an overlap strip, so the merge is the fine polygons plus the coarse
+# ones outside the fine bbox (half a fine cell beyond the outermost fine
+# centres), unioned on a 1e-3° precision grid — the cell edges are stored
+# rounded to 1e-4°, and an exact union leaves a sliver outline along the
+# nest seam.
+
 # %%
-# Natural Earth 10m coastline via cartopy's shapereader (cached locally),
-# clipped to the Baltic extent once.
-_coast_gdf = gpd.read_file(
-    natural_earth(resolution="10m", category="physical", name="coastline")
+h0_fine = xr.open_dataset(
+    data_root / "bsh_hbmnoku_static/static_file_fine/H0_file_fine.nc"
+).H0
+half_lon = 0.5 * abs(float(h0_fine.lon.diff("lon").mean()))
+half_lat = 0.5 * abs(float(h0_fine.lat.diff("lat").mean()))
+fine_bbox = box(
+    float(h0_fine.lon.min()) - half_lon, float(h0_fine.lat.min()) - half_lat,
+    float(h0_fine.lon.max()) + half_lon, float(h0_fine.lat.max()) + half_lat,
 )
-coast_baltic = _coast_gdf.clip(box(extent_lon_min, extent_lat_min, extent_lon_max, extent_lat_max))
+wet = gpd.read_file(data_root / "bsh_hbmnoku_static/coastline.geojson")
+model_water = shapely.union_all(
+    [
+        *wet.loc[wet["grid"] == "fine", "geometry"],
+        *wet.loc[wet["grid"] == "coarse", "geometry"].difference(fine_bbox),
+    ],
+    grid_size=1e-3,
+)
+coast_baltic = (
+    gpd.GeoSeries([model_water], crs="EPSG:4326")
+    .boundary.clip(box(extent_lon_min, extent_lat_min, extent_lon_max, extent_lat_max))
+)
 
 baltic_extent = [extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max]
 # Aspect ratio that keeps 1° lon at lat_mean visually equal to 1° lat.
