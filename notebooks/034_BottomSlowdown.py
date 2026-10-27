@@ -77,6 +77,14 @@ map_horizon_days = 90
 # Isobath to overlay on the maps, in metres of BSH H0 (floor position, see
 # docs/h0_semantics.md). Fucus vesiculosus no longer grows below ~3 m.
 isobath_m = 3.0
+# Map extent (degrees). The 024a key tiles the whole BSH domain including the
+# North Sea, which the bottom regime does not reach; cropping to the Baltic
+# proper spends the page on the hexes that carry particle-time. Set all four
+# to 0 to fall back to the key's full bounds.
+extent_lon_min = 9.0
+extent_lon_max = 30.7
+extent_lat_min = 53.0
+extent_lat_max = 66.0
 
 # %% [markdown]
 # # Parse parameters
@@ -100,9 +108,11 @@ for h in [*time_horizons_days, map_horizon_days]:
 # (rationale in docs/visualisations.md).
 FIGURE_WIDTH_IN = 180 / 25.4
 FIGURE_DPI = 300
-# Vertical inches a map panel needs on top of its map for the horizontal
-# colorbar, the colorbar label and the panel title.
-PANEL_DECORATION_IN = 0.62
+# The map pair is two maps stacked; the Baltic is taller than wide, so two
+# maps at full page width would be ~2.4x the page width tall. The figure is
+# capped at a height that fits one manuscript page with its caption, and the
+# maps take the width that height leaves them.
+MAP_PAIR_HEIGHT_IN = 220 / 25.4
 
 figure_dir = output_root / "Figures" / "034"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -215,25 +225,35 @@ print(
 )
 
 # %% [markdown]
-# # Footprint length vs. horizon
+# # Footprint length ratio vs. horizon
 #
-# One panel per share `q`, one line per regime. `length_km` rather than area
-# because it reads as a distance and grows roughly like a spreading radius.
+# One panel per share `q`: the variant's footprint length over the
+# reference's, `length_km(regime_var) / length_km(regime_ref)`, against the
+# horizon. The ratio is the quantity the comparison asks for; two absolute
+# lines a few per cent apart hide it in the gap between them. `length_km`
+# rather than area because it reads as a distance (the area ratio is its
+# square, in the CSV). One release set on each side, so there is one ratio per
+# horizon and no per-release spread.
 
 # %%
-length = areas.set_index(["regime", "q", "horizon_days"])["length_km"].to_xarray()
-length.attrs = {"long_name": "footprint length √area", "units": "km"}
-length["horizon_days"].attrs = {"long_name": "elapsed time T", "units": "d"}
+length_ratio = (
+    areas[areas["regime"] == regime_var]
+    .set_index(["q", "horizon_days"])["length_ratio_to_ref"].to_xarray()
+)
+length_ratio.attrs = {"long_name": "footprint length ratio"}
+length_ratio["horizon_days"].attrs = {"long_name": "elapsed time T", "units": "d"}
 
 fig, axes = plt.subplots(1, len(quantiles), squeeze=False, layout="constrained")
-# Print-ready width; a line panel at the default 4:3 per-panel aspect.
-fig.set_size_inches(FIGURE_WIDTH_IN, 0.75 * FIGURE_WIDTH_IN / len(quantiles))
+# Print-ready width; one line needs no map aspect, so 0.45 of the page width
+# per panel row reads as a normal wide chart.
+fig.set_size_inches(FIGURE_WIDTH_IN, 0.45 * FIGURE_WIDTH_IN)
 for ax, q in zip(axes.flat, quantiles):
-    length.sel(q=q).plot.line(x="horizon_days", hue="regime", ax=ax)
-    ax.set_title(f"area holding {100 * q:g} % of particle-time")
+    length_ratio.sel(q=q).plot.line(x="horizon_days", ax=ax)
+    # Ratio 1 = no slowdown effect. Drawn in the axes-frame colour so it reads
+    # as a reference, not as a second data series in the cycle's first colour.
+    ax.axhline(1.0, color=plt.rcParams["axes.edgecolor"], zorder=0)
+    ax.set_title(f"{regime_var} / {regime_ref}, area holding {100 * q:g} % of particle-time")
     ax.set_xticks(time_horizons_days)
-    # From zero, so the 0.8x / 1x gap reads as the ratio it is (as in 035).
-    ax.set_ylim(0, None)
 fig_path = figure_dir / f"BottomSlowdown_length_{year}_r{hex_radius}m.png"
 fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
@@ -244,10 +264,11 @@ plt.show()
 #
 # 026's relative-density rendering, notebook-local: `percentage` is the share
 # of the regime's particle-time in `[0, map_horizon_days)`, `dilution` that
-# share per km² of hex water area. The two panels of a view share one colour
-# norm, so the same colour is the same share in both regimes. Extent is the
-# full hex-key domain; the isobath is the BSH H0 3 m contour, fine grid taking
-# precedence where it covers.
+# share per km² of hex water area. The two regimes are stacked (reference on
+# top) under one colour norm and one colourbar under the lower map, so the same
+# colour is the same share in both. Extent is the Baltic crop of the
+# parameters (the key's bounds if all four are 0); the isobath is the BSH H0
+# 3 m contour, fine grid taking precedence where it covers.
 
 # %%
 def to_hex_gdf(counts_df, key_df):
@@ -272,7 +293,12 @@ COLUMN_LABEL = {
     "dilution": "dilution (% per km² water)",
 }
 
-domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max = key.total_bounds
+if any((extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max)):
+    domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max = (
+        extent_lon_min, extent_lat_min, extent_lon_max, extent_lat_max
+    )
+else:
+    domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max = key.total_bounds
 
 h0_fine = xr.open_dataset(
     data_root / "bsh_hbmnoku_static/static_file_fine/H0_file_fine.nc"
@@ -291,31 +317,13 @@ coast = gpd.read_file(
     natural_earth(resolution="10m", category="physical", name="coastline")
 ).clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
 
-# Width/height of the extent in visually equal degrees.
-domain_aspect = (
-    (domain_lon_max - domain_lon_min)
-    * np.cos(np.radians(0.5 * (domain_lat_min + domain_lat_max)))
-) / (domain_lat_max - domain_lat_min)
 
 
 def hex_map(gdf, column, ax, norm, title):
     """One relative-density panel on a plain lon/lat axis: hexes through
-    ``norm`` with a colorbar inset under the map, coastline, H0 isobath."""
-    # Colorbar inset under the map at axes-fraction width 1.0, so it is
-    # exactly the map width at any figure size.
-    cax = ax.inset_axes([0.0, -0.09, 1.0, 0.035])
-    over = bool(gdf[column].max() > norm.vmax)
-    under = bool(gdf[column].min() < norm.vmin)
+    ``norm``, coastline, H0 isobath."""
     gdf.plot(
-        ax=ax, column=column, norm=norm, legend=True, cax=cax,
-        legend_kwds={
-            "label": COLUMN_LABEL[column],
-            "orientation": "horizontal",
-            "extend": {
-                (False, False): "neither", (True, False): "max",
-                (False, True): "min", (True, True): "both",
-            }[(over, under)],
-        },
+        ax=ax, column=column, norm=norm,
         missing_kwds={"color": "none"},
         # Default polygon stroke is a black hairline that dominates at Baltic
         # zoom; matching edge to fill makes the hexes read as a field.
@@ -351,12 +359,22 @@ norms = {
     "dilution": LogNorm(vmin=dilution_pos.quantile(0.01), vmax=dilution_pos.max()),
 }
 for column, norm in norms.items():
-    fig, axes = plt.subplots(1, 2, squeeze=False, layout="constrained")
-    fig.set_size_inches(
-        FIGURE_WIDTH_IN, (FIGURE_WIDTH_IN / 2) / domain_aspect + PANEL_DECORATION_IN
-    )
+    fig, axes = plt.subplots(2, 1, squeeze=False, layout="constrained")
+    fig.set_size_inches(FIGURE_WIDTH_IN, MAP_PAIR_HEIGHT_IN)
     for ax, regime in zip(axes.flat, regimes):
         hex_map(gdfs[regime], column, ax, norm, title=f"{regime}, {map_horizon_days} d")
+    # One colourbar for both maps, inset under the lower one at axes-fraction
+    # width 1.0, so it is exactly the map width at any figure size.
+    values = both[column]
+    fig.colorbar(
+        plt.cm.ScalarMappable(norm=norm),
+        cax=axes[-1, 0].inset_axes([0.0, -0.07, 1.0, 0.03]),
+        orientation="horizontal", label=COLUMN_LABEL[column],
+        extend={
+            (False, False): "neither", (True, False): "max",
+            (False, True): "min", (True, True): "both",
+        }[(bool(values.max() > norm.vmax), bool(values.min() < norm.vmin))],
+    )
     fig_path = (
         figure_dir
         / f"BottomSlowdown_map_{year}_T{map_horizon_days}d_r{hex_radius}m_{column}.png"
@@ -370,8 +388,15 @@ for column, norm in norms.items():
 
 # %%
 for regime, g in gdfs.items():
+    # Particle-time the map extent cuts off, by a point inside each hex.
+    c = g.geometry.representative_point()
+    outside = ~(
+        c.x.between(domain_lon_min, domain_lon_max)
+        & c.y.between(domain_lat_min, domain_lat_max)
+    )
     print(
         f"{regime}: {len(g):,} occupied hexes at {map_horizon_days} d, "
         f"sum(n_obs)={int(g['n_obs'].sum()):,}, "
-        f"top-10 hexes hold {g['percentage'].nlargest(10).sum():.2f} %"
+        f"top-10 hexes hold {g['percentage'].nlargest(10).sum():.2f} %, "
+        f"outside the map extent {g.loc[outside, 'percentage'].sum():.3f} %"
     )

@@ -26,7 +26,7 @@ listed here should be dropped.
 | 031 | Beaching sweep | Per-run (regime + radius + season) | Five statistics across members with interannual bars · where-stranded maps across members |
 | 032 | None — selects, numbers and downscales other notebooks' PNGs | Selection (primary + comparison regime) | Tables A–G · one curated reading order over 025–031 |
 | 033 | Hex shoreline-type map + stranding-vs-substrate panels | Per-run (regime + radius + season + member pair) | Flat fraction per hex · coastline length per hex · stranded weight vs. flat fraction for the production and the substrate-inert member |
-| 034 | Bottom-slowdown comparison | Two regimes (`bottom` vs `bottom_vs0p8`) + one year + radius | Area / √area holding 90 % of particle-time at 30/60/90/180 d · map pair at 90 d |
+| 034 | Bottom-slowdown comparison | Two regimes (`bottom` vs `bottom_vs0p8`) + one year + radius | Area / √area holding 90 % of particle-time at 30/60/90/180 d · √area ratio 0.8× / 1× vs. horizon · stacked map pair at 90 d |
 | 035 | Area time series | Overlaid (one line per regime, each at its 026 weighting tag) + season | Area / √area holding 90 % of particle-time vs. cumulative horizon, every age-bin edge, pooled line + per-year min–max band |
 | 036 | Seeding map | Regime-free (one radius) | The 872 release cells by HELCOM subbasin · land-seeded share per cell |
 
@@ -804,12 +804,25 @@ either counts partition raises rather than shrinking one side. Parquet only.
   area_km2, length_km` and the variant-over-reference area and length ratios.
   Implemented notebook-locally rather than read from 026's areas export,
   because 026 pools a whole season over every year, not a doy subset.
-- **Length vs. horizon** — one panel per `q`, one line per regime (`hue`), so
-  no line-style override is needed to tell four series apart.
-- **Map pair** at `map_horizon_days` — 026's percentage and dilution rendering
-  (horizontal colorbar under each map), one figure per view, the two regimes
-  side by side under **one shared norm** so the same colour is the same share
-  in both; unlike 026's per-panel norms, the comparison is the point here.
+- **Length ratio vs. horizon** — one panel per `q`, one line: the variant's
+  `length_km` over the reference's. The ratio is the answer; two absolute
+  lines ~3 % apart hide it in their gap. One release set per side, so one
+  ratio per horizon and no spread. Ratio 1 (no effect) is an `axhline` in
+  `rcParams["axes.edgecolor"]` — a colour override, so the reference does not
+  take the data line's cycle colour; read off the rcParams, not hardcoded.
+- **Map pair** at `map_horizon_days` — 026's percentage and dilution rendering,
+  one figure per view, the two regimes **stacked** (reference on top) under
+  **one shared norm** and one horizontal colourbar inset under the lower map,
+  so the same colour is the same share in both; unlike 026's per-panel norms,
+  the comparison is the point here. The extent is cropped to the Baltic
+  proper (`extent_*` parameters, 030's defaults; the validation cell prints
+  the particle-time a crop cuts off — 0 % for 2019). The Baltic is taller than
+  wide, so two full-width stacked maps would be ~2.4× the page width tall: the
+  figure height is fixed at 220 mm (`MAP_PAIR_HEIGHT_IN`, one page with its
+  caption) and the maps take the width that leaves them (~95 mm), still about
+  1.6× the linear size of the side-by-side full-domain pair. Considered side by
+  side on the crop (same map size, fills the width); rejected on the authors'
+  request for a stacked pair.
 
 Figures at 180 mm × 300 dpi as above.
 
