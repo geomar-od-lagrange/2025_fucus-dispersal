@@ -18,8 +18,9 @@ set -euo pipefail
 #            [regime] [hex_radius] [season] [member]
 #   season: DJF | MAM | JJA | SON | ALL   (default ALL)
 #   member: "" -> unweighted 024c store (default); a 024g rate-model tag such
-#           as step_wc0p1_ts3_tcinf_tf1_tw0 -> survival-weighted w_obs. Only
-#           surface_stokes has 024d sidecars, hence 024g members.
+#           as step_wc0p1_ts3_tcinf_tf1_tw0 -> survival-weighted w_obs, plus a
+#           "stranded" target column from the same member's 024e store. Only
+#           surface_stokes has 024d sidecars, hence 024e/024g members.
 # e.g.:
 #   sbatch scripts/028_SubbasinConnectivityMatrix_job.sh surface_stokes 6000 SON ""
 #   sbatch scripts/028_SubbasinConnectivityMatrix_job.sh surface_stokes 6000 ALL step_wc0p1_ts3_tcinf_tf1_tw0

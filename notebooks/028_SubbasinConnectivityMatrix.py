@@ -44,6 +44,13 @@
 # 3. **Interannual range** — the emission fraction recomputed per release
 #    year; mean / min / max per (origin, target, horizon).
 #
+# In a survival-weighted run views 2 and 3 carry one extra target column,
+# **stranded**: the particle-time the `exp(−A)` weighting removed from the
+# origin's row, rebuilt from the `024e` beaching store of the same member.
+# With it each row adds up to the origin's *unweighted* particle-time, so the
+# row shows where the released material sits *and* how much of it beached,
+# instead of normalising the beaching loss away.
+#
 # Both stores are cut to the same window, `age < max_age_days`: 024g records
 # its own window in each partition's `df.attrs` (asserted to cover this one),
 # while the 024c store is uncapped, so without the cut the weighted and the
@@ -185,48 +192,54 @@ else:
         rf"HexAgg_connectivity_r{hex_radius}m_{regime}_(\d{{4}})\.parquet$"
     )
 
-files = []
-years_not_read = set()
-for f in sorted(store_root.glob(pattern)):
-    m = year_re.search(f.name)
-    if m is None:
-        continue
-    if int(m.group(1)) in analysis_years:
-        files.append(f)
-    else:
-        years_not_read.add(int(m.group(1)))
-if years_not_read:
-    print(f"on disk but outside release_years, not read: {sorted(years_not_read)}")
-if not files:
-    raise FileNotFoundError(
-        f"no partitions matching {pattern!r} for release years {release_years} "
-        f"at {store_root} — "
-        + ("run 024g." if member else "run 024c.")
-    )
 
-# A year must not carry both a whole-year and monthly survconn partitions —
-# they cover the same releases, and reading both double-counts every row.
-partition_years = []
-whole_year_years = set()
-for f in files:
-    m = year_re.search(f.name)
-    partition_years.append(int(m.group(1)))
-    if member and m.group(2) is None:
-        whole_year_years.add(int(m.group(1)))
-mixed = sorted(y for y in whole_year_years if partition_years.count(y) > 1)
-if mixed:
-    raise ValueError(
-        f"years {mixed} carry both a whole-year and monthly survconn "
-        f"partitions at {store_root}; remove one form before reading"
-    )
+def find_partitions(pattern, year_re, builder):
+    """Partitions in `release_years` and their release years.
+
+    A year must not carry both a whole-year and monthly partitions (the
+    optional `_mMM` group, `year_re` group 2) — they cover the same releases,
+    and reading both double-counts every row.
+    """
+    files = []
+    years_not_read = set()
+    for f in sorted(store_root.glob(pattern)):
+        m = year_re.search(f.name)
+        if m is None:
+            continue
+        if int(m.group(1)) in analysis_years:
+            files.append(f)
+        else:
+            years_not_read.add(int(m.group(1)))
+    if years_not_read:
+        print(f"on disk but outside release_years, not read: {sorted(years_not_read)}")
+    if not files:
+        raise FileNotFoundError(
+            f"no partitions matching {pattern!r} for release years {release_years} "
+            f"at {store_root} — run {builder}."
+        )
+    groups = [year_re.search(f.name).groups() for f in files]
+    years = [int(g[0]) for g in groups]
+    whole_year = {int(g[0]) for g in groups if year_re.groups > 1 and g[1] is None}
+    mixed = sorted(y for y in whole_year if years.count(y) > 1)
+    if mixed:
+        raise ValueError(
+            f"years {mixed} carry both a whole-year and monthly {builder} "
+            f"partitions at {store_root}; remove one form before reading"
+        )
+    return files, years
+
+
+files, partition_years = find_partitions(
+    pattern, year_re, "024g" if member else "024c"
+)
 
 # Keys every pooled 024g partition must share: the reduction window, the
 # binning and the rate-model point. Provenance (builder, git_sha,
 # slurm_job_id) and the partition's identity (release_year, release_month)
 # legitimately differ and are not compared.
 POOLED_KEYS = (
-    "max_age_days", "age_bin_days", "w_c", "tau_strong_hours", "tau_calm_days",
-    "delta", "trap_flat", "trap_wall", "band_m",
+    "max_age_days", "age_bin_days", "output_dt_hours", "w_c", "tau_strong_hours",
+    "tau_calm_days", "delta", "trap_flat", "trap_wall", "band_m",
 )
 
 
@@ -249,6 +262,13 @@ def pooled_attrs(attrs, store):
     return dict(zip(POOLED_KEYS, distinct.pop()))
 
 
+def release_month(year, doy):
+    """Calendar month of `release_doy` in `year` (leap-correct)."""
+    return pd.to_datetime(
+        (year * 1000 + doy.astype("int32")).astype(str), format="%Y%j"
+    ).dt.month
+
+
 parts = []
 store_attrs = []
 for f, year in zip(files, partition_years):
@@ -256,9 +276,7 @@ for f, year in zip(files, partition_years):
     store_attrs.append(df.attrs)
     df = df[df["age_bin"] * age_bin_days < max_age_days].copy()
     df["release_year"] = year
-    df["release_month"] = pd.to_datetime(
-        (year * 1000 + df["release_doy"].astype("int32")).astype(str), format="%Y%j"
-    ).dt.month
+    df["release_month"] = release_month(year, df["release_doy"])
     parts.append(df)
 conn = pd.concat(parts, ignore_index=True)
 print(f"read {len(files)} partition(s), years {sorted(set(partition_years))}; "
@@ -295,6 +313,70 @@ for y in sorted(set(partition_years) - set(years)):
           f"the interannual axis")
 print(f"season {season}: {len(conn):,} rows, years {years}, "
       f"months {sorted(conn['release_month'].unique())}")
+
+# %% [markdown]
+# # Stranded deposits (survival-weighted runs only)
+#
+# `w_obs` counts each hour at the surviving weight `exp(−A)`, so an origin's
+# weighted row is short of its unweighted one by `Σ_hours (1 − exp(−A))`.
+# `1 − exp(−A(t))` is the weight stranded by age `t`, i.e. the sum of the
+# deposits made before `t`, so the shortfall over ages `[0, T)` is
+# `Σ_deposits weight · (T − deposit_age)`. The `024e` beaching store of the
+# same member holds those deposits per `(release_hex, release_doy,
+# beach_age_bin)`; the deposit age is taken at its bin's midpoint, so the
+# reconstruction holds to the 10-d bin resolution. Origin is the key's
+# `helcom_subbasin` of `release_hex` — the assignment 024g makes — and both
+# stores derive from the same 024d sidecars, so the populations match. Same
+# release years and season filter as the connectivity rows; the partitions
+# must agree with the 024g ones on the window, binning and rate-model point.
+
+# %%
+STRANDED = "stranded"
+
+if member:
+    beach_files, beach_years = find_partitions(
+        f"HexAgg_beaching_r{hex_radius}m_{regime}_*_{member}.parquet",
+        re.compile(
+            rf"HexAgg_beaching_r{hex_radius}m_{regime}_(\d{{4}})(?:_m(\d{{2}}))?"
+            rf"_{re.escape(member)}\.parquet$"
+        ),
+        "024e",
+    )
+    key = pd.read_parquet(
+        store_root / f"HexAgg_key_r{hex_radius}m.parquet",
+        columns=["hex_id", "helcom_subbasin"],
+    )
+    hex_subbasin = pd.Series(
+        key["helcom_subbasin"].fillna(-1).astype(int).to_numpy(),
+        index=key["hex_id"].astype(int),
+    )
+
+    deposit_parts = []
+    beach_attrs = []
+    for f, year in zip(beach_files, beach_years):
+        df = pd.read_parquet(
+            f, columns=["release_hex", "release_doy", "beach_age_bin", "weight"]
+        )
+        beach_attrs.append(df.attrs)
+        # Deposits only (the never-beached residual has beach_age_bin -1).
+        df = df[df["beach_age_bin"] >= 0].copy()
+        df["release_year"] = year
+        df["release_month"] = release_month(year, df["release_doy"])
+        deposit_parts.append(df)
+    beach_window = pooled_attrs(beach_attrs, "024e beaching")
+    if beach_window != window:
+        raise ValueError(
+            f"024e partitions {beach_window} disagree with 024g {window}"
+        )
+    deposits = pd.concat(deposit_parts, ignore_index=True)
+    deposits = deposits[deposits["release_month"].isin(season_months)]
+    deposits["origin_subbasin"] = (
+        hex_subbasin.reindex(deposits["release_hex"].to_numpy())
+        .fillna(-1).astype(int).to_numpy()
+    )
+    samples_per_day = 24 / window["output_dt_hours"]
+    print(f"read {len(beach_files)} 024e partition(s): {len(deposits):,} "
+          f"deposit rows, Σweight {deposits['weight'].sum():,.0f} stranded")
 
 # %% [markdown]
 # # Named-subbasin axis and the matrix reduction
@@ -336,13 +418,49 @@ def emission_fraction(m):
     return m.div(m.sum(axis=1).replace(0.0, np.nan), axis=0)
 
 
-def draw(ax, values, norm=None):
-    """imshow one matrix with subbasin names as tick labels."""
+def stranded(dep, horizon):
+    """Particle-time stranding removed from ages `< horizon` d, per named
+    origin, in the store's timestep units: Σ weight · (T − bin midpoint)."""
+    sel = dep[dep["beach_age_bin"] * age_bin_days < horizon]
+    age_mid = (sel["beach_age_bin"] + 0.5) * age_bin_days
+    removed = sel["weight"] * (horizon - age_mid) * samples_per_day
+    return (
+        removed.groupby(sel["origin_subbasin"]).sum()
+        .reindex(named_ids)
+        .fillna(0.0)
+    )
+
+
+def emission_matrix(horizon, year=None):
+    """Emission fraction at `horizon`, pooled or for one release year.
+
+    A survival-weighted run appends the stranded column before normalising,
+    so each row's denominator is the origin's unweighted particle-time.
+    """
+    rows = conn if year is None else conn[conn["release_year"] == year]
+    m = matrix(rows, horizon, value_col)
+    if member:
+        dep = deposits if year is None else deposits[deposits["release_year"] == year]
+        m[STRANDED] = stranded(dep, horizon)
+    return emission_fraction(m)
+
+
+def draw(ax, values, columns, norm=None):
+    """imshow one origin × target matrix with subbasin names as tick labels.
+
+    A trailing stranded column is set off from the subbasins by one blank
+    (NaN) column.
+    """
+    values = np.asarray(values, dtype=float)
+    xpos = list(range(len(columns)))
+    if columns[-1] == STRANDED:
+        values = np.insert(values, len(columns) - 1, np.nan, axis=1)
+        xpos[-1] += 1
     im = ax.imshow(values, norm=norm)
     # Tick labels set at plot time only (AGENTS.md: don't mutate the frame
     # index for presentation).
-    ax.set_xticks(range(len(id_names)))
-    ax.set_xticklabels(id_names, rotation=90)
+    ax.set_xticks(xpos)
+    ax.set_xticklabels([subbasin_id_to_name.get(c, c) for c in columns], rotation=90)
     ax.set_yticks(range(len(id_names)))
     ax.set_yticklabels(id_names)
     ax.set_xlabel("target subbasin")
@@ -378,7 +496,8 @@ print(f"raw matrix {raw.shape}, {dropped:.1%} of {value_col} dropped as -1 "
       f"origin/target")
 
 fig, ax = plt.subplots(layout="constrained")
-im = draw(ax, np.where(raw.to_numpy() > 0, raw.to_numpy(), np.nan), norm=LogNorm())
+im = draw(ax, np.where(raw.to_numpy() > 0, raw.to_numpy(), np.nan), named_ids,
+          norm=LogNorm())
 fig.colorbar(im, ax=ax, label=f"residence ({value_col})")
 # Run context on the figure (centred on the page), horizon on the axes: an
 # axes title is centred on the axes box, which the long subbasin tick labels
@@ -393,13 +512,18 @@ save(fig, f"SubbasinConnectivity_raw_{regime}_{season}_{member_tag}_T{max_age_da
 #
 # `x / x.sum(axis=1)`: the share of an origin's cumulative particle-time
 # (ages `< T` days) that sits in each target. Rows sum to 1, so origins with
-# very different release counts are directly comparable. One figure per
+# very different release counts are directly comparable. In a
+# survival-weighted run the row includes the **stranded** column (last,
+# after a blank gap): the denominator is then the origin's unweighted
+# particle-time and the stranded cell the share of it lost to beaching.
+# One figure per
 # horizon, on a `LogNorm` shared across horizons — the off-diagonal shares
 # span several decades, and a common scale makes the horizons comparable
 # figure to figure.
 
 # %%
-emission = {h: emission_fraction(matrix(conn, h, value_col)) for h in time_horizons_days}
+emission = {h: emission_matrix(h) for h in time_horizons_days}
+targets = emission[time_horizons_days[0]].columns.tolist()
 
 # Shared LogNorm across horizons, floored four decades below the peak: the
 # thinnest off-diagonal shares run to 1e-7 and would otherwise stretch the
@@ -414,7 +538,7 @@ norm = LogNorm(vmin=vmax / 1e4, vmax=vmax)
 for h in time_horizons_days:
     values = emission[h].to_numpy()
     fig, ax = plt.subplots(layout="constrained")
-    im = draw(ax, np.where(values > 0, values, np.nan), norm=norm)
+    im = draw(ax, np.where(values > 0, values, np.nan), targets, norm=norm)
     fig.colorbar(im, ax=ax, label="emission fraction")
     fig.suptitle(f"{regime} — {season} — {member_tag}")
     ax.set_title(f"age < {h} d")
@@ -434,11 +558,7 @@ for h in time_horizons_days:
 ANNOTATE_MAX_N = 12
 
 per_year = {
-    (h, y): emission_fraction(
-        matrix(conn[conn["release_year"] == y], h, value_col)
-    )
-    for h in time_horizons_days
-    for y in years
+    (h, y): emission_matrix(h, year=y) for h in time_horizons_days for y in years
 }
 
 # An origin that releases in no year at all has an all-NaN row in every
@@ -465,7 +585,7 @@ for h in time_horizons_days:
 for h in time_horizons_days:
     mean = spread[h]["mean"]
     fig, ax = plt.subplots(layout="constrained")
-    im = draw(ax, np.where(mean > 0, mean, np.nan), norm=norm)
+    im = draw(ax, np.where(mean > 0, mean, np.nan), targets, norm=norm)
     if len(named_ids) <= ANNOTATE_MAX_N:
         for i in range(len(named_ids)):
             for j in range(len(named_ids)):
@@ -487,14 +607,18 @@ for h in time_horizons_days:
 #
 # Long-form (origin, target, value) rather than wide matrices: the recipients
 # join them against their own tables, and the by-year file needs a mean/min/max
-# triple per cell that a wide layout cannot hold.
+# triple per cell that a wide layout cannot hold. In a survival-weighted run
+# the two emission-fraction files carry `target_subbasin == "stranded"` rows
+# alongside the subbasin targets; the `n_obs` file has none (it is the
+# unweighted residence).
 
 # %%
-def long_form(values, column):
+def long_form(values, columns, column):
+    names = [subbasin_id_to_name.get(c, c) for c in columns]
     return pd.DataFrame(
         {
-            "origin_subbasin": np.repeat(id_names, len(id_names)),
-            "target_subbasin": np.tile(id_names, len(id_names)),
+            "origin_subbasin": np.repeat(id_names, len(names)),
+            "target_subbasin": np.tile(names, len(id_names)),
             column: np.asarray(values).ravel(),
         }
     )
@@ -504,19 +628,19 @@ for h in time_horizons_days:
     stem = f"connectivity_{regime}_{season}_{member_tag}_T{h}d"
 
     n_obs_m = matrix(conn, h, "n_obs")
-    long_form(n_obs_m.to_numpy(), "n_obs").to_csv(
+    long_form(n_obs_m.to_numpy(), named_ids, "n_obs").to_csv(
         export_dir / f"{stem}_n_obs.csv", index=False
     )
 
-    long_form(emission[h].to_numpy(), "emission_fraction").to_csv(
+    long_form(emission[h].to_numpy(), targets, "emission_fraction").to_csv(
         export_dir / f"{stem}_emission_fraction.csv", index=False
     )
 
-    by_year = long_form(spread[h]["mean"], "emission_fraction_mean")
+    by_year = long_form(spread[h]["mean"], targets, "emission_fraction_mean")
     by_year["emission_fraction_min"] = spread[h]["min"].ravel()
     by_year["emission_fraction_max"] = spread[h]["max"].ravel()
     by_year["n_years"] = len(years)
-    by_year = by_year[np.repeat(spread[h]["emitting"], len(id_names))]
+    by_year = by_year[np.repeat(spread[h]["emitting"], len(targets))]
     by_year.to_csv(export_dir / f"{stem}_emission_fraction_by_year.csv", index=False)
 
     print(f"  wrote {stem}_{{n_obs,emission_fraction,emission_fraction_by_year}}.csv")
@@ -540,13 +664,13 @@ for h in time_horizons_days:
     emitting = m.sum(axis=1) > 0
     rows = e[emitting].sum(axis=1)
     assert np.allclose(rows.to_numpy(), 1.0), rows
-    diag = np.diag(e.to_numpy())
+    diag = np.diag(e[named_ids].to_numpy())
     print(
         f"\nage < {h:>4} d: total {value_col} {m.to_numpy().sum():,.0f}, "
         f"mean self-retention {np.nanmean(diag):.3f} "
         f"(min {np.nanmin(diag):.3f}, max {np.nanmax(diag):.3f})"
     )
-    top = e.stack().sort_values(ascending=False)
+    top = e[named_ids].stack().sort_values(ascending=False)
     off = top[[i != j for i, j in top.index]].head(3)
     for (o, t), v in off.items():
         print(f"    top off-diagonal: {subbasin_id_to_name[o]} → "
@@ -557,3 +681,21 @@ if member:
     n = conn["n_obs"].sum()
     print(f"\nsurvival weighting: Σw_obs / Σn_obs = {w / n:.3f} over the "
           f"{season} season, ages < {max_age_days} d")
+
+    # Closure of the stranded column: per named origin, the weighted
+    # particle-time over every target (-1 included) plus the stranded
+    # particle-time against the unweighted particle-time. Off zero only by
+    # the 10-d deposit-age binning.
+    print("\nstranded column: closure (Σw_obs + stranded) / Σn_obs − 1 per "
+          "origin, all targets; stranded share of the row")
+    for h in time_horizons_days:
+        sel = conn[(conn["age_bin"] * age_bin_days < h) & (conn["origin_subbasin"] >= 0)]
+        per_origin = sel.groupby("origin_subbasin")[["w_obs", "n_obs"]].sum()
+        closure = (
+            per_origin["w_obs"] + stranded(deposits, h).reindex(per_origin.index)
+        ) / per_origin["n_obs"] - 1
+        share = emission[h][STRANDED].dropna()
+        print(f"  age < {h:>4} d: closure {closure.min():+.4f} … {closure.max():+.4f}; "
+              f"stranded share {share.min():.3f} … {share.max():.3f} "
+              f"(min {subbasin_id_to_name[share.idxmin()]}, "
+              f"max {subbasin_id_to_name[share.idxmax()]})")
