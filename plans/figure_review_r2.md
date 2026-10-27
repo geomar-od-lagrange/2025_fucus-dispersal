@@ -185,3 +185,29 @@ Bothnian Sea · QUA The Quark · BOB Bothnian Bay
   through it in the dilution consumers (025/026/026a/026b/034; reruns of
   minutes, 026b ~20 min each); or leave as is and state the 0.15 % / Gdansk
   4.5 % in the caption.
+
+## Finding: coastal dilution hot spots and stalled drifters (2026-10-27)
+
+Diagnostics in `tmp_figreview_r2/dilution_coast/` (untracked; 2019 trajectory
+sample = every third zarr, 1.42 M drifters per regime).
+
+- Every hex above 1e-3 per km² is a sliver of model water (0.03–0.45 km² of a
+  93.5 km² hex); its weight is ordinary, the 1/area factor is ×10^2.5–10^3.4.
+  The top 1 % of hexes (skerry coasts: Swedish east coast, Archipelago Sea,
+  Gulfs of Finland and Riga) hold 9.5 % (30 d) – 38.5 % (180 d) of the
+  surface weight.
+- Underneath is real retention: 88.6 % of surface drifters never move ≥ 10 m
+  again by 180 d (median stop day 76; bottom 25.5 %). Stalled drifters keep
+  survival weight (mean exp(−A) 0.44, same as moving ones; `trap_wall = 0`
+  gives walled shores zero stranding rate). 25 % of surface positions sit
+  exactly on coarse-grid F-points (cell corners) — the corner trap of
+  `plans/done/corner_theory.md`, whose ε-floor fix was never wired into 010.
+  To be verified before acting on it.
+- Land seeds are excluded correctly (both regimes count water-seeded
+  drifters: surface N = 37,296,956, bottom 37,277,160).
+- Options, by soundness of the result: (1) floor the dilution area at ¼ hex
+  (parquet consumers only, minutes; display fix only); (2) treat
+  stopped-for-good drifters as stranded (024d moved-flag + 024e/f/g
+  reducers, ~20 core-hours, plus the 024 counts rebuild for bottom; a
+  methods decision); (3) fix the corner trap in 010 and rerun everything.
+- Status: awaiting the authors' decision; dilution colour range on hold.
