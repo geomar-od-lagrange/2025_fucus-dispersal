@@ -187,8 +187,8 @@ PNG paths. Every saved figure stays print-ready (180 mm, 300 dpi,
   the new denominator).
 - B: 026 done (`8f0eec5`, median age, share floor at the 5th percentile —
   the 1st kept two estuary hexes); 026a overview code in (`e2d6ef4`),
-  production runs pending a visual check (pooled scale may span ~10
-  decades; cap the top at a high percentile if it reads flat).
+  production runs checked; overview top at the pooled 99th percentile (`43cd079`;
+  the 99.9th left basin interiors in the bottom decade).
 - C done (`c5c79ec`, `2d41525`): 034 ratio 0.97–0.98 (length) across
   30–180 d; map pair stacked at 220 mm height on a Baltic crop (9–30.7°E,
   53–66°N), each map ~1.6× the old area. 030 on `magma_r` discrete log bins,
@@ -198,7 +198,15 @@ PNG paths. Every saved figure stays print-ready (180 mm, 300 dpi,
   (figure is 180 × 231 mm, LaTeX scales it to 0.85 textheight); 036
   `LandSeededShare_r6000m.png` for the supplement.
 - 026a overview v1 unreadable (scale 1e-26…1e2, North Sea half the panel,
-  isobath blobs); being redone: 99.9th-percentile top, floor top/1e4 with
+  isobath blobs); being redone: 99th-percentile top, floor top/1e4 with
   sub-floor hexes masked, Baltic crop, no isobath, geographic panel order.
-- E (paper) running with placeholders for the overview figures; 032
-  Table C drop of `stranded` rows running.
+- E done (paper `5360545`, `331fc64`; 35 → 19 figures incl. supplement); 032
+  Table C drops `stranded` rows (`bc924f7`).
+- Review (2026-10-27) — must fix: seasonal 028/030/026 outputs are still
+  the 10-20 versions, so 032 Table C mixes denominators and its Gaps entry
+  (`SurvivalFraction_*`, spec at `032:1066-1072`) is a stale consumer;
+  paper Table C FACTS stale; row-sum captions must say ≈ with the printed
+  per-origin closure (−4.8 %…+0.05 % at 30 d, −0.82 %…+0.01 % at 180 d).
+  Also: delete `MeanAge_*`/`026_meanage_*` outputs, rename
+  `fig:r5_surviving`, surface overview order T30 → T180, 026a colourbar gap.
+  Fix pass F running.
