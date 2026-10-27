@@ -70,10 +70,12 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import xarray as xr
+from matplotlib.cm import ScalarMappable
 from matplotlib.colors import LogNorm
 from pyproj import Transformer
 from shapely.geometry import box
-from cartopy.io.shapereader import natural_earth
+from shapely.ops import unary_union
 
 from hextraj import HexProj
 ```
@@ -84,8 +86,9 @@ from hextraj import HexProj
 # Read root of the hex-aggregate store.
 output_root = "../output"
 # Read root of the data twin: the Fucus release sites 010 seeds from, the
-# HELCOM subbasin polygons drawn on the where-stranded map and the
-# shoreline-class table the substrate contrast reads.
+# HELCOM subbasin polygons drawn on the where-stranded map, the BSH wet-cell
+# coastline every map draws and the shoreline-class table the substrate
+# contrast reads.
 data_root = "../data"
 # Which regime's beaching partitions to read; one regime per run.
 regime = "surface_stokes"
@@ -155,6 +158,8 @@ subbasins_path = data_root / "helcom_subbasins_2022" / "HELCOM_subbasins_2022_le
 shoreclass_path = (
     data_root / "shoreclass_bsh_coastline" / "bsh_coastline_k2_flatfraction.parquet"
 )
+coastline_path = data_root / "bsh_hbmnoku_static" / "coastline.geojson"
+h0_fine_path = data_root / "bsh_hbmnoku_static" / "static_file_fine" / "H0_file_fine.nc"
 if season not in SEASON_MONTHS:
     raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
 season_months = SEASON_MONTHS[season]
@@ -205,6 +210,11 @@ release_marker_lw = 0.4
 # The map is anchored to the bottom of its cell, so a seed that is too tall
 # only leaves a band above the title and never clips the colorbar label.
 STRANDED_DECOR_IN = 0.75
+# Subbasin border stroke on the where-stranded map (docs/visualisations.md).
+basin_border_lw = 0.52
+# Subbasin code labels: small enough to sit inside the narrow western
+# subbasins at 180 mm page width, large enough to read in print.
+basin_label_fontsize = 6
 
 figure_dir = output_root / "Figures" / "029"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -337,11 +347,13 @@ print(f"beaching rows: {len(beaching):,}; released drifters (Σweight) "
 
 `hex_gdf` sums the stranded weight over a hex column, converts it to a
 percentage of the released drifters and joins to the key geometry
-(dropping the `-1` sentinel); `hex_map` draws hex polygons +
-coastline on a plain EPSG:4326 axis (as 025/026), with the colorbar as an
-inset axes at axes-fraction height 1.0 right of the map (or width 1.0 under
-it) so it is exactly the map's size — a fixed-aspect map never fills its
-gridspec cell, and a cell-sized colorbar overshoots it.
+(dropping the `-1` sentinel); `hex_map` draws hex polygons + the model
+coastline on a plain EPSG:4326 axis (as 025/026). A single map takes its
+colorbar as an inset axes at axes-fraction height 1.0 right of the map (or
+width 1.0 under it) so it is exactly the map's size — a fixed-aspect map
+never fills its gridspec cell, and a cell-sized colorbar overshoots it. A
+panel grid on one norm passes `cbar=None` and gets one shared colorbar under
+the grid instead.
 
 ```python
 def hex_gdf(df, hex_col):
@@ -365,29 +377,38 @@ def log_norm(values):
     return LogNorm(vmin=vmin, vmax=vmax)
 
 
-def hex_map(gdf, ax, norm=None, title=None, label=None, cbar_below=False):
-    """Hex choropleth + coastline on a lon/lat axis. `norm=None` → linear
-    default scale; a `LogNorm` → shared log scale across panels. The colorbar
-    sits right of the map at its full height, or with `cbar_below` under it at
-    its full width; it carries an `extend` arrow wherever values fall outside
-    the norm (the log norm's four-decade floor clips the sparse tail)."""
+def extend_of(values, norm):
+    """Colorbar `extend` for `values` drawn on `norm`: an arrow wherever values
+    fall outside it (the log norm's four-decade floor clips the sparse tail)."""
+    below = norm is not None and bool((values < norm.vmin).any())
+    above = norm is not None and bool((values > norm.vmax).any())
+    return {(False, False): "neither", (True, False): "min",
+            (False, True): "max", (True, True): "both"}[below, above]
+
+
+def hex_map(gdf, ax, norm=None, title=None, label=None, cbar="right"):
+    """Hex choropleth + model coastline on a lon/lat axis. `norm=None` →
+    linear default scale; a `LogNorm` → shared log scale across panels. The
+    colorbar sits right of the map at its full height (`cbar="right"`), under
+    it at its full width (`"below"`), or is left to the caller (`None`)."""
     if not gdf.empty:
-        cax = ax.inset_axes(
-            [0.0, -0.045, 1.0, 0.022] if cbar_below else [1.02, 0.0, 0.035, 1.0]
-        )
-        if cbar_below:
+        legend_kwds = {}
+        cax = None
+        if cbar is not None:
+            cax = ax.inset_axes(
+                [0.0, -0.045, 1.0, 0.022] if cbar == "below" else [1.02, 0.0, 0.035, 1.0]
+            )
+            legend_kwds = {
+                "orientation": "horizontal" if cbar == "below" else "vertical",
+                "extend": extend_of(gdf["value"], norm),
+            } | ({"label": label} if label else {})
+        if cbar == "below":
             # Bottom-anchored, so constrained_layout's room for the bar under
             # the map holds; centred, the map drifts down and clips the label.
             ax.set_anchor("S")
-        below = norm is not None and bool((gdf["value"] < norm.vmin).any())
-        above = norm is not None and bool((gdf["value"] > norm.vmax).any())
         gdf.plot(
-            ax=ax, column="value", norm=norm, legend=True, cax=cax,
-            legend_kwds={
-                "orientation": "horizontal" if cbar_below else "vertical",
-                "extend": {(False, False): "neither", (True, False): "min",
-                           (False, True): "max", (True, True): "both"}[below, above],
-            } | ({"label": label} if label else {}),
+            ax=ax, column="value", norm=norm, legend=cbar is not None, cax=cax,
+            legend_kwds=legend_kwds or None,
             edgecolor="face", linewidth=hex_seam_lw, zorder=1,
         )
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
@@ -409,6 +430,36 @@ def grid_height_in(nrows, ncols, aspect, width_in):
     return 1.10 * nrows * (0.72 * width_in / ncols) / aspect
 ```
 
+# Model coastline
+
+Every map draws the coastline the particles were advected against: the
+outline of the BSH HBMnoku wet cells (`bsh_hbmnoku_static/coastline.geojson`,
+the polygons 024a takes the hex water area from), not a generic shoreline
+that disagrees with the model grid by up to a coarse cell. The fine nest
+takes precedence over the coarse grid inside its bounding box (024a's
+merge), and the edges along that box are dropped: there the fine grid's
+water simply stops in open sea (the nest seam), which is no coast.
+
+```python
+def model_coastline(clip_box):
+    """BSH wet-cell outline as lines, fine nest first, nest seam removed,
+    clipped to `clip_box`."""
+    wet = gpd.read_file(coastline_path)
+    h0_fine = xr.open_dataset(h0_fine_path)
+    pad_lon = abs(float(h0_fine.lon.diff("lon").mean())) / 2
+    pad_lat = abs(float(h0_fine.lat.diff("lat").mean())) / 2
+    fine_bbox = box(
+        float(h0_fine.lon.min()) - pad_lon, float(h0_fine.lat.min()) - pad_lat,
+        float(h0_fine.lon.max()) + pad_lon, float(h0_fine.lat.max()) + pad_lat,
+    )
+    fine = unary_union(wet.loc[wet["grid"] == "fine", "geometry"].tolist())
+    coarse = unary_union(wet.loc[wet["grid"] == "coarse", "geometry"].tolist())
+    lines = unary_union([fine.boundary, coarse.difference(fine_bbox).boundary])
+    # One fine cell either side of the bbox edge: the seam and nothing else.
+    lines = lines.difference(fine_bbox.exterior.buffer(2 * pad_lat))
+    return gpd.GeoSeries([lines], crs="EPSG:4326").clip(clip_box)
+```
+
 ```python
 # The hex key tiles the full BSH domain (North Sea included); the extent
 # follows it, and beaching occupies wherever it actually reaches.
@@ -419,9 +470,7 @@ if any((extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max)):
 else:
     lon_min, lat_min, lon_max, lat_max = key.total_bounds
 extent = [lon_min, lon_max, lat_min, lat_max]
-coast = gpd.read_file(
-    natural_earth(resolution="10m", category="physical", name="coastline")
-).clip(box(lon_min, lat_min, lon_max, lat_max))
+coast = model_coastline(box(lon_min, lat_min, lon_max, lat_max))
 domain_aspect = (
     (lon_max - lon_min) * np.cos(np.radians(0.5 * (lat_min + lat_max)))
 ) / (lat_max - lat_min)
@@ -455,7 +504,7 @@ print(f"  in {pd.unique(release_hex_of_cell).size:,} hexes; key hexes with "
       f"fucus_area_m2 > 0: {int((key['fucus_area_m2'] > 0).sum()):,}")
 ```
 
-# Subbasin borders
+# Subbasin borders and codes
 
 The HELCOM level-2 subbasins every per-subbasin readout below (and 026a,
 028) groups by, drawn on the where-stranded map as the edges two polygons
@@ -465,8 +514,47 @@ which would smear over exactly the coastal hexes the map is about; the
 shared edges are the basin-to-basin borders alone. The Kattegat's open edge
 to the Skagerrak, shared with no polygon, is therefore not drawn.
 
+Each subbasin is labelled with its three-letter code — the key to 028's
+connectivity axes — at the polygon's `representative_point` (always inside
+the polygon), moved by hand only where the label would sit on the hexes or
+the coastline (`LABEL_AT`). The Sound, the Great Belt and Kiel Bay are
+narrow straits filled with stranding hexes from shore to shore, so no spot
+in or near them is clear of data: their codes stay at the representative
+point on a small white backing (`BOXED`), which hides less than a leader
+line from adjacent land would cross.
+
 ```python
-subbasin_outline = gpd.read_file(subbasins_path).to_crs(4326).boundary
+# Three-letter subbasin codes, west → east (the order 028's axes use).
+SUBBASIN_CODE = {
+    "Kattegat": "KAT", "The Sound": "SOU", "Great Belt": "GRB", "Kiel Bay": "KIE",
+    "Bay of Mecklenburg": "MEC", "Arkona Basin": "ARK", "Bornholm Basin": "BOR",
+    "Gdansk Basin": "GDA", "Eastern Gotland Basin": "EGB",
+    "Western Gotland Basin": "WGB", "Gulf of Riga": "GRI",
+    "Northern Baltic Proper": "NBP", "Gulf of Finland": "GFI", "Åland Sea": "ALA",
+    "Bothnian Sea": "BOS", "The Quark": "QUA", "Bothnian Bay": "BOB",
+}
+# Hand placements (lon, lat) where the representative point does not read,
+# checked on 2x crops of the where-stranded map.
+LABEL_AT = {
+    "KAT": (11.35, 57.05),  # off Anholt's hexes, open Kattegat
+    "MEC": (11.90, 54.42),  # between the Fehmarn and Rostock hex chains
+    "GDA": (19.25, 54.76),  # off the Gulf of Gdansk coast hexes
+    "ALA": (19.47, 59.93),  # off the Swedish coast and Åland's hexes
+}
+BOXED = {"SOU", "GRB", "KIE"}
+
+subbasins = gpd.read_file(subbasins_path).to_crs(4326)
+subbasin_outline = subbasins.boundary
+basin_label = pd.DataFrame(
+    {
+        "code": subbasins["level_2"].map(SUBBASIN_CODE),
+        "lon": subbasins.representative_point().x,
+        "lat": subbasins.representative_point().y,
+    }
+)
+assert basin_label["code"].notna().all(), "subbasin without a code"
+for code, (lon, lat) in LABEL_AT.items():
+    basin_label.loc[basin_label["code"] == code, ["lon", "lat"]] = lon, lat
 basin_borders = gpd.GeoSeries(
     [
         a.intersection(b)
@@ -509,10 +597,20 @@ fig.set_size_inches(FIGURE_WIDTH_IN, FIGURE_WIDTH_IN / domain_aspect + STRANDED_
 hex_map(gdf_stranded, ax, norm=strand_norm,
         title="stranded, Fucus release sites overlaid"
         if show_release_points else "stranded",
-        label="stranded (% of released)", cbar_below=True)
-# Override: neutral mid-grey hairline subbasin borders (as 036), so a border
+        label="stranded (% of released)", cbar="below")
+# Override: neutral mid-grey thin subbasin borders (as 036), so a border
 # reads neither as coastline (black) nor as part of the hex field.
-basin_borders.plot(ax=ax, color="0.5", linewidth=0.4, zorder=2)
+basin_borders.plot(ax=ax, color="0.5", linewidth=basin_border_lw, zorder=2)
+for row in basin_label.itertuples():
+    # Override: small centred code labels, the key to 028's axes; a tight
+    # white backing only where the label has to sit on the hexes.
+    ax.text(
+        row.lon, row.lat, row.code, ha="center", va="center",
+        fontsize=basin_label_fontsize, zorder=4,
+        bbox=dict(boxstyle="square,pad=0.1", facecolor="white", edgecolor="none",
+                  alpha=0.8)
+        if row.code in BOXED else None,
+    )
 if show_release_points:
     # Hollow magenta rings, one per REDLIST release cell; style constants and
     # their rationale are at the top of the notebook.
@@ -721,8 +819,10 @@ plt.show()
 Cumulative where-stranded density for strandings at ages < T, as a
 percentage of all released drifters. `beach_age_bin` bins age at
 `age_bin_days`, so horizon T keeps `beach_age_bin < T // age_bin_days`
-(strandings in bins fully within T). A shared `LogNorm` across horizons
-makes the fill-in over time legible.
+(strandings in bins fully within T). Every panel is on the where-stranded
+map's `LogNorm` — the horizons are cumulative, so the full-window deposit is
+the largest any panel reaches — with one shared colorbar under the row, so
+the fill-in over time reads on the same scale as the map above.
 
 ```python
 horizon_bins = {h: h // age_bin_days for h in time_horizons_days}
@@ -731,16 +831,20 @@ gdfs = {
     for h in time_horizons_days
 }
 all_h = pd.concat([g["value"] for g in gdfs.values() if not g.empty])
-horizon_norm = log_norm(all_h)
 
 ncols = len(time_horizons_days)
 fig, axes = plt.subplots(1, ncols, layout="constrained", squeeze=False)
+# Each map takes a full column (no per-panel colorbar), plus the titles above
+# and the shared colorbar band below.
 fig.set_size_inches(
-    FIGURE_WIDTH_IN, grid_height_in(1, ncols, domain_aspect, FIGURE_WIDTH_IN)
+    FIGURE_WIDTH_IN, FIGURE_WIDTH_IN / ncols / domain_aspect + STRANDED_DECOR_IN
 )
 for ax, h in zip(axes.flat, time_horizons_days):
-    hex_map(gdfs[h], ax, norm=horizon_norm, title=f"stranded by {h} d",
-            label="stranded (% of released)")
+    hex_map(gdfs[h], ax, norm=strand_norm, title=f"stranded by {h} d", cbar=None)
+fig.colorbar(
+    ScalarMappable(norm=strand_norm), ax=axes, location="bottom",
+    extend=extend_of(all_h, strand_norm), label="stranded (% of released)",
+)
 fig_path = figure_dir / f"BeachingHorizons_{regime}_r{hex_radius}m_{season}_{member}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
 fig.savefig(fig_path, dpi=FIGURE_DPI)
