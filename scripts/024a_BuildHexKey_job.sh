@@ -14,6 +14,9 @@ repo_root=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
 
 hex_radius="${1:-6000}"
+# Shoreward snap cap for the HELCOM subbasin assignment, in hex radii
+# (docs/hexbinning_and_connectivity.md). 0 disables the snap.
+subbasin_snap_hex_radii="${2:-1.0}"
 
 mkdir -p notebooks_executed/Visualisations/
 
@@ -23,6 +26,7 @@ pixi run papermill --cwd notebooks/ \
     -p data_root ${repo_root}/data \
     -p output_root ${output_root} \
     -p hex_radius ${hex_radius} \
+    -p subbasin_snap_hex_radii ${subbasin_snap_hex_radii} \
     -k python
 
 jobinfo

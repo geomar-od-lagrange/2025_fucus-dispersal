@@ -85,17 +85,22 @@ between commands — pass relative paths to tools (e.g.
 `(cd notebooks && ...)` for one-off needs. Don't pass `-C <path>` to
 `git` for ordinary repo-root operations; it already operates on the cwd.
 
-**`./data/` is a submodule — pwd matters.** `./data/` points at the data
-twin repo (see §Data access), so git commands inside `data/` act on the
-*submodule*, not the main repo. A plain `git status` in `data/` reports
+**`./data/` and `./paper/` are submodules — pwd matters.** Both point at
+foreign repos (see §Data access and §Manuscript), so git commands inside
+them act on the *submodule*, not the main repo. A plain `git status` in `data/` reports
 only twin-side changes and ignores every modification in the main tree;
 `git rm --cached -r data/` from inside `data/` resolves `data/data/` and
 fails outright. Never leave cwd sitting inside `data/` between unrelated
-commands — if you need to operate on the submodule (fetch, pull, the
-rare twin push), use an explicit `(cd data && git <cmd>)` subshell so
-cwd returns to the repo root automatically, or prefix a single command
-with `git -C data <cmd>` (this is the one exception to the "no `-C`"
-rule above).
+commands — if you need to operate on a submodule (fetch, pull, the rare
+twin push), use an explicit `(cd data && git <cmd>)` subshell so cwd
+returns to the repo root automatically, or prefix a single command with
+`git -C data <cmd>` (this is the one exception to the "no `-C`" rule
+above).
+
+A submodule checkout does not follow the superproject across branches.
+After `git switch`, `git status` reports ` M data` whenever the recorded
+gitlink and the checkout disagree; run `git submodule update` to
+reconcile, and never `git add` a gitlink you did not deliberately move.
 
 ## Pipeline stages
 
@@ -124,17 +129,39 @@ filename.
   The heavy trajectory + raw-Stokes pass. `notebooks/024e_*` (stranding
   weight) and `notebooks/024f_*` (survival-weighted occupancy) are
   seconds-per-zarr reducers over it, one store per rate-model member.
+- `notebooks/024g_*` — survival-weighted connectivity: the same `exp(−A)`
+  weighting as 024e/024f applied to 024c's origin→target subbasin axis,
+  reduced from the 024d sidecar. One store per rate-model member; emits
+  both `w_obs` and `n_obs` so 028 compares weighted and unweighted on one
+  population (real drifters only — unlike 024c, which keeps land seeds).
 - `notebooks/025_*`, `notebooks/026_*`, `notebooks/026a_*`,
   `notebooks/026b_*`, `notebooks/027_*`, `notebooks/028_*`,
   `notebooks/029_*`, `notebooks/030_*`, `notebooks/031_*` — lightweight
-  parquet-only consumers (no Dask cluster): hex density (025),
-  elapsed-time-horizon density via the counts `age_bin` axis (026), the
-  same horizon maps split per origin subbasin (026a) and per origin
-  subbasin × release year (026b), per-source-hex crow-flies distance
-  quantiles via the 024b store (027), the subbasin connectivity matrix
-  from the 024c store (028), beaching maps (029) and survival occupancy
+  parquet-only consumers (no Dask cluster): hex relative-density maps —
+  share of particle-time and dilution per km² of hex water area, one
+  release season per run with the `release_years` (2016–2024) pooled, from the 024
+  counts (unweighted) or 024f (survival-weighted, via the `member`
+  parameter) store (025), the same at cumulative elapsed-time horizons via
+  the `age_bin` axis plus the median particle age per hex and the water area
+  holding 90 % of the cloud (026), split per origin subbasin (026a) and per origin subbasin ×
+  release year (026b), per-source-hex crow-flies distance
+  quantiles via the 024b store (027), the subbasin connectivity views from
+  the 024c (unweighted) or 024g (survival-weighted, via the `member`
+  parameter) stores — raw matrix, row-normalised emission fraction per age
+  horizon, and interannual range, with CSV exports (028), beaching maps
+  and the afloat-by-origin-subbasin table (029) and survival occupancy
   heatmaps (030) for one 024e/024f member, and the rate-model sweep
   across members (031).
+- `notebooks/034_*` — bottom-slowdown illustration: `bottom` against the
+  `bottom_vs0p8` variant (010 at `velocity_scale = 0.8`) on the same
+  release doys of one year, area holding 90 % of particle-time per
+  horizon plus a map pair, from the 024 counts store.
+- `notebooks/035_*` — area time series: the area holding 90 % of
+  particle-time against the cumulative horizon, one line per regime with
+  the interannual band, read from 026's area CSVs (so after 026).
+- `notebooks/036_*` — seeding map: the release cells by HELCOM subbasin
+  (the 024a key's assignment) and the land-seeded share per cell, read
+  from the first two time steps of one regime-year of trajectory zarrs.
 
 ## Data access
 
@@ -148,7 +175,9 @@ plain clone. Top-level layout (`<source>_<dataset>`):
 geojson baked by 000), `bsh_hbmnoku_static/` (BSH static grids
 including H0 in `static_file_{fine,coarse}/` plus the wet-cell
 coastline geojsons), `bsh_hbmnoku_demo/` (one-day BSH HBMnoku c/h/t/z
-demo subset), and `cmems_stokes_sample/` (one-day Stokes drift) — all
+demo subset), `cmems_stokes_sample/` (one-day Stokes drift), and
+`shoreclass_bsh_coastline/` (per-sub-segment `flat_fraction` of the BSH
+coastline, consumed by 024d) — all
 under the attributions listed in `ATTRIBUTION.md`.
 
 `scripts/obtain/*.sh` is the canonical recipe for each input from
@@ -171,6 +200,28 @@ the repo directory.
 - For CMEMS data, prefer `copernicusmarine.open_dataset` (or the
   existing `notebooks/002_download_stokes.py` for bulk pulls) with
   minimal arguments.
+
+## Manuscript
+
+The paper lives in `./paper/`, a submodule backed by the Overleaf
+project at <https://git.overleaf.com/6a7b133843b2b231750cbbd0>. Access
+needs the authors' Overleaf credentials, so `.gitmodules` marks it
+`update = none` and ordinary clones skip it; authors opt in with
+`git submodule update --init --checkout paper`.
+
+**Humans write the prose; agents supply the facts.** An agent's job in
+`paper/` is to keep the factual scaffolding true to the code — run
+parameters, dataset provenance, method settings, counts, figure
+inventory — expressed as terse keyword material a human then turns into
+sentences. Do not draft narrative paragraphs, argue results, or write an
+abstract, and never leave prose that asserts a number the pipeline has
+not produced. Every fact carries a pointer to where it came from
+(notebook, docs page, or job script) so the human writing around it can
+check it.
+
+**Pushing to `paper/` publishes to Overleaf**, where co-authors see the
+change immediately. Commit inside the submodule only when asked, and
+push only when explicitly told to.
 
 ## Conventions
 
@@ -232,14 +283,13 @@ parameters cell, not the filename.
 `../output/...`) resolve against the notebook's directory.
 
 **Format.** New notebooks use `py:percent,md,ipynb` with the `.py` as the
-source of truth (edit the `.py`, then `jupytext --sync`); legacy `02x`
-notebooks predate this and stay `md,ipynb` (no `.py`) until otherwise
-touched. Commit **every** paired form — for new notebooks that's `.py`,
+source of truth (edit the `.py`, then `jupytext --sync`). The notebooks
+that predate this and still have no `.py` twin are `000`, `020`,
+`021`, `022` and `023`; they stay `md,ipynb` until
+otherwise touched. Commit **every** paired form — for new notebooks that's `.py`,
 `.md`, and the code-only `.ipynb`; never commit executed notebooks into
 `notebooks/` (full sync/strip/execute workflow in the jupytext skill
 linked above).
-- Run papermill with `--cwd notebooks/` so in-notebook relative paths
-  (`../data/…`, `../output/…`) resolve against `notebooks/`.
 - Markdown cells for narrative; clean code cells for execution.
 - Well-scoped cells — don't mix imports, parameters, and calculations.
 - Every notebook must have one early parameters cell tagged `"parameters"`
@@ -282,6 +332,10 @@ kwargs that override defaults until a real need shows up.** Concretely:
   Natural Earth or OSM tiles when a basemap is needed.
 - Prefer xarray's built-in plotting (`.plot`, `.plot.line`, `.plot.scatter`,
   faceting via `col=` / `row=` / `hue=`) over raw matplotlib.
+
+One standing exception: the `025`–`036` figure notebooks save print-ready
+figures at a fixed 180 mm page width and 300 dpi, because those PNGs *are*
+the manuscript figures — see [docs/visualisations.md](docs/visualisations.md).
 
 When a default genuinely doesn't read, prefer reshaping the data
 (faceting, hue) before reaching for explicit styling. If you do override
