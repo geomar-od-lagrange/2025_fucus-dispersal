@@ -35,6 +35,7 @@
 # `length_km = sqrt(area_km2)` is the side of a square of that area.
 
 # %%
+import itertools
 from pathlib import Path
 
 import geopandas as gpd
@@ -52,7 +53,8 @@ from shapely.ops import unary_union
 # # Parameters
 
 # %% tags=["parameters"]
-# Read root of the data twin (BSH static H0 for the isobath overlay).
+# Read root of the data twin (BSH static H0 for the isobath overlay, the BSH
+# wet-cell coastline, the HELCOM subbasins).
 data_root = "../data"
 # Read root of the hex-aggregate store; write root for figures and exports.
 output_root = "../output"
@@ -124,11 +126,8 @@ for h in [*time_horizons_days, map_horizon_days]:
 # (rationale in docs/visualisations.md).
 FIGURE_WIDTH_IN = 180 / 25.4
 FIGURE_DPI = 300
-# The map pair is two maps stacked; the Baltic is taller than wide, so two
-# maps at full page width would be ~2.4x the page width tall. The figure is
-# capped at a height that fits one manuscript page with its caption, and the
-# maps take the width that height leaves them.
-MAP_PAIR_HEIGHT_IN = 220 / 25.4
+# Subbasin border stroke, as 029 (docs/visualisations.md).
+basin_border_lw = 0.52
 
 # Shared dilution scale: two classes per decade from `dilution_floor` up to
 # `dilution_top` (at most 1 per km², all of the released particle-time in
@@ -314,8 +313,9 @@ plt.show()
 # particle-time present in `[0, map_horizon_days)`, `dilution` the hex's
 # particle-time as a fraction of the regime's released particle-time over
 # the same ages (`N_released · T`) per km² of hex water area. The two regimes
-# are stacked (reference on top) under one colour norm and one colourbar
-# under the pair, so the same colour is the same value in both. `dilution`
+# sit side by side (reference left) at the full page width, under one colour
+# norm and one colourbar under the pair, so the same colour is the same value
+# in both. `dilution`
 # is the fixed log scale shared with 026 and 026a, below-floor hexes in the
 # under colour; `percentage` is
 # linear to the pooled 99th percentile. Extent is the Baltic crop of the
@@ -323,7 +323,8 @@ plt.show()
 # of the BSH HBMnoku wet cells, merged fine-first as in 024a (fine polygons
 # plus the coarse ones outside the fine bbox, minus a 0.001° strip along the
 # bbox where the grids meet in open water); the isobath is the BSH H0 3 m
-# contour, fine grid taking precedence where it covers.
+# contour, fine grid taking precedence where it covers. Subbasin borders are
+# the edges two HELCOM level-2 polygons share, without codes.
 
 # %%
 def to_hex_gdf(counts_df, key_df, released):
@@ -387,11 +388,30 @@ coast = (
     .clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
 )
 
+# Subbasin borders as the edges two HELCOM polygons share (029's block): the
+# polygon outlines trace every island of the coast they were digitised
+# against, which would smear over the hexes. Clipped to the extent, as the
+# hexes are.
+subbasin_outline = (
+    gpd.read_file(data_root / "helcom_subbasins_2022" / "HELCOM_subbasins_2022_level2.shp")
+    .to_crs(4326).boundary
+)
+basin_borders = gpd.GeoSeries(
+    [
+        a.intersection(b)
+        for a, b in itertools.combinations(subbasin_outline, 2)
+        if a.intersects(b)
+    ],
+    crs="EPSG:4326",
+).clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
+print(f"subbasin borders: {len(basin_borders)} shared edges between "
+      f"{len(subbasin_outline)} HELCOM polygons")
+
 
 def hex_map(gdf, column, ax, norm, cmap, title):
     """One relative-density panel on a plain lon/lat axis: hexes through
-    ``norm`` and ``cmap`` (None: the default colormap), coastline, H0
-    isobath."""
+    ``norm`` and ``cmap`` (None: the default colormap), subbasin borders,
+    coastline, H0 isobath."""
     # Only hexes touching the extent: off-extent patches still count in
     # constrained_layout's bounding box and push the title off the page.
     gdf = gdf.cx[domain_lon_min:domain_lon_max, domain_lat_min:domain_lat_max]
@@ -402,6 +422,9 @@ def hex_map(gdf, column, ax, norm, cmap, title):
         # zoom; matching edge to fill makes the hexes read as a field.
         edgecolor="face", linewidth=0.4, zorder=1,
     )
+    # Override: mid-grey thin borders (029's), so a subbasin border reads
+    # neither as coastline (black) nor as a hex fill; under the coastline.
+    basin_borders.plot(ax=ax, color="0.5", linewidth=basin_border_lw, zorder=1.5)
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
     # Magenta hairline isobath: anti-viridis, legible over every fill colour.
     # Drawn last at zorder 10, above every other artist: where it runs along
@@ -449,19 +472,36 @@ VIEWS = {
     "dilution": (dilution_norm, dilution_cmap, "both", {"format": decade_format}),
 }
 for column, (norm, cmap, extend, colorbar_kwargs) in VIEWS.items():
-    fig, axes = plt.subplots(2, 1, squeeze=False, layout="constrained")
-    fig.set_size_inches(FIGURE_WIDTH_IN, MAP_PAIR_HEIGHT_IN)
-    for ax, regime in zip(axes.flat, regimes):
+    fig, axes = plt.subplots(1, 2, layout="constrained")
+    # Height seed: tall enough that the maps are width-limited, so they span
+    # the page width; the slack this leaves is measured and cut below.
+    fig.set_size_inches(FIGURE_WIDTH_IN, FIGURE_WIDTH_IN)
+    for ax, regime in zip(axes, regimes):
         hex_map(gdfs[regime], column, ax, norm, cmap, title=f"{REGIME_LABELS.get(regime, regime)}, {map_horizon_days} d")
-    # One colourbar for both maps, inset under the lower one at axes-fraction
-    # width 1.0: the stacked maps are height-limited, so a bar under the
-    # whole figure would run past them to the page edges.
+    # One colourbar under both maps, spanning the pair. pad 0.01: the default
+    # is a fraction of the grid height and leaves a blank band; aspect 40
+    # (default 20): at full page width the default bar is ~9 mm thick.
     fig.colorbar(
-        ScalarMappable(norm=norm, cmap=cmap),
-        cax=axes[-1, 0].inset_axes([0.0, -0.07, 1.0, 0.03]),
-        orientation="horizontal", label=COLUMN_LABEL[column], extend=extend,
+        ScalarMappable(norm=norm, cmap=cmap), ax=axes, location="bottom",
+        pad=0.01, aspect=40, label=COLUMN_LABEL[column], extend=extend,
         **colorbar_kwargs,
     )
+    # The fixed-aspect maps fill their gridspec cells' width but not their
+    # height: measure that vertical slack after one layout pass and cut it
+    # from the figure height. The maps stay width-limited, so their size does
+    # not change and the layout's fixed-inch padding needs no second pass.
+    fig.draw_without_rendering()
+    cell, drawn = axes[0].get_position(original=True), axes[0].get_position()
+    assert np.isclose(drawn.width, cell.width, rtol=1e-3), "maps are height-limited; raise the seed"
+    seed_height_in = fig.get_size_inches()[1]
+    fig.set_size_inches(
+        FIGURE_WIDTH_IN, seed_height_in - (cell.height - drawn.height) * seed_height_in
+    )
+    fig.draw_without_rendering()
+    cell, drawn = axes[0].get_position(original=True), axes[0].get_position()
+    print(f"{column}: {fig.get_size_inches()[1] * 25.4:.0f} mm tall, map "
+          f"{drawn.width * FIGURE_WIDTH_IN * 25.4:.0f} mm wide, residual slack "
+          f"{(cell.height - drawn.height) * fig.get_size_inches()[1] * 25.4:.1f} mm")
     fig_path = (
         figure_dir
         / f"BottomSlowdown_map_{year}_T{map_horizon_days}d_r{hex_radius}m_{column}.png"
