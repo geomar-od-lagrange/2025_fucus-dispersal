@@ -26,7 +26,9 @@ there. Findings below (2026-10-27/28, all from the 2019 sample, scratch in
   release, ε = 0 / 1 / 5 mm/s; metrics in §Fix. (2) Authors pick ε.
   (3) Wire into 010 + docs, review agent. (4) Full rerun (§Fix: cost,
   quota) and downstream chain; then the paper figures and numbers refresh
-  (styling from the R2 round is final).
+  with the R3 styling (`wr/figures-r3`, `plans/figure_review_r3.md`; merge it
+  before the post-rerun figure pass — PNGs it renders now are styling
+  previews on pre-fix data).
 - **Held until after the fix:** dilution colour top (1e-1 vs 1e-2), the ¼-hex
   dilution area floor, the zero-water hex remap (G6) — see
   [figure_review_r2.md](figure_review_r2.md).
