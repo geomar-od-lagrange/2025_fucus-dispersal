@@ -331,6 +331,36 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
     bottom → ~3 mm/s. Constant ε in m/s gives the same fractional rest
     point on both nests; ε ∝ Δ would equalise the relaxation time but push
     the coarse rest point ~6× further off — keep constant ε.
+- Sweep result (2026-11-03 night, `tmp_wall_velocity/t_sweep_compare.{py,log,csv}`,
+  `e_metrics_sweep.*`, `fig/t_sweep.png`; v3 walls + reject, 180 d; 024d
+  harness on tmp roots reproduces the production sidecar bit for bit on the
+  eps0 subset; survival weighting surface_stokes only — no production bottom
+  sidecars; members prod `tf1_tw0`, inert `tf1_tw1`):
+
+  | surface_stokes, ε (mm/s) | 0 | 1 | 2 | 3 | 5 |
+  |---|---|---|---|---|---|
+  | pinned drifters d180 / land entries | 96 % / 186 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+  | cell-trapped d180 / median final trap | 99 % / 131 d | 77 % / 42 d | 85 % / 42 d | 73 % / 38 d | 51 % / 45 d |
+  | d180 distance median | 165 km | 313 | 319 | 347 | 350 |
+  | afloat weight (prod) d30 / d90 / d180 | 68 / 54 / 51 % | 64 / 38 / 31 | 64 / 41 / 35 | 63 / 35 / 31 | 61 / 32 / 26 |
+  | stranded weight (prod) | 49 % | 69 | 65 | 69 | 74 |
+
+  Bottom: pinned 24 % → 0, land entries 89 → 0, cell-trapped d180 43 → 25 /
+  23 / 19 / 16 %. v3 + reject vs v1 at equal ε: dispersal unchanged (d180
+  overlap .945, floor .946) — the land fix does not move the result.
+  - ε = 0 → ε > 0 is a large systematic shift: unpinned drifters keep
+    meeting stranding shores (afloat d180 51 → ~31 %).
+  - Within ε = 1–3, overlaps between ε pairs stay below the same-run
+    half-vs-half floor (hex .74–.77 vs .95; 30 km .81–.83 vs .96; subbasin
+    .93 vs .99), weighted or not; non-monotonic in ε. Survival weighting does
+    not make them converge.
+  - Open: is that a systematic ε effect or intrinsic sensitivity of
+    deterministic advection (chaos + which coastal attractor a cluster
+    reaches)? Test running: ε = 2 vs 2.0002 mm/s and vs ≤ 1 m release
+    jitter (`y_perturb_compare.*`).
+  - 010 integration note: 024d's real-drifter test (zero first-step
+    displacement) fails for land seeds once ε acts on them without reject;
+    flag land seeds from the land set at release instead.
 - Cost of the full rerun: 010 ~1–1.5 d wall clock (24 regime-years,
   ~15–20 k core-hours), downstream chain ~3 h. Quota (`workquota`
   2026-11-03): 25.1 T of 29 T soft; a full trajectory set is ~3–3.4 T
