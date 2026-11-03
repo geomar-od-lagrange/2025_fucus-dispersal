@@ -21,7 +21,7 @@ without touching the runs.
 |-------|------|-------|--------|
 | Sidecar | [`024d_BuildBeachingForcing`](../notebooks/024d_BuildBeachingForcing.py) | trajectory zarrs + raw `baltic_highres` Stokes + BSH H0 statics + shoreline-class table + `024a` key | one forcing zarr per trajectory zarr |
 | Reduce | [`024e_BuildBeaching`](../notebooks/024e_BuildBeaching.py) | sidecar + key | `HexAgg_beaching_*.parquet` |
-| Consume | [`029_BeachingMaps`](../notebooks/029_BeachingMaps.py) | beaching parquet + key | PNGs under `Figures/029/`; per-horizon GeoJSON and `afloat_by_origin_*.csv` under `Exports/029/` |
+| Consume | [`029_BeachingMaps`](../notebooks/029_BeachingMaps.py) | beaching parquet + key | PNGs under `Figures/029/`; per-horizon GeoJSON, `afloat_by_origin_*.csv` and `stranded_curve_*.csv` (read by `035`) under `Exports/029/` |
 | Sweep | [`031_BeachingSweep`](../notebooks/031_BeachingSweep.py) | several members + key | PNGs under `Figures/031/` |
 
 [`024f_BuildSurvivalOccupancy`](../notebooks/024f_BuildSurvivalOccupancy.py) and
@@ -283,7 +283,7 @@ points (production SON). The seasonal split stays the primary product for
 *where* material strands — a map question, not a scalar one. The production
 fraction per release year and season is `032`'s table A
 (`Headline/HEADLINE.md`); the cumulative curve against age, with its
-interannual band, is `029`'s `BeachedFractionCurve_*` (production `ALL`:
+interannual band, is `029`'s `BeachedFractionCurve_*` (also drawn as panel (a) of `035`; production `ALL`:
 32.4 % by 30 d, 41.4 % by 60 d, 46.4 % by 90 d, 54.3 % by 180 d). No consumer
 tabulates the fraction per release month.
 

@@ -149,16 +149,19 @@ filename.
   the 024c (unweighted) or 024g (survival-weighted, via the `member`
   parameter) stores — raw matrix, row-normalised emission fraction per age
   horizon, and interannual range, with CSV exports (028), beaching maps
-  and the afloat-by-origin-subbasin table (029) and survival occupancy
+  (where stranded beside stranded % by release hex) and the
+  afloat-by-origin-subbasin table (029) and survival occupancy
   heatmaps (030) for one 024e/024f member, and the rate-model sweep
   across members (031).
 - `notebooks/034_*` — bottom-slowdown illustration: `bottom` against the
   `bottom_vs0p8` variant (010 at `velocity_scale = 0.8`) on the same
   release doys of one year, area holding 90 % of particle-time per
   horizon plus a map pair, from the 024 counts store.
-- `notebooks/035_*` — area time series: the area holding 90 % of
-  particle-time against the cumulative horizon, one line per regime with
-  the interannual band, read from 026's area CSVs (so after 026).
+- `notebooks/035_*` — stranding and area time series: stranded % (029's
+  curve CSV), the area holding 90 % of particle-time and its square root
+  against age / cumulative horizon, one line per regime with the
+  interannual band, read from 026's area CSVs and 029's stranded-curve
+  CSV (so after 026 and 029).
 - `notebooks/036_*` — seeding map: the release cells by HELCOM subbasin
   (the 024a key's assignment) and the land-seeded share per cell, read
   from the first two time steps of one regime-year of trajectory zarrs.
