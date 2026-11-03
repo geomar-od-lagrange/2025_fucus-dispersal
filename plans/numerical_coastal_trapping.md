@@ -175,8 +175,7 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
   regime (+ε on permanent zero faces, 0 elsewhere; `cgrid_velocity`,
   NestedField) and an RK4 kernel sampling `UV + UVwall` at every stage. 003
   and the 6 TB of fields stay as they are; only 010 and downstream rerun.
-  Bottom needs its own wall field (its zero faces include bathymetric
-  steps), derived from the bottom fields.
+  Bottom uses the same coastline walls (checked, see Open questions).
 - Beaching stays with the rate model (docs/beaching.md): in band,
   `trap = trap_wall + (trap_flat − trap_wall)·ff/100` on the shore
   substrate. `trap_wall` there means a hard *shore type* (rock, cliff,
@@ -193,12 +192,19 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
 
 ## Open questions
 
-- Bottom pins favour walls with land to the W/S (coarse 52 % W, 17 % S;
-  surface_stokes pins 94 % E/N). Not audited: the wall classification was
-  derived from the surface fields, and the bottom mean flow at those walls
-  was not compared. Check 003's bottom U/V against raw BSH deepest layers
-  and the bottom mean flow at the pin walls before building the bottom
-  wall field.
+- Bottom pins favour walls with land to the W (coarse 52 %) — checked
+  2026-11-03 (`tmp_bottom_check/`), not a grid error: (a) on faces where
+  only layer 1 is fluid, bottom and surface 2D files are bit-identical (652 /
+  643 coarse, ~7.8 k fine faces per component), and an independent
+  re-derivation of the deepest-fluid value from raw BSH matches the bottom
+  file on 100 % of nonzero faces (every one-cell shift: 2–5 %); (b) the
+  permanent zero faces of the bottom files are exactly the coastline walls
+  (3,574 coarse, same as surface — blocked deep faces take a shallower
+  layer); (c) 73 snapshots of 2019, mean / median flow toward the wall,
+  onshore share: surface E +1.9 / +1.3 cm/s, 0.70; W −1.4 / −1.1, 0.31.
+  Bottom W +0.12 / +0.23, 0.61; E −0.36 / −0.26, 0.36. The bottom flow runs
+  opposite to the surface drift at the coast (return flow), and pins follow
+  it. The bottom wall field for the kernel fix = the coastline walls.
 - 003 drops Stokes on open faces where the int16 current rounds to 0
   (0.3 % coarse / 1.6 % fine of Stokes |flux|); the kernel fix leaves this
   in place unless 003 reruns.
