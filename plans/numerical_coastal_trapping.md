@@ -273,7 +273,29 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
     between tidal-flat / shallow cells (H0 ≤ ~1 m; Wadden Sea, Little Belt)
     that flood from opposite sides; bottom files are NaN there all year.
     Fix (agreed 2026-11-03): ε toward the deeper cell (larger H0); tie →
-    cell with more open faces. In progress with tracing (b).
+    cell with more open faces. Done (`wall_*_v2.nc`, `a4_v2_*.log`): 3 / 20
+    faces assigned, sign check OK, the 2 stuck bottom drifters leave within
+    1 h (`g_stuck_eval.log`).
+  - (b) traced (`h_entries.log`, `l_stages.log`, `m_run_walls.log`, 436
+    entry hours rerun bit-identically, all stages traced):
+    - Most counted entries are clones: drifters collapse onto
+      bit-identical positions at the fixed points (within-grid events
+      193 / 915 / 710 → 104 / 216 / 116 distinct at ε = 0 / 1 / 5). Distinct
+      surface_stokes positions at d180: 15,231 / 11,091 / 8,895 of 21,800 —
+      the effective sample shrinks with ε (deterministic advection, no
+      diffusion).
+    - Main cause (58 / 68 / 84 % of distinct entries): "intermittent land" —
+      the 12-day wall sample marks 153 fine cells (303 faces; Wadden Sea,
+      Danish straits) as land that do flood in the run window. Drifters flow
+      in while flooded and, once dry, exit only by ε (median 129 h at ε = 1).
+    - Rest: the ε = 0 convex-corner RK4 stage leak (PLPL / PPPL), not caused
+      by the wall field (0.4–1.8 % of the step); exit 1–2 h at ε > 0.
+  - Fix candidates: (1) wall set from every step of the forcing period run
+    (`wall_*_surface_stokes_v3.nc`, run window only: fine walls −303, thin
+    walls 0); (2) reject a step that ends in a land cell (cell-constant
+    `Land` field; holds drifters at flooding cells if used without (1)).
+    Test of v3 / v3 + reject / v1 + reject (d40–60, ε = 1 / 5) in
+    `<outputs>/tmp_wall_velocity/fixtest/`, eval `q_fixtest_eval.py`.
 - Cost of the full rerun: 010 ~1–1.5 d wall clock (24 regime-years,
   ~15–20 k core-hours), downstream chain ~3 h. Quota (`workquota`
   2026-11-03): 25.1 T of 29 T soft; a full trajectory set is ~3–3.4 T
