@@ -233,7 +233,7 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
     Overhead +19 % runtime. ε = 5 mm/s smoke: formerly pinned drifters sit
     0.12–0.38 cell (≈ 100–350 m) off the wall and keep moving. 6 runs (180 d)
     write to `<outputs>/tmp_wall_velocity/run_<regime>_eps<mm>mm.zarr`,
-    ~1 h each; metrics done (results below); next: authors decide on ε.
+    ~1 h each; metrics done (results below). Running (2026-11-03 evening): ε = 1/2/3/5 mm/s with v3 walls + reject, both regimes, plus 024d→024e→024f survival weighting on a tmp output root (`tmp_wall_velocity/t_sweep_compare.*`). Then authors pick ε.
   - Metrics: stalled share of particle-hours (step < 1 m / 10 m) at
     30/90/180 d and drifters stalled at day 180; pinned (≤ 1e-3 cell of a
     wall); wall-distance distribution in wall cells; coastal residence
