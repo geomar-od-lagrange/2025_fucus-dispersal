@@ -28,22 +28,23 @@
 # reducer's opaque `member` tag, which selects the partitions read here and
 # labels every figure; this notebook never parses the tag. Draws:
 #
-# 1. **Where-stranded density** — stranded weight per `beach_hex` as a
-#    percentage of the released water-seeded drifters (log scale), with the
-#    *Fucus* release sites and the HELCOM subbasin borders overlaid so the map
-#    reads as a source→sink picture rather than a deposition field alone.
-# 2. **Beached share per source hex** — of the drifters released in each
-#    hex, the percentage that strands within the reduction window (linear
-#    0–100).
-# 3. **Beaching age horizons** — cumulative where-stranded density for
+# 1. **Where stranded, and by origin** — one figure, two maps side by side:
+#    the stranded weight per `beach_hex` as a percentage of the released
+#    water-seeded drifters (log scale), and per release hex the percentage of
+#    its own drifters stranded by `origin_horizon_days` (linear 0–100), so
+#    sink and source read off one figure. HELCOM subbasin borders on every
+#    map; the subbasin codes, their key and the release sites are on `033`'s
+#    reference map.
+# 2. **Beaching age horizons** — cumulative where-stranded density for
 #    strandings at ages < T (the beaching analogue of `026`'s horizons).
-# 4. **Afloat by origin subbasin** — per HELCOM origin subbasin, the
+# 3. **Afloat by origin subbasin** — per HELCOM origin subbasin, the
 #    percentage of its released drifters not yet stranded at each horizon,
 #    pooled and with the per-release-year min–max; table + CSV.
-# 5. **Cumulative beached percentage vs. age** — the stranding time course,
-#    with the interannual min–max as a band around the pooled curve. Maps
-#    stay pooled; only the scalar-per-horizon curve carries the spread.
-# 6. **Displacement at stranding** — stranded share over `disp_bin`, the
+# 4. **Cumulative beached percentage vs. age** — the stranding time course,
+#    with the interannual min–max as a band around the pooled curve, exported
+#    as CSV for `035`'s combined time-series figure. Maps stay pooled; only
+#    the scalar-per-horizon curve carries the spread.
+# 5. **Displacement at stranding** — stranded share over `disp_bin`, the
 #    crow-flies displacement from release at the deposit step. Short-travel
 #    strandings are a real outcome under a threshold rate model, never a
 #    mask.
@@ -53,13 +54,13 @@
 # per release hex sum to its released drifter count), so the maps, the curve
 # and the table share one denominator.
 #
-# Between 1. and 2. sits the number the overlay exists for: the **substrate
+# After 1. sits the number the source↔sink pair exists for: the **substrate
 # contrast between source and sink**, the shoreline flat fraction where the
 # release sites are against the flat fraction where the weight lands, under
 # this member and under a substrate-inert `contrast_member`.
 #
-# Figures are print-ready (full page width, 300 dpi) and the per-horizon
-# where-stranded field is exported as GeoJSON.
+# Figures are print-ready (full page width, 300 dpi); the per-horizon
+# where-stranded field is exported as GeoJSON and the stranding curve as CSV.
 
 # %%
 import itertools
@@ -73,7 +74,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import xarray as xr
 from matplotlib.cm import ScalarMappable
-from matplotlib.colors import LogNorm
+from matplotlib.colors import LogNorm, Normalize
 from pyproj import Transformer
 from shapely.geometry import box
 from shapely.ops import unary_union
@@ -86,10 +87,10 @@ from hextraj import HexProj
 # %% tags=["parameters"]
 # Read root of the hex-aggregate store.
 output_root = "../output"
-# Read root of the data twin: the Fucus release sites 010 seeds from, the
-# HELCOM subbasin polygons drawn on the where-stranded map, the BSH wet-cell
-# coastline every map draws and the shoreline-class table the substrate
-# contrast reads.
+# Read root of the data twin: the Fucus release sites 010 seeds from (for the
+# substrate contrast), the HELCOM subbasin polygons whose borders every map
+# draws, the BSH wet-cell coastline every map draws and the shoreline-class
+# table the substrate contrast reads.
 data_root = "../data"
 # Which regime's beaching partitions to read; one regime per run.
 regime = "surface_stokes"
@@ -118,13 +119,14 @@ contrast_member = "step_wc0p1_ts3_tcinf"
 # 024e; asserted against the partitions' attrs).
 disp_bin_km = 10.0
 
-# Overlay the Fucus release sites on the where-stranded map.
-show_release_points = True
-
 # Cumulative beaching age horizons (d) for the horizon maps and the afloat
 # table: strandings at ages < T. Each must be a multiple of age_bin_days and
 # ≤ the store's max_age_days.
 time_horizons_days_csv = "30,60,90,180"
+# Age horizon (d) of the by-origin map beside the where-stranded map: per
+# release hex, the share of its drifters stranded at ages < T. Same rules as
+# the horizons above.
+origin_horizon_days = 180
 
 # Map extent (degrees). The 024a key tiles the whole BSH domain including the
 # North Sea, which is empty for Fucus and costs ~35% of panel height; cropping
@@ -170,7 +172,7 @@ analysis_years = range(int(first_year), int(last_year or first_year) + 1)
 assert len(analysis_years), f"release_years {release_years!r} is an empty range"
 print(f"release years in the analysis: {analysis_years[0]}–{analysis_years[-1]}")
 time_horizons_days = [int(x) for x in time_horizons_days_csv.split(",") if x]
-for h in time_horizons_days:
+for h in time_horizons_days + [origin_horizon_days]:
     assert h % age_bin_days == 0, (
         f"horizon {h} d is not a multiple of age_bin_days {age_bin_days} d"
     )
@@ -195,27 +197,11 @@ FIGURE_DPI = 300
 # the stroke to ~1 px at the output dpi keeps the seam closed while letting
 # the resulting hex dilation shrink as resolution rises.
 hex_seam_lw = 1.1 * 72 / FIGURE_DPI
-# Release-site overlay style. AGENTS.md forbids colour/marker overrides; this
-# one is defended in docs/visualisations.md. Short version: the field under it
-# is a four-decade LogNorm of the default (viridis) map, so the marker has to
-# read against both a near-black low end and a near-white/yellow high end —
-# magenta is the anti-viridis hue already used for the 3 m isobath in 025/026.
-# Hollow, because sources and sinks overlap in the western Baltic and a filled
-# marker would hide the very hex value the reader is comparing against. Sized
-# to roughly the 10 km REDLIST cell it stands for at 180 mm page width.
-release_marker_color = "magenta"
-release_marker_size = 2.5
-release_marker_lw = 0.4
-# Vertical inches the full-width where-stranded map adds to its own height:
-# the title above, the horizontal colorbar with its ticks and label below.
-# The map is anchored to the bottom of its cell, so a seed that is too tall
-# only leaves a band above the title and never clips the colorbar label.
+# Vertical inches a row of maps adds to its own height: the titles above, the
+# horizontal colorbar with its ticks and label below.
 STRANDED_DECOR_IN = 0.75
-# Subbasin border stroke on the where-stranded map (docs/visualisations.md).
+# Subbasin border stroke on every map (docs/visualisations.md).
 basin_border_lw = 0.52
-# Subbasin code labels: small enough to sit inside the narrow western
-# subbasins at 180 mm page width, large enough to read in print.
-basin_label_fontsize = 6
 
 figure_dir = output_root / "Figures" / "029"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -349,13 +335,19 @@ print(f"beaching rows: {len(beaching):,}; released drifters (Σweight) "
 #
 # `hex_gdf` sums the stranded weight over a hex column, converts it to a
 # percentage of the released drifters and joins to the key geometry
-# (dropping the `-1` sentinel); `hex_map` draws hex polygons + the model
-# coastline on a plain EPSG:4326 axis (as 025/026). A single map takes its
-# colorbar as an inset axes at axes-fraction height 1.0 right of the map (or
-# width 1.0 under it) so it is exactly the map's size — a fixed-aspect map
-# never fills its gridspec cell, and a cell-sized colorbar overshoots it. A
-# panel grid on one norm passes `cbar=None` and gets one shared colorbar under
-# the grid instead.
+# (dropping the `-1` sentinel); `hex_map` draws hex polygons, the HELCOM
+# subbasin borders and the model coastline on a plain EPSG:4326 axis (as
+# 025/026). A map takes its colorbar as an inset axes under it at
+# axes-fraction width 1.0, so the bar is exactly the map's width — a
+# fixed-aspect map never fills its gridspec cell, and a cell-sized colorbar
+# overshoots it. A panel row on one norm passes `cbar=False` and gets one
+# shared colorbar under the row instead.
+#
+# `fit_height` sizes a figure from what is drawn rather than from hand
+# arithmetic: at the fixed page width the maps are width-limited, so any
+# height beyond their content is a blank band. One draw at a generous seed
+# height measures the content (titles to colorbar label), and the figure is
+# cut to it.
 
 # %%
 def hex_gdf(df, hex_col):
@@ -388,31 +380,35 @@ def extend_of(values, norm):
             (False, True): "max", (True, True): "both"}[below, above]
 
 
-def hex_map(gdf, ax, norm=None, title=None, label=None, cbar="right"):
-    """Hex choropleth + model coastline on a lon/lat axis. `norm=None` →
-    linear default scale; a `LogNorm` → shared log scale across panels. The
-    colorbar sits right of the map at its full height (`cbar="right"`), under
-    it at its full width (`"below"`), or is left to the caller (`None`)."""
+def hex_map(gdf, ax, norm=None, title=None, label=None, cbar=True):
+    """Hex choropleth + subbasin borders + model coastline on a lon/lat axis.
+    `norm=None` → linear default scale; a `LogNorm` → shared log scale across
+    panels. The colorbar sits under the map at its full width (`cbar=True`)
+    or is left to the caller (`False`)."""
     if not gdf.empty:
-        legend_kwds = {}
+        legend_kwds = None
         cax = None
-        if cbar is not None:
-            cax = ax.inset_axes(
-                [0.0, -0.045, 1.0, 0.022] if cbar == "below" else [1.02, 0.0, 0.035, 1.0]
-            )
+        if cbar:
+            # Override: a bar ~3.5 mm thick and ~2.5 mm under a half-width map
+            # (axes fractions of the map height); the default inset is sized
+            # for no map in particular.
+            cax = ax.inset_axes([0.0, -0.06, 1.0, 0.035])
             legend_kwds = {
-                "orientation": "horizontal" if cbar == "below" else "vertical",
+                "orientation": "horizontal",
                 "extend": extend_of(gdf["value"], norm),
             } | ({"label": label} if label else {})
-        if cbar == "below":
             # Bottom-anchored, so constrained_layout's room for the bar under
             # the map holds; centred, the map drifts down and clips the label.
             ax.set_anchor("S")
         gdf.plot(
-            ax=ax, column="value", norm=norm, legend=cbar is not None, cax=cax,
-            legend_kwds=legend_kwds or None,
+            ax=ax, column="value", norm=norm, legend=cbar, cax=cax,
+            legend_kwds=legend_kwds,
             edgecolor="face", linewidth=hex_seam_lw, zorder=1,
         )
+    # Override: neutral mid-grey thin subbasin borders (as 036), under the
+    # coastline, so a border reads neither as coastline (black) nor as part of
+    # the hex field.
+    basin_borders.plot(ax=ax, color="0.5", linewidth=basin_border_lw, zorder=1.5)
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
     ax.set_xlim(extent[0], extent[1])
     ax.set_ylim(extent[2], extent[3])
@@ -423,13 +419,14 @@ def hex_map(gdf, ax, norm=None, title=None, label=None, cbar="right"):
         ax.set_title(title)
 
 
-def grid_height_in(nrows, ncols, aspect, width_in):
-    """Height seed for a grid of fixed-aspect map panels at a fixed figure
-    width. The figure width is set by the page, so only the height is free:
-    each column gives its map ~72 % of its width (the rest is the inset
-    colorbar and its tick labels), and ~10 % is added for titles and padding.
-    constrained_layout does the packing; there is no measure-rescale loop."""
-    return 1.10 * nrows * (0.72 * width_in / ncols) / aspect
+def fit_height(fig):
+    """Cut the figure height to its drawn content at the fixed page width,
+    plus constrained_layout's own pad above and below. Call after drawing,
+    before saving; the seed height only has to be generous."""
+    fig.draw_without_rendering()
+    content_in = fig.get_tightbbox().height
+    h_pad = fig.get_layout_engine().get()["h_pad"]
+    fig.set_size_inches(FIGURE_WIDTH_IN, content_in + 2 * h_pad)
 
 
 # %% [markdown]
@@ -483,18 +480,16 @@ beached = beaching[beaching["beach_hex"] >= 0]
 # %% [markdown]
 # # Release sites
 #
-# The overlay geometry: `helcom_fucus_redlist/fucus_release_points.geojson`,
-# the REDLIST cells with `F_vesiculo != 0` baked by `000`. This is the same
-# file `010` opens — it distributes `particles_per_cell` particles uniformly
-# inside each cell polygon — so the overlay is the seeding set itself, not a
-# proxy for it. The cells are ~10 km squares, so one marker per cell at their
-# representative point stands for the cell footprint at page width; the marker
-# is drawn, not the polygon, for the reasons in
-# [docs/visualisations.md](../docs/visualisations.md).
+# The source side of the substrate contrast below:
+# `helcom_fucus_redlist/fucus_release_points.geojson`, the REDLIST cells with
+# `F_vesiculo != 0` baked by `000`. This is the same file `010` opens — it
+# distributes `particles_per_cell` particles uniformly inside each cell
+# polygon — so these are the seeding set itself, not a proxy for it. Each
+# ~10 km cell is put into hex space at its representative point.
 #
 # The key's `fucus_area_m2` is the same source seen through the hex grid (the
 # per-hex intersection area with those cells); it carries the source weighting
-# for the substrate contrast below, while the overlay stays on the cells.
+# for the substrate contrast, beside the per-cell counts.
 
 # %%
 release_cells = gpd.read_file(release_points_path)
@@ -507,57 +502,20 @@ print(f"  in {pd.unique(release_hex_of_cell).size:,} hexes; key hexes with "
       f"fucus_area_m2 > 0: {int((key['fucus_area_m2'] > 0).sum()):,}")
 
 # %% [markdown]
-# # Subbasin borders and codes
+# # Subbasin borders
 #
 # The HELCOM level-2 subbasins every per-subbasin readout below (and 026a,
-# 028) groups by, drawn on the where-stranded map as the edges two polygons
-# share — the same borders as `036`'s seeding map. The polygons' full outlines
-# also trace every island and skerry of the coast they were digitised against,
-# which would smear over exactly the coastal hexes the map is about; the
-# shared edges are the basin-to-basin borders alone. The Kattegat's open edge
-# to the Skagerrak, shared with no polygon, is therefore not drawn.
-#
-# Each subbasin is labelled with its three-letter code — the key to 028's
-# connectivity axes — at the polygon's `representative_point` (always inside
-# the polygon), moved by hand only where the label would sit on the hexes or
-# the coastline (`LABEL_AT`). The Sound, the Great Belt and Kiel Bay are
-# narrow straits filled with stranding hexes from shore to shore, so no spot
-# in or near them is clear of data: their codes stay at the representative
-# point on a small white backing (`BOXED`), which hides less than a leader
-# line from adjacent land would cross.
+# 028) groups by, drawn on every map as the edges two polygons share — the
+# same borders as `036`'s seeding map. The polygons' full outlines also trace
+# every island and skerry of the coast they were digitised against, which
+# would smear over exactly the coastal hexes the maps are about; the shared
+# edges are the basin-to-basin borders alone. The Kattegat's open edge to the
+# Skagerrak, shared with no polygon, is therefore not drawn. The subbasin
+# codes and their key are on `033`'s shoreline-type map, the paper's
+# reference map.
 
 # %%
-# Three-letter subbasin codes, west → east (the order 028's axes use).
-SUBBASIN_CODE = {
-    "Kattegat": "KAT", "The Sound": "SOU", "Great Belt": "GRB", "Kiel Bay": "KIE",
-    "Bay of Mecklenburg": "MEC", "Arkona Basin": "ARK", "Bornholm Basin": "BOR",
-    "Gdansk Basin": "GDA", "Eastern Gotland Basin": "EGB",
-    "Western Gotland Basin": "WGB", "Gulf of Riga": "GRI",
-    "Northern Baltic Proper": "NBP", "Gulf of Finland": "GFI", "Åland Sea": "ALA",
-    "Bothnian Sea": "BOS", "The Quark": "QUA", "Bothnian Bay": "BOB",
-}
-# Hand placements (lon, lat) where the representative point does not read,
-# checked on 2x crops of the where-stranded map.
-LABEL_AT = {
-    "KAT": (11.35, 57.05),  # off Anholt's hexes, open Kattegat
-    "MEC": (11.90, 54.42),  # between the Fehmarn and Rostock hex chains
-    "GDA": (19.25, 54.76),  # off the Gulf of Gdansk coast hexes
-    "ALA": (19.47, 59.93),  # off the Swedish coast and Åland's hexes
-}
-BOXED = {"SOU", "GRB", "KIE"}
-
-subbasins = gpd.read_file(subbasins_path).to_crs(4326)
-subbasin_outline = subbasins.boundary
-basin_label = pd.DataFrame(
-    {
-        "code": subbasins["level_2"].map(SUBBASIN_CODE),
-        "lon": subbasins.representative_point().x,
-        "lat": subbasins.representative_point().y,
-    }
-)
-assert basin_label["code"].notna().all(), "subbasin without a code"
-for code, (lon, lat) in LABEL_AT.items():
-    basin_label.loc[basin_label["code"] == code, ["lon", "lat"]] = lon, lat
+subbasin_outline = gpd.read_file(subbasins_path).to_crs(4326).boundary
 basin_borders = gpd.GeoSeries(
     [
         a.intersection(b)
@@ -570,19 +528,29 @@ print(f"subbasin borders: {len(basin_borders)} shared edges between "
       f"{len(subbasin_outline)} HELCOM polygons")
 
 # %% [markdown]
-# # Where-stranded density
+# # Where stranded, and by origin
 #
-# Log-scale stranded share (% of released drifters) per stranding hex, summed over
-# the store's remaining axes (`disp_bin`, and `shore_type` where the reducer
-# emits it). Neither is shown on the maps: `shore_type` is a threshold label
-# on the HELCOM BRISK + CLMS flat fraction `ff` at the stranding hour (`flat`
-# if `ff >= 50%` else `wall`), a coarser cut than the rate itself, which
-# scales continuously with `ff` through `trap_wall + (trap_flat -
-# trap_wall)*ff/100` (production: `trap_flat = 1`, `trap_wall = 0`, so the
-# substrate signal is already inside the plotted weight); displacement
-# gets its own figure below. The release sites and the subbasin borders are
-# drawn over the field, the colorbar runs the full page width under the map,
-# and its `extend` arrow marks the hexes below the four-decade floor.
+# **Left:** log-scale stranded share (% of released drifters) per stranding
+# hex, summed over the store's remaining axes (`disp_bin`, and `shore_type`
+# where the reducer emits it). Neither is shown on the maps: `shore_type` is a
+# threshold label on the HELCOM BRISK + CLMS flat fraction `ff` at the
+# stranding hour (`flat` if `ff >= 50%` else `wall`), a coarser cut than the
+# rate itself, which scales continuously with `ff` through `trap_wall +
+# (trap_flat - trap_wall)*ff/100` (production: `trap_flat = 1`, `trap_wall =
+# 0`, so the substrate signal is already inside the plotted weight);
+# displacement gets its own figure below. The colorbar's `extend` arrow marks
+# the hexes below the four-decade floor.
+#
+# **Right:** per release hex, the percentage of its own drifters stranded at
+# ages below `origin_horizon_days` — Σ `weight` over `beach_hex ≥ 0` and
+# `beach_age_bin < origin_horizon_days // age_bin_days`, over Σ `weight`, per
+# `release_hex`, pooled like the left panel — on a linear 0–100 scale. It
+# shows which source regions lose most of their propagules to the coast. No
+# release-site overlay on either panel: the right panel's coloured hexes
+# *are* the release set, and the release sites are on `033`'s reference map.
+#
+# Two half-width maps side by side, each with its own colorbar under it at
+# its width, the figure cut to its content (`fit_height`).
 
 # %%
 gdf_stranded = hex_gdf(beached, "beach_hex")
@@ -593,36 +561,33 @@ print(f"stranding hexes: {len(gdf_stranded):,}; peak {strand_norm.vmax:.3g} %, "
       f"holding {100 * gdf_stranded['weight'][below_floor].sum() / gdf_stranded['weight'].sum():.2f} % "
       f"of the stranded weight")
 
-fig, ax = plt.subplots(layout="constrained")
-# The map spans the full page width, its colorbar under it at the same width;
-# the height is the map's at that width plus the title and colorbar band.
-fig.set_size_inches(FIGURE_WIDTH_IN, FIGURE_WIDTH_IN / domain_aspect + STRANDED_DECOR_IN)
-hex_map(gdf_stranded, ax, norm=strand_norm,
-        title="stranded, Fucus release sites overlaid"
-        if show_release_points else "stranded",
-        label="stranded (% of released)", cbar="below")
-# Override: neutral mid-grey thin subbasin borders (as 036), so a border
-# reads neither as coastline (black) nor as part of the hex field.
-basin_borders.plot(ax=ax, color="0.5", linewidth=basin_border_lw, zorder=2)
-for row in basin_label.itertuples():
-    # Override: small centred code labels, the key to 028's axes; a tight
-    # white backing only where the label has to sit on the hexes.
-    ax.text(
-        row.lon, row.lat, row.code, ha="center", va="center",
-        fontsize=basin_label_fontsize, zorder=4,
-        bbox=dict(boxstyle="square,pad=0.1", facecolor="white", edgecolor="none",
-                  alpha=0.8)
-        if row.code in BOXED else None,
-    )
-if show_release_points:
-    # Hollow magenta rings, one per REDLIST release cell; style constants and
-    # their rationale are at the top of the notebook.
-    ax.plot(
-        release_pt.x, release_pt.y, linestyle="none", marker="o",
-        markersize=release_marker_size, markerfacecolor="none",
-        markeredgecolor=release_marker_color, markeredgewidth=release_marker_lw,
-        zorder=3,
-    )
+released = beaching.groupby("release_hex")["weight"].sum().rename("released")
+stranded = (
+    beached[beached["beach_age_bin"] < origin_horizon_days // age_bin_days]
+    .groupby("release_hex")["weight"].sum().rename("stranded")
+)
+frac = (
+    pd.concat([released, stranded], axis=1).fillna({"stranded": 0})
+    .assign(value=lambda d: 100 * d["stranded"] / d["released"])
+    .reset_index()
+)
+frac = frac[frac["release_hex"] >= 0].merge(
+    key[["hex_id", "geometry"]], left_on="release_hex", right_on="hex_id"
+).pipe(gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326")
+print(f"release hexes: {len(frac):,}; stranded by {origin_horizon_days} d per "
+      f"release hex: median {frac['value'].median():.1f} %, quartiles "
+      f"{frac['value'].quantile(0.25):.1f}–{frac['value'].quantile(0.75):.1f} %; "
+      f"pooled {100 * frac['stranded'].sum() / frac['released'].sum():.1f} %")
+
+fig, axes = plt.subplots(1, 2, layout="constrained")
+# Seed height only, generous on purpose: fit_height cuts it to the content.
+fig.set_size_inches(FIGURE_WIDTH_IN, FIGURE_WIDTH_IN / 2 / domain_aspect + 2 * STRANDED_DECOR_IN)
+hex_map(gdf_stranded, axes[0], norm=strand_norm, title="where stranded",
+        label="stranded (% of released)")
+# Pinned linear 0–100: a share of the hex's own releases, full range on any run.
+hex_map(frac, axes[1], norm=Normalize(vmin=0.0, vmax=100.0), title="by release hex",
+        label=f"stranded by {origin_horizon_days} d (% of the hex's released)")
+fit_height(fig)
 fig_path = figure_dir / f"WhereStranded_{regime}_r{hex_radius}m_{season}_{member}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
 fig.savefig(fig_path, dpi=FIGURE_DPI)
@@ -632,7 +597,7 @@ plt.show()
 # %% [markdown]
 # # Source and sink substrate
 #
-# The number the overlay exists for. The shoreline-class table from the data
+# The number the source↔sink pair exists for. The shoreline-class table from the data
 # twin gives every BSH coastline sub-segment a **flat fraction** `ff` — the
 # share of classified shore that is low and unconsolidated rather than a hard
 # wall ([docs/beaching.md](../docs/beaching.md)). Aggregated per hex by
@@ -781,41 +746,6 @@ for tag, w in strand_by_hex.items():
     print(f"stranded weight HELCOM leaves unassigned ({tag}): {100 * u:.1f} %")
 
 # %% [markdown]
-# # Beached share per source hex
-#
-# Of the drifters released in each source hex, the percentage that strands
-# within the reduction window (linear 0–100). Highlights which source regions
-# lose most of their propagules to the coast.
-#
-# No release-site overlay here: this panel's coloured hexes *are* the release
-# set, so the markers would fall on the values they are meant to locate and
-# add nothing but ink.
-
-# %%
-released = beaching.groupby("release_hex")["weight"].sum().rename("released")
-stranded = beached.groupby("release_hex")["weight"].sum().rename("stranded")
-frac = (
-    pd.concat([released, stranded], axis=1).fillna({"stranded": 0})
-    .assign(value=lambda d: 100 * d["stranded"] / d["released"])
-    .reset_index()
-)
-frac = frac[frac["release_hex"] >= 0].merge(
-    key[["hex_id", "geometry"]], left_on="release_hex", right_on="hex_id"
-).pipe(gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326")
-
-fig, ax = plt.subplots(layout="constrained")
-fig.set_size_inches(FIGURE_WIDTH_IN, grid_height_in(1, 1, domain_aspect, FIGURE_WIDTH_IN))
-# Linear default scale (percentage in [0, 100]); no norm override needed.
-hex_map(frac, ax, norm=None,
-        title=f"stranded within {max_age_days} d, per source hex",
-        label="stranded (% of the hex's released)")
-fig_path = figure_dir / f"BeachedFraction_{regime}_r{hex_radius}m_{season}_{member}.png"
-# Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
-fig.savefig(fig_path, dpi=FIGURE_DPI)
-print(f"wrote {fig_path}")
-plt.show()
-
-# %% [markdown]
 # # Beaching age horizons
 #
 # Cumulative where-stranded density for strandings at ages < T, as a
@@ -842,7 +772,7 @@ fig.set_size_inches(
     FIGURE_WIDTH_IN, FIGURE_WIDTH_IN / ncols / domain_aspect + STRANDED_DECOR_IN
 )
 for ax, h in zip(axes.flat, time_horizons_days):
-    hex_map(gdfs[h], ax, norm=strand_norm, title=f"stranded by {h} d", cbar=None)
+    hex_map(gdfs[h], ax, norm=strand_norm, title=f"stranded by {h} d", cbar=False)
 fig.colorbar(
     ScalarMappable(norm=strand_norm), ax=axes, location="bottom",
     extend=extend_of(all_h, strand_norm), label="stranded (% of released)",
@@ -994,32 +924,57 @@ print(f"origin -1 holds {100 * share_outside:.1f} % of the released drifters")
 # the stranding time course, summed over the store's other axes. The pooled
 # curve is drawn with the **interannual min–max** as a shaded band: the
 # per-year curves are the same reduction restricted to one `release_year`, so
-# the band is the honest spread behind the single pooled number.
+# the band is the honest spread behind the single pooled number. Every curve
+# runs over the full age axis of the window, a bin without strandings
+# carrying the cumulative value of the bin before, so the per-year band
+# compares bin for bin.
+#
+# The curve is exported as
+# `Exports/029/stranded_curve_<regime>_<season>_<member>.csv` (`age_days` =
+# the age-bin right edge T, stranding at ages < T; pooled %; per-year min and
+# max), which `035` draws above its area panels on one age axis.
 
 # %%
+age_bins = pd.RangeIndex(max_age_days // age_bin_days)
+
+
 def beached_fraction_curve(df):
     """Cumulative stranded weight as % of released, at each age-bin right edge."""
     b = df[df["beach_hex"] >= 0]
     total = float(df["weight"].sum())
-    per_bin = b.groupby("beach_age_bin")["weight"].sum().sort_index()
+    per_bin = b.groupby("beach_age_bin")["weight"].sum().reindex(age_bins, fill_value=0.0)
     return pd.Series(
         100 * per_bin.cumsum().to_numpy() / max(total, 1.0),
-        index=pd.Index(
-            (per_bin.index.to_numpy() + 1) * age_bin_days, name="age (days)"
-        ),
+        index=pd.Index((age_bins.to_numpy() + 1) * age_bin_days, name="age (days)"),
         name="stranded (% of released)",
     )
 
 
 curve = beached_fraction_curve(beaching)
-# Reindexing onto the pooled age axis leaves a gap wherever a year stranded
-# nothing in that bin. The curve is cumulative, so the value there is the
-# previous bin's, not "missing": forward-fill it, and read the bins before a
-# year's first stranding as the 0 they are. Without this the band's min is the
-# nanmin over whichever years happen to carry a bin.
 curve_per_year = pd.DataFrame(
     {y: beached_fraction_curve(g) for y, g in beaching.groupby("release_year")}
-).reindex(curve.index).ffill().fillna(0.0)
+)
+
+curve_table = pd.DataFrame(
+    {
+        "stranded_pct": curve,
+        "stranded_pct_year_min": curve_per_year.min(axis=1),
+        "stranded_pct_year_max": curve_per_year.max(axis=1),
+        "n_years": curve_per_year.shape[1],
+    }
+).rename_axis("age_days")
+curve_path = export_dir / f"stranded_curve_{regime}_{season}_{member}.csv"
+with curve_path.open("w") as fh:
+    fh.write(
+        f"# 029_BeachingMaps: cumulative percentage of the released water-seeded "
+        f"drifters stranded at ages < age_days (regime {regime}, season {season}, "
+        f"member {member}, release years {pooled_years[0]}-{pooled_years[-1]}, "
+        f"age bin {age_bin_days} d, reduction window {max_age_days} d)\n"
+        "# stranded_pct pools the release years (summed weights); "
+        "stranded_pct_year_min/max are the per-release-year range\n"
+    )
+    curve_table.to_csv(fh)
+print(f"wrote {curve_path} ({len(curve_table)} ages)")
 
 fig, ax = plt.subplots(layout="constrained")
 # Print-ready width; a line panel needs no map aspect, so half the page width
@@ -1027,8 +982,8 @@ fig, ax = plt.subplots(layout="constrained")
 fig.set_size_inches(FIGURE_WIDTH_IN, 0.45 * FIGURE_WIDTH_IN)
 curve.plot(ax=ax)
 ax.fill_between(
-    curve.index, curve_per_year.min(axis=1), curve_per_year.max(axis=1), alpha=0.3,
-    label=f"interannual range ({pooled_years[0]}–{pooled_years[-1]})",
+    curve.index, curve_table["stranded_pct_year_min"], curve_table["stranded_pct_year_max"],
+    alpha=0.3, label=f"interannual range ({pooled_years[0]}–{pooled_years[-1]})",
 )
 ax.set_ylabel("stranded (% of released)")
 ax.legend()
@@ -1083,9 +1038,11 @@ print(f"  beached:           {n_beached:,.0f} "
       f"({100 * n_beached / max(total_released, 1):.1f}%)")
 print(f"  stranding hexes:   {beached['beach_hex'].nunique():,}")
 print(f"  source hexes:      {frac['release_hex'].nunique():,}")
+print(f"  stranded by {origin_horizon_days} d, per release hex: median "
+      f"{frac['value'].median():.1f} %")
 print(f"  median displacement at stranding: {median_disp:,.1f} km")
 print(f"  member:            {member}")
 print("  cumulative stranded % of released by age (pooled, interannual min–max):")
-for t in curve.index:
-    print(f"    {t:>5} d: {curve[t]:6.2f} %  "
-          f"[{curve_per_year.loc[t].min():6.2f} .. {curve_per_year.loc[t].max():6.2f}]")
+for t, row in curve_table.iterrows():
+    print(f"    {t:>5} d: {row['stranded_pct']:6.2f} %  "
+          f"[{row['stranded_pct_year_min']:6.2f} .. {row['stranded_pct_year_max']:6.2f}]")

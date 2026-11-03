@@ -32,11 +32,12 @@
 #         bottom unweighted)                              x 5 seasons   15
 #   029, 030  surface_stokes, production member           x 5 seasons   10
 #   031  surface_stokes, every 024e member on disk        x 5 seasons    5
-#   035  both regimes in one figure (reads 026's CSVs)    x 5 seasons    5
+#   035  both regimes in one figure (026's, 029's CSVs)   x 5 seasons    5
 #                                                                     ----
 #                                                                       85
 #
-# 035 draws the 026 area exports of both regimes, so the 035 units run as a
+# 035 draws the 026 area exports of both regimes and the 029 stranding curve
+# of surface_stokes, so the 035 units run as a
 # second wave after every other unit has finished; the first wave is one
 # flat pool with no ordering between its units.
 #
