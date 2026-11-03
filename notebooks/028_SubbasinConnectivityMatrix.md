@@ -145,6 +145,18 @@ assert max_age_days % age_bin_days == 0, (
 
 member_tag = member or "unweighted"
 value_col = "w_obs" if member else "n_obs"
+# Plain-language figure titles; the run keys stay in filenames and prints.
+REGIME_LABELS = {
+    "surface": "surface",
+    "surface_stokes": "surface + Stokes drift",
+    "bottom": "bottom",
+}
+SEASON_LABELS = {"ALL": "all seasons"}
+title_context = ", ".join([
+    REGIME_LABELS.get(regime, regime),
+    SEASON_LABELS.get(season, season),
+    "survival-weighted" if member else "unweighted",
+])
 print(f"regime={regime}, season={season} (months {season_months}), "
       f"member={member_tag}, value column {value_col!r}")
 
@@ -593,7 +605,7 @@ colorbar(fig, ax, im, f"residence ({value_col})")
 # Run context and horizon as one two-line figure title: the combined string
 # overruns the 180 mm page on one line, and a separate axes title can be
 # pushed into the figure title once the fixed-aspect matrix fills the page.
-fig.suptitle(f"{regime} — {season} — {member_tag}\nage < {max_age_days} d")
+fig.suptitle(f"{title_context}\nage < {max_age_days} d")
 save(fig, f"SubbasinConnectivity_raw_{regime}_{season}_{member_tag}_T{max_age_days}d.png")
 ```
 
@@ -633,7 +645,7 @@ for h in time_horizons_days:
     fig, ax = matrix_figure(targets)
     im = draw(ax, np.where(values > 0, values, np.nan), targets, norm=norm)
     colorbar(fig, ax, im, "emission fraction")
-    fig.suptitle(f"{regime} — {season} — {member_tag}\nage < {h} d")
+    fig.suptitle(f"{title_context}\nage < {h} d")
     save(fig, f"SubbasinConnectivity_emission_{regime}_{season}_{member_tag}_T{h}d.png")
 ```
 
@@ -688,8 +700,8 @@ for h in time_horizons_days:
                         ha="center", va="center",
                     )
     colorbar(fig, ax, im, "emission fraction (mean over years)")
-    fig.suptitle(f"{regime} — {season} — {member_tag}\n"
-                 f"age < {h} d — {len(years)}-year mean")
+    fig.suptitle(f"{title_context}\n"
+                 f"age < {h} d, {len(years)}-year mean")
     save(fig, f"SubbasinConnectivity_interannual_{regime}_{season}_{member_tag}_T{h}d.png")
 ```
 

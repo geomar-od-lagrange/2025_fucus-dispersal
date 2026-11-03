@@ -506,7 +506,10 @@ filling the page width minus fixed label margins (`matrix_figure`), the
 colorbar under the matrix at its width; one figure per horizon, not a
 panel grid (17 codes per axis need cells of several mm); run context and
 horizon as one two-line `fig.suptitle` (an axes title collides with it once
-the fixed-aspect matrix fills the page). **Discrete log scale**: a
+the fixed-aspect matrix fills the page). The run context is plain language
+("surface + Stokes drift, all seasons, survival-weighted"); run keys and
+member tags stay in filenames and prints, and the notebook's
+`REGIME_LABELS` / `SEASON_LABELS` dicts do the mapping at plot time. **Discrete log scale**: a
 `BoundaryNorm` with one class per half decade (edges `10**(k/2)`), the
 default colormap sampled across the classes. The emission views share one
 norm across horizons: the peak rounded up to its half-decade edge, floored
@@ -935,7 +938,8 @@ flat_fraction, coast_len_m, stranded_weight` plus the 024a hex geometry
 
 The one sensitivity illustration for bottom drift: the `bottom` regime against
 `bottom_vs0p8`, the same 010 runs with U and V scaled by 0.8
-([job_scripts.md](job_scripts.md), velocity-scaled variant regimes). The
+([job_scripts.md](job_scripts.md), velocity-scaled variant regimes). Figure titles use
+plain labels ("bottom", "bottom, velocity × 0.8") via `REGIME_LABELS`. The
 variant exists for one release year and one release per month, so **both
 sides are cut to those release doys** (`release_doys_csv`); a doy missing from
 either counts partition raises rather than shrinking one side. Parquet only.
@@ -992,7 +996,8 @@ parquet; it runs after 026 for every regime it draws.
   against the cumulative horizon `T` (ages in `[0, T)`, every age-bin edge
   026 exported), y from zero so the regimes compare as ratios, top 12 % above
   the highest band for the labels. No title and no legend: each line is named
-  by a text label in its colour at the first horizon (above the topmost line,
+  by a text label (`REGIME_LABELS`, e.g. "surface + Stokes drift", plus the
+  weighting) in its colour at the first horizon (above the topmost line,
   below the others — the lines cross later); override `color=` on the label,
   so it reads as the line's name. The season and the band go in the caption.
 - **One colour per regime** from the default cycle, indexed by its position

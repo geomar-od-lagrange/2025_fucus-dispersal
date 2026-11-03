@@ -114,6 +114,12 @@ if not frames:
     raise FileNotFoundError(f"none of the 026 area exports exist: {[str(p) for p in missing]}")
 areas = pd.concat(frames, ignore_index=True)
 drawn = [r for r in regimes if r in set(areas["regime"])]
+# Plain-language line labels; the run keys stay in filenames and prints.
+REGIME_LABELS = {
+    "surface": "surface",
+    "surface_stokes": "surface + Stokes drift",
+    "bottom": "bottom",
+}
 
 # %% [markdown]
 # # Pooled value and interannual range
@@ -180,7 +186,7 @@ for ax, (value, ylabel) in zip(axes, PANELS.items()):
         # line, below every other, so it names the line without a legend.
         topmost = t[value].iloc[0] >= max(table.loc[r, value].iloc[0] for r in drawn)
         ax.annotate(
-            f"{regime} ({weighting})", (t.index[0], t[value].iloc[0]),
+            f"{REGIME_LABELS.get(regime, regime)} ({weighting})", (t.index[0], t[value].iloc[0]),
             xytext=(4, 10 if topmost else -10), textcoords="offset points",
             ha="left", va="bottom" if topmost else "top", color=color,
         )

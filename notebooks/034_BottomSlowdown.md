@@ -107,6 +107,11 @@ release_doys = sorted(int(x) for x in release_doys_csv.split(",") if x)
 time_horizons_days = [int(x) for x in time_horizons_days_csv.split(",") if x]
 quantiles = [float(x) for x in quantiles_csv.split(",") if x]
 regimes = [regime_ref, regime_var]
+# Plain-language figure titles; the run keys stay in filenames and prints.
+REGIME_LABELS = {
+    "bottom": "bottom",
+    "bottom_vs0p8": "bottom, velocity × 0.8",
+}
 for h in [*time_horizons_days, map_horizon_days]:
     assert h % age_bin_days == 0, (
         f"horizon {h} d is not a multiple of age_bin_days {age_bin_days} d; "
@@ -294,7 +299,7 @@ for ax, q in zip(axes.flat, quantiles):
     # Ratio 1 = no slowdown effect. Drawn in the axes-frame colour so it reads
     # as a reference, not as a second data series in the cycle's first colour.
     ax.axhline(1.0, color=plt.rcParams["axes.edgecolor"], zorder=0)
-    ax.set_title(f"{regime_var} / {regime_ref}, area holding {100 * q:g} % of particle-time")
+    ax.set_title(f"{REGIME_LABELS.get(regime_var, regime_var)} / {REGIME_LABELS.get(regime_ref, regime_ref)}, area holding {100 * q:g} % of particle-time")
     ax.set_xticks(time_horizons_days)
 fig_path = figure_dir / f"BottomSlowdown_length_{year}_r{hex_radius}m.png"
 fig.savefig(fig_path, dpi=FIGURE_DPI)
@@ -446,7 +451,7 @@ for column, (norm, cmap, extend, colorbar_kwargs) in VIEWS.items():
     fig, axes = plt.subplots(2, 1, squeeze=False, layout="constrained")
     fig.set_size_inches(FIGURE_WIDTH_IN, MAP_PAIR_HEIGHT_IN)
     for ax, regime in zip(axes.flat, regimes):
-        hex_map(gdfs[regime], column, ax, norm, cmap, title=f"{regime}, {map_horizon_days} d")
+        hex_map(gdfs[regime], column, ax, norm, cmap, title=f"{REGIME_LABELS.get(regime, regime)}, {map_horizon_days} d")
     # One colourbar for both maps, inset under the lower one at axes-fraction
     # width 1.0: the stacked maps are height-limited, so a bar under the
     # whole figure would run past them to the page edges.
