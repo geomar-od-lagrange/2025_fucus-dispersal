@@ -313,6 +313,24 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
     they are dry (no ε there, faces not walls) — ×3 particle-hours there,
     ~1.3 % of the total at ε = 1. Recommended: wall set from every step of
     the full forcing period per regime + reject step on its land set.
+- ε bounds (2026-11-03, `tmp_wall_velocity/r_onshore_timescales.{py,log}`;
+  2019 hourly, 3,000 wall cells per nest, wall-normal velocity at the open
+  face opposite the wall = the U in xsi* = ε/(ε+U)):
+  - Cells: fine 0.65–0.91 × 0.93 km, coarse 3.9–5.4 × 5.6 km. ε moves
+    86 m/d per mm/s at the wall; relaxation across a cell by ε alone
+    Δ/ε = 10 d fine / 58 d coarse at 1 mm/s, 2 d / 12 d at 5 mm/s.
+  - Time scales: wall-normal ACF e-folding (median) Stokes 24–26 h,
+    current 15–17 h, current + Stokes 19–21 h, bottom 10–11 h. Onshore spells
+    (current + Stokes) median 5–6 h, q90 1 d, q99 4.5 d; Stokes alone median
+    8–14 h, q99 7–8 d.
+  - |U| median current + Stokes 5.2 cm/s fine / 8.4 cm/s coarse; median rest
+    point xsi* during onshore hours 0.011–0.014 / 0.05–0.07 / 0.18–0.22 cell
+    at ε = 1 / 5 / 20 mm/s (bottom: 0.03 / 0.15 / 0.41).
+  - Bounds: lower ~1 mm/s (int16 storage resolves 0.5 mm/s); upper from
+    ε·T_forcing ≲ ¼ fine cell with T ≈ 1 d → ~2.5 mm/s, and xsi* ≲ 0.1 for
+    bottom → ~3 mm/s. Constant ε in m/s gives the same fractional rest
+    point on both nests; ε ∝ Δ would equalise the relaxation time but push
+    the coarse rest point ~6× further off — keep constant ε.
 - Cost of the full rerun: 010 ~1–1.5 d wall clock (24 regime-years,
   ~15–20 k core-hours), downstream chain ~3 h. Quota (`workquota`
   2026-11-03): 25.1 T of 29 T soft; a full trajectory set is ~3–3.4 T
