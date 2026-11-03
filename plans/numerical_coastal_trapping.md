@@ -354,10 +354,18 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
     half-vs-half floor (hex .74–.77 vs .95; 30 km .81–.83 vs .96; subbasin
     .93 vs .99), weighted or not; non-monotonic in ε. Survival weighting does
     not make them converge.
-  - Open: is that a systematic ε effect or intrinsic sensitivity of
-    deterministic advection (chaos + which coastal attractor a cluster
-    reaches)? Test running: ε = 2 vs 2.0002 mm/s and vs ≤ 1 m release
-    jitter (`y_perturb_compare.*`).
+  - Systematic, not intrinsic (perturbation test, `y_perturb_compare.*`,
+    `fig/y_perturb.png`): ε = 2 vs 2.0002 mm/s and vs ≤ 1 m release jitter
+    sit at the half-vs-half floor (surface_stokes unweighted occupancy
+    hex .94/.96 vs floor .96; afloat d180 34.9 % ± 0.06 pt vs 26–35 %
+    across ε). Same-drifter median separation from ε2 at d180: < 0.01 km
+    for the perturbations, 56–80 km for ε1/3/5. A divergent minority exists
+    (pertEps: 23 % of drifters > 1 km apart at d180, q90 120 km), and 18 %
+    collapse bit-identically onto ε2's coastal fixed points — the bulk
+    contracts. Bottom: same picture, smaller ε gaps (hex .87–.89 vs .93);
+    subbasin level indistinguishable. So ε choice moves results beyond
+    noise, non-monotonically (ε2 has the most afloat weight); cause
+    untested.
   - 010 integration note: 024d's real-drifter test (zero first-step
     displacement) fails for land seeds once ε acts on them without reject;
     flag land seeds from the land set at release instead.
