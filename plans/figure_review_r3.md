@@ -110,6 +110,14 @@ prototype).
 - Build, and check page fit (H3).
 - Commit inside `paper/` only when asked; push only when told.
 
+## Render order
+
+The PNGs made in this round are styling previews on pre-fix data. The final
+render happens after the 010 wall-velocity rerun and the 024 chain. The
+notebooks then run unchanged against the regenerated stores; R3 adds outputs
+(029 `stranded_curve_*.csv`, the per-release-hex panel) and 035 parameters,
+but no new input paths or store names.
+
 ## Status
 
 - 2026-11-03: plan written (branch `wr/figures-r3`, worktree
