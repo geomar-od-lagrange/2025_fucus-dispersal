@@ -233,7 +233,7 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
     Overhead +19 % runtime. ε = 5 mm/s smoke: formerly pinned drifters sit
     0.12–0.38 cell (≈ 100–350 m) off the wall and keep moving. 6 runs (180 d)
     write to `<outputs>/tmp_wall_velocity/run_<regime>_eps<mm>mm.zarr`,
-    ~1 h each; next: metrics.
+    ~1 h each; metrics done (results below); next: authors decide on ε.
   - Metrics: stalled share of particle-hours (step < 1 m / 10 m) at
     30/90/180 d and drifters stalled at day 180; pinned (≤ 1e-3 cell of a
     wall); wall-distance distribution in wall cells; coastal residence
@@ -241,6 +241,34 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
     switch); crow-flies distance quantiles; overlap of coastal-contact and
     day-180 position distributions at 2 / 6 / 15 / 30 km between ε runs;
     runtime.
+- Prototype results (2026-11-03, `tmp_wall_velocity/e_metrics.{py,log,csv}`,
+  figs `fig/e_overview.png`, `fig/e_trapped.png`; water-seeded = release
+  cell has a non-wall face: 14,230 surface_stokes / 14,240 bottom):
+
+  | surface_stokes, ε = 0 / 1 / 5 mm/s | 0 | 1 | 5 |
+  |---|---|---|---|
+  | pinned particle-hours 0–180 d / drifters at d180 | 65 / 95 % | 0 / 0 | 0 / 0 |
+  | cell-trapped (≥ 7 d in one wall cell + 4-nbrs) drifters d30/90/180 | 50/93/99 % | 32/86/77 % | 24/76/49 % |
+  | median final trap | 131 d | 41 d | 45 d |
+  | trap episodes ≥ 7 d ending before d180; of those reaching 20 km in 30 d | 56; 74 % | 82; 71 % | 88; 77 % |
+  | particle-hours in wall cells 0–180 d | 88 % | 82 % | 77 % |
+  | land: drifters entering (within grid / nest switch); particle-hours | 181/128; 1.35 % | 573/0; 0.58 % | 479/0; 0.12 % |
+  | distance from release d180, median | 165 km | 310 km | 351 km |
+  | overlap of d180 positions vs ε = 0 at 2/30 km (noise floor .89/.93) | – | .10/.44 | .01/.28 |
+
+  Bottom: pinned 24 % → 0 at d180; cell-trapped at d180 43/25/16 % (the
+  metric also counts slow bottom drifters that never pinned); d180 median
+  distance 59/68/71 km; d180 overlap vs ε = 0 at 30 km .78 / .65 (floor .91).
+  - Reading: ε ends pinning and frozen land residence, and trap episodes
+    now end. Under persistent onshore forcing surface_stokes drifters sit at
+    the off-wall fixed point (0.02–0.09 cell, 17–31 m/h jitter, ~1 cell)
+    — the corner fixed point is a stable node while both components are
+    onshore. Dispersal still depends strongly on ε (ε = 1 vs 5 d180 overlap
+    .06–.52, floor ~.9): ε is not a negligible numerical knob.
+  - Holes: (a) wall faces with wet cells on both sides get no ε (fine: 3
+    surface_stokes / 20 bottom); 2 bottom drifters sit there ~20 d at ε = 5.
+    (b) Within-grid land entries rise at ε > 0 (untraced); exit from a land
+    cell takes ~cell size / ε (median 322 h at ε = 1).
 - Cost of the full rerun: 010 ~1–1.5 d wall clock (24 regime-years,
   ~15–20 k core-hours), downstream chain ~3 h. Quota (`workquota`
   2026-11-03): 25.1 T of 29 T soft; a full trajectory set is ~3–3.4 T
