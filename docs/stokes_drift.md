@@ -99,10 +99,19 @@ chain in [2d_field_extraction.md](2d_field_extraction.md). Considered
 in-kernel runtime sum; rejected for I/O cost and harder face-alignment
 validation.
 
-Stokes is also shut off per-timestep where BSH says the face is
-blocked (`u_surf == 0` or NaN) so tidal flats correctly receive Stokes
-when wet and zero Stokes when dry, and the Stokes contribution doesn't
-push particles through no-slip walls.
+Stokes is also shut off per-timestep where the BSH surface current is
+NaN or exactly 0. At coast faces this is redundant with the edge mask
+on the sum, which already zeroes them. Its only independent effect is
+on open-water faces where the int16 current (1 mm/s steps) rounds to 0:
+Stokes is dropped there on 0.4 % (coarse) / 2.5 % (fine) of face-steps,
+0.3 % / 1.6 % of the Stokes |flux|. Masking on the land mask instead
+would remove that.
+
+Zero coast faces stop flux *through* the coast, not drift *toward* it:
+inside the wall cell the C-grid interpolates the wall-normal velocity
+linearly to 0 at the wall, so onshore Stokes still carries drifters up
+to the wall, where they stall. See
+[numerical_coastal_trapping.md](../plans/numerical_coastal_trapping.md).
 
 ## Open concern: spread bridges thin land barriers
 

@@ -3,9 +3,33 @@
 Drifters in 010 pile up against the model's zero-flux coast faces and freeze
 there. Findings below (2026-10-27/28, all from the 2019 sample, scratch in
 `tmp_stall_audit/`, `tmp_stokes_faces/`, `tmp_pinned_time/`,
-`tmp_land_entry/`, `tmp_pin_sites/`); the fix (a wall velocity applied in the
+`tmp_land_entry/`, `tmp_pin_sites/`, `tmp_bottom_check/`; all untracked); the fix (a wall velocity applied in the
 010 kernel) is planned at the end. Found during the figure review:
 [figure_review_r2.md](figure_review_r2.md).
+
+## Start here (state 2026-11-03)
+
+- **Diagnosis done** (sections below, newest last). Pinning at zero-flux
+  coast faces is the dominant fate with Stokes (52 % of particle-hours over
+  180 d, 82 % of drifters pinned at day 180) and moderate without (surface
+  21 %, bottom 7 % of particle-hours). Which coast stretch pins is physical
+  (≥ 30 km); the exact pin cell is a grid artefact. 0.9 % of drifters also
+  enter land cells (RK4 stage into a zero-velocity land cell; nest-seam
+  mismatch). Bottom: no grid error, pins follow the bottom return flow.
+- **Chosen direction (authors, 2026-11-03):** fix in the 010 kernel with a
+  small wall velocity ε pointing away from land — no new 2D fields. Not
+  started. Beaching stays with the rate model (`trap_wall` = hard shore
+  substrate, not a C-grid wall); post-processing stalls as stranded is the
+  fallback, not the plan.
+- **Next steps:** (1) `tmp_` prototype: static wall field per nest
+  (+ε on permanent zero faces) + RK4 kernel sampling `UV + UVwall`; one
+  release, ε = 0 / 1 / 5 mm/s; metrics in §Fix. (2) Authors pick ε.
+  (3) Wire into 010 + docs, review agent. (4) Full rerun (§Fix: cost,
+  quota) and downstream chain; then the paper figures and numbers refresh
+  (styling from the R2 round is final).
+- **Held until after the fix:** dilution colour top (1e-1 vs 1e-2), the ¼-hex
+  dilution area floor, the zero-water hex remap (G6) — see
+  [figure_review_r2.md](figure_review_r2.md).
 
 ## Finding: coastal dilution hot spots and stalled drifters (2026-10-27)
 
@@ -23,8 +47,7 @@ sample = every third zarr, 1.42 M drifters per regime).
   gives walled shores zero stranding rate). The first diagnostic called this
   the C-grid corner trap; that is unverified — its "on F-points" test ran
   only inside the top hexes, as a half-cell offset from the H0 coarse
-  coordinates. An independent audit on actual trajectories with the 010
-  fieldset is running (`tmp_stall_audit/`).
+  coordinates. Superseded by the stall audit below.
 - Land seeds are excluded correctly (both regimes count water-seeded
   drifters: surface N = 37,296,956, bottom 37,277,160).
 - Options, by soundness of the result: (1) floor the dilution area at ¼ hex
@@ -32,8 +55,6 @@ sample = every third zarr, 1.42 M drifters per regime).
   stopped-for-good drifters as stranded (024d moved-flag + 024e/f/g
   reducers, ~20 core-hours, plus the 024 counts rebuild for bottom; a
   methods decision); (3) fix the corner trap in 010 and rerun everything.
-- Status: awaiting the authors' decision; dilution colour range on hold.
-
 ## Stall audit (2026-10-27, `tmp_stall_audit/`, verified with the 010 fieldset)
 
 - Stopped for good (no hourly step ≥ 10 m for the last ≥ 7 d before
@@ -55,7 +76,7 @@ sample = every third zarr, 1.42 M drifters per regime).
   there (0.5 % coarse / 2 % fine of open-water face steps).
 - Reading: beaching under onshore convergence that never reverses. Fix
   candidates: post-process stalled drifters as stranded (no rerun of 010),
-  or a beaching kernel in 010. Awaiting the authors' decision.
+  or a beaching kernel in 010. Superseded by §Start here.
 
 ## Stokes face mask audit (2026-10-27, `tmp_stokes_faces/`, verified)
 

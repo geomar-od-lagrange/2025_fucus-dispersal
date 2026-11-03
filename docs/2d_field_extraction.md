@@ -32,7 +32,7 @@ conditions that triggered them.
 
 A naive "deepest non-NaN" picker fails on BSH because BSH stores
 `0.0` (not NaN) at C-grid U/V faces blocked by a shallower
-neighbour's bathymetry — these are no-slip walls, not fluid.
+neighbour's bathymetry — zero-flux walls, not fluid.
 `load_bottom` instead takes, for each face independently, the deepest
 layer that is **both non-NaN and non-zero**. U and V are picked
 separately because their face bathymetries —
