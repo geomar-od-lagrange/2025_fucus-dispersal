@@ -269,6 +269,11 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
     surface_stokes / 20 bottom); 2 bottom drifters sit there ~20 d at ε = 5.
     (b) Within-grid land entries rise at ε > 0 (untraced); exit from a land
     cell takes ~cell size / ε (median 322 h at ε = 1).
+  - (a) explained (`tmp_wall_velocity/f_thin_walls.log`): all 23 are sills
+    between tidal-flat / shallow cells (H0 ≤ ~1 m; Wadden Sea, Little Belt)
+    that flood from opposite sides; bottom files are NaN there all year.
+    Fix (agreed 2026-11-03): ε toward the deeper cell (larger H0); tie →
+    cell with more open faces. In progress with tracing (b).
 - Cost of the full rerun: 010 ~1–1.5 d wall clock (24 regime-years,
   ~15–20 k core-hours), downstream chain ~3 h. Quota (`workquota`
   2026-11-03): 25.1 T of 29 T soft; a full trajectory set is ~3–3.4 T
