@@ -32,6 +32,7 @@
 # per-hex quantiles are exported as GeoJSON for collaborators.
 
 # %%
+import itertools
 import re
 from pathlib import Path
 
@@ -47,9 +48,10 @@ from shapely.geometry import box
 # # Parameters
 
 # %% tags=["parameters"]
-# Read root of the hex-aggregate store.
-# Read root of the data twin (BSH wet-cell coastline and fine-grid H0).
+# Read root of the data twin (HELCOM polygons, BSH wet-cell coastline and
+# fine-grid H0).
 data_root = "../data"
+# Read root of the hex-aggregate store; write root for figures and exports.
 output_root = "../output"
 # Which regime's distance partitions to read; one regime per run.
 regime = "surface"
@@ -93,6 +95,7 @@ SEASON_MONTHS = {
 }
 
 data_root = Path(data_root)
+subbasins_path = data_root / "helcom_subbasins_2022" / "HELCOM_subbasins_2022_level2.shp"
 output_root = Path(output_root)
 if season not in SEASON_MONTHS:
     raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
@@ -109,6 +112,8 @@ quantile_levels = [float(x) for x in quantile_levels_csv.split(",")]
 # (rationale in docs/visualisations.md).
 FIGURE_WIDTH_IN = 180 / 25.4
 FIGURE_DPI = 300
+# Subbasin border stroke, as on every map of the pipeline (docs/visualisations.md).
+basin_border_lw = 0.52
 
 figure_dir = output_root / "Figures" / "027"
 figure_dir.mkdir(parents=True, exist_ok=True)
@@ -220,7 +225,7 @@ if quant.empty:
 # gridspec cell, and a cell-sized colorbar overshoots it.
 
 # %%
-def hex_value_plot(gdf, ax, extent, column, title=None, coast=None):
+def hex_value_plot(gdf, ax, extent, column, title=None, coast=None, borders=None):
     # No missing_kwds (unlike 025/026): under-sampled hexes are dropped
     # upstream by hex_quantiles, so there are no NaN-valued rows to grey out.
     if not gdf.empty:
@@ -230,6 +235,10 @@ def hex_value_plot(gdf, ax, extent, column, title=None, coast=None):
             legend_kwds={"label": "final displacement (km)"},
             edgecolor="face", linewidth=hex_seam_lw, zorder=1,
         )
+    if borders is not None:
+        # Override: neutral mid-grey thin subbasin borders (as 029), so a border
+        # reads neither as coastline (black) nor as part of the hex field.
+        borders.plot(ax=ax, color="0.5", linewidth=basin_border_lw, zorder=1.5)
     if coast is not None:
         coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
     lon_min_, lon_max_, lat_min_, lat_max_ = extent
@@ -252,7 +261,7 @@ def grid_height_in(nrows, ncols, aspect, width_in):
 
 
 # %% [markdown]
-# # Map backdrop: the model coastline
+# # Map backdrop: the model coastline and the subbasin borders
 #
 # The BSH HBMnoku wet-cell outline (`coastline.geojson`, the water the
 # particles were advected on), not a geographic coastline. The file holds
@@ -262,6 +271,10 @@ def grid_height_in(nrows, ncols, aspect, width_in):
 # centres), unioned on a 1e-3° precision grid — the cell edges are stored
 # rounded to 1e-4°, and an exact union leaves a sliver outline along the
 # nest seam.
+#
+# Subbasin borders are the HELCOM level-2 polygons' shared edges only, so
+# their outer outlines do not draw a second coastline; drawn over the hexes
+# and under the coastline.
 
 # %%
 h0_fine = xr.open_dataset(
@@ -285,6 +298,18 @@ coast_baltic = (
     gpd.GeoSeries([model_water], crs="EPSG:4326")
     .boundary.clip(box(extent_lon_min, extent_lat_min, extent_lon_max, extent_lat_max))
 )
+
+subbasin_outline = gpd.read_file(subbasins_path).to_crs(4326).boundary
+basin_borders = gpd.GeoSeries(
+    [
+        a.intersection(b)
+        for a, b in itertools.combinations(subbasin_outline, 2)
+        if a.intersects(b)
+    ],
+    crs="EPSG:4326",
+).clip(box(extent_lon_min, extent_lat_min, extent_lon_max, extent_lat_max))
+print(f"subbasin borders: {len(basin_borders)} shared edges between "
+      f"{len(subbasin_outline)} HELCOM polygons")
 
 baltic_extent = [extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max]
 # Aspect ratio that keeps 1° lon at lat_mean visually equal to 1° lat.
@@ -317,7 +342,7 @@ fig.set_size_inches(
 for ax, q in zip(axes.flat, quantile_levels):
     hex_value_plot(
         quant_gdf, ax, baltic_extent, f"q{q:g}_km",
-        title=f"quantile {q:g}", coast=coast_baltic,
+        title=f"quantile {q:g}", coast=coast_baltic, borders=basin_borders,
     )
 # What the crop cuts off: the share of the mapped trajectories whose source
 # hex (representative point) lies outside the extent.

@@ -61,6 +61,7 @@ Two views per horizon:
   dilution figure (`dilution_floor` to `dilution_top`, two classes per decade).
 
 ```python
+import itertools
 import json
 import re
 import unicodedata
@@ -81,7 +82,7 @@ from shapely.ops import unary_union
 # Parameters
 
 ```python tags=["parameters"]
-# Read root of the data twin (BSH static H0).
+# Read root of the data twin (HELCOM polygons, BSH static H0).
 data_root = "../data"
 # Read root of the hex-aggregate store; write root for figures and exports.
 output_root = "../output"
@@ -165,6 +166,7 @@ print(f"release years in the analysis: {analysis_years[0]}–{analysis_years[-1]
 output_root = Path(output_root)
 data_root = Path(data_root)
 store_root = output_root / "HexAggregates"
+subbasins_path = data_root / "helcom_subbasins_2022" / "HELCOM_subbasins_2022_level2.shp"
 time_horizons_days = [int(x) for x in time_horizons_days_csv.split(",") if x]
 overview_horizons_days = [int(x) for x in overview_horizons_days_csv.split(",") if x]
 assert max_age_days % age_bin_days == 0, (
@@ -187,13 +189,8 @@ print(f"regime={regime}, season={season}, member={member_tag}, window [0, {max_a
 # final size (rationale in docs/visualisations.md).
 FIGURE_WIDTH_IN = 180 / 25.4
 FIGURE_DPI = 300
-# Vertical inches per row for the panel title, and once per figure for the
-# shared colorbar under the grid with its label.
-PANEL_TITLE_IN = 0.25
-COLORBAR_IN = 0.6
-# One page: a taller grid is capped here, its maps turn height-limited and
-# the spare width becomes side margin.
-MAX_FIGURE_HEIGHT_IN = 230 / 25.4
+# Subbasin border stroke, as on every map of the pipeline (docs/visualisations.md).
+basin_border_lw = 0.52
 
 origin_subbasins_filter = [s.strip() for s in origin_subbasins_csv.split(",") if s.strip()]
 
@@ -493,7 +490,7 @@ COLUMN_LABEL = {
 }
 ```
 
-# Map backdrop: coastline and the 3 m isobath
+# Map backdrop: coastline, subbasin borders and the 3 m isobath
 
 The `extent_*` parameters decide the extent, shared by every map of the
 pipeline. The key tiles the full BSH model domain (North Sea included), so
@@ -504,6 +501,10 @@ Coastline is the model's own: the outline of the BSH HBMnoku wet cells
 merged fine-first as in 024a — fine polygons, plus the coarse ones outside
 the fine-grid bbox. The outline is drawn minus a 0.001° strip along that
 bbox, where the two grids' cells meet in open water.
+
+Subbasin borders are the HELCOM level-2 polygons' shared edges only, so
+their outer outlines do not draw a second coastline; drawn over the hexes
+and under the coastline and the isobath.
 
 The isobath comes from the BSH static H0 grids, *not* from the key's
 `mean_depth_m` — a hex mean over a 6 km cell cannot resolve a 3 m
@@ -552,6 +553,18 @@ coast = (
     .clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
 )
 
+subbasin_outline = gpd.read_file(subbasins_path).to_crs(4326).boundary
+basin_borders = gpd.GeoSeries(
+    [
+        a.intersection(b)
+        for a, b in itertools.combinations(subbasin_outline, 2)
+        if a.intersects(b)
+    ],
+    crs="EPSG:4326",
+).clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
+print(f"subbasin borders: {len(basin_borders)} shared edges between "
+      f"{len(subbasin_outline)} HELCOM polygons")
+
 # Width/height of the extent in visually equal degrees — 1° lon at the
 # extent's mid-latitude against 1° lat.
 domain_aspect = (
@@ -561,29 +574,50 @@ domain_aspect = (
 
 
 def map_grid(nrows, ncols):
-    """A constrained-layout panel grid at full page width. Each map is
-    width-limited, so the panel height follows from the page width and the
-    extent aspect — no figsize arithmetic against the layout engine and no
-    draw-measure-rescale loop. One colorbar per figure sits *under* the
-    grid (``shared_colorbar``), so the fixed allowance is vertical only."""
+    """A constrained-layout panel grid at full page width. The height is only
+    a seed (the maps alone, no decorations); ``fit_height`` sets the final
+    one once the figure is drawn."""
     fig, axes = plt.subplots(nrows=nrows, ncols=ncols, squeeze=False, layout="constrained")
-    fig.set_size_inches(
-        FIGURE_WIDTH_IN,
-        min(
-            nrows * ((FIGURE_WIDTH_IN / ncols) / domain_aspect + PANEL_TITLE_IN) + COLORBAR_IN,
-            MAX_FIGURE_HEIGHT_IN,
-        ),
-    )
+    fig.set_size_inches(FIGURE_WIDTH_IN, nrows * FIGURE_WIDTH_IN / ncols / domain_aspect)
     return fig, axes
+
+
+def fit_height(fig, axes):
+    """Set the figure height at which every map fills its column width, with
+    no blank band between rows. Measured, not estimated: per row, the height
+    the map takes at its cell's full width (the cell's width times the drawn
+    map's height/width) against the cell height constrained_layout gave it,
+    summed over the rows and added to the figure height. The decorations are
+    fixed inches up to the colorbar ``pad`` (a fraction of the grid height),
+    so the correction shrinks a hundredfold per pass; it stops below half a
+    pixel."""
+    for _ in range(5):
+        fig.draw_without_rendering()
+        width_in, height_in = fig.get_size_inches()
+        deficit_in = {}
+        for ax in axes.flat:
+            if not ax.get_visible():
+                continue
+            cell, drawn = ax.get_position(original=True), ax.get_position()
+            full_width_height_in = cell.width * drawn.height / drawn.width * height_in
+            deficit_in[ax.get_subplotspec().rowspan.start] = (
+                full_width_height_in - cell.height * height_in
+            )
+        correction_in = sum(deficit_in.values())
+        if abs(correction_in) < 0.5 / FIGURE_DPI:
+            return
+        fig.set_size_inches(width_in, height_in + correction_in)
+    raise RuntimeError(f"figure height did not settle, last correction {correction_in:.4f} in")
 
 
 def shared_colorbar(fig, axes, norm, cmap, label, extend, **kwargs):
     """One horizontal colorbar under the whole grid. pad override: the
     default 0.05 is a fraction of the whole grid's height, a blank band
-    between the last row and the bar."""
+    between the last row and the bar. panchor=False keeps the maps'
+    top anchor (``hex_map``); the default re-anchors them to the bottom."""
     fig.colorbar(
         ScalarMappable(norm=norm, cmap=cmap), ax=axes, orientation="horizontal",
-        label=label, extend=extend, pad=0.01, **kwargs,
+        label=label, extend=extend, pad=0.01, panchor=False, **kwargs,
     )
 
 
@@ -617,6 +651,9 @@ def hex_map(gdf, column, ax, norm, cmap=None, title=None):
             # continuous field.
             edgecolor="face", linewidth=0.4, zorder=1,
         )
+    # Override: neutral mid-grey thin subbasin borders (as 029), so a border
+    # reads neither as coastline (black) nor as part of the hex field.
+    basin_borders.plot(ax=ax, color="0.5", linewidth=basin_border_lw, zorder=1.5)
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
     # One styling override for the isobath: magenta at a hairline width is
     # the canonical anti-viridis, so the 3 m line stays legible over every
@@ -629,7 +666,12 @@ def hex_map(gdf, column, ax, norm, cmap=None, title=None):
         )
     ax.set_xlim(domain_lon_min, domain_lon_max)
     ax.set_ylim(domain_lat_min, domain_lat_max)
-    ax.set_aspect(1 / np.cos(np.radians(0.5 * (domain_lat_min + domain_lat_max))))
+    # Top anchor: while fit_height measures, any spare cell height falls under
+    # the map, so the title above it keeps its place and the layout responds
+    # linearly to the figure height.
+    ax.set_aspect(
+        1 / np.cos(np.radians(0.5 * (domain_lat_min + domain_lat_max))), anchor="N"
+    )
     ax.set_xticks([])
     ax.set_yticks([])
     if title is not None:
@@ -720,9 +762,10 @@ for code in origin_codes:
             / f"OriginSubbasinTimeHorizonMaps_{regime}_{season}_r{hex_radius}m_{member_tag}"
             f"_{_slug(name)}_{column}.png"
         )
+        fit_height(fig, axes)
         # Print-ready: full 180 mm page width at 300 dpi (see the parse cell).
         fig.savefig(fig_path, dpi=FIGURE_DPI)
-        print(f"wrote {fig_path}")
+        print(f"wrote {fig_path} ({fig.get_size_inches()[1] * 25.4:.1f} mm tall)")
         plt.show()
     for h in time_horizons_days:
         export_geojson(
@@ -786,9 +829,10 @@ for h in overview_horizons_days:
         figure_dir
         / f"OriginSubbasinOverview_{regime}_{season}_r{hex_radius}m_{member_tag}_T{h}d_dilution.png"
     )
+    fit_height(fig, axes)
     # Print-ready: full 180 mm page width at 300 dpi (see the parse cell).
     fig.savefig(fig_path, dpi=FIGURE_DPI)
-    print(f"wrote {fig_path}")
+    print(f"wrote {fig_path} ({fig.get_size_inches()[1] * 25.4:.1f} mm tall)")
     plt.show()
     # Per origin: the share of the origin's particle-time below the floor
     # (under colour) and on hexes with no water area (NaN dilution, not

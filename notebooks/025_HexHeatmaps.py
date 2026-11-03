@@ -50,6 +50,7 @@
 #   HELCOM release subbasin shows its own share
 
 # %%
+import itertools
 import json
 import re
 import unicodedata
@@ -143,6 +144,7 @@ print(f"release years in the analysis: {analysis_years[0]}–{analysis_years[-1]
 data_root = Path(data_root)
 output_root = Path(output_root)
 store_root = output_root / "HexAggregates"
+subbasins_path = data_root / "helcom_subbasins_2022" / "HELCOM_subbasins_2022_level2.shp"
 
 assert max_age_days % age_bin_days == 0, (
     f"max_age_days {max_age_days} d is not a multiple of age_bin_days {age_bin_days} d"
@@ -157,6 +159,8 @@ print(f"regime={regime}, season={season}, member={member_tag}, window [0, {max_a
 # notebook (rationale in docs/visualisations.md).
 FIGURE_WIDTH_IN = 180 / 25.4
 FIGURE_DPI = 300
+# Subbasin border stroke, as on every map of the pipeline (docs/visualisations.md).
+basin_border_lw = 0.52
 # Vertical inches a panel needs on top of its map for the horizontal
 # colorbar, the colorbar label and the panel title.
 PANEL_DECORATION_IN = 0.62
@@ -386,7 +390,7 @@ COLUMN_LABEL = {
 }
 
 # %% [markdown]
-# # Map backdrop: coastline and the 3 m isobath
+# # Map backdrop: coastline, subbasin borders and the 3 m isobath
 #
 # Coastline is the model's: the BSH HBMnoku wet-cell outline
 # (`coastline.geojson`, the water 024a's key areas and the particles'
@@ -397,6 +401,10 @@ COLUMN_LABEL = {
 # beyond the outermost fine centres), unioned on a 1e-3° precision grid —
 # the cell edges are stored rounded to 1e-4°, and an exact union leaves a
 # sliver outline along the nest seam.
+#
+# Subbasin borders are the HELCOM level-2 polygons' shared edges only, so
+# their outer outlines do not draw a second coastline; drawn over the hexes
+# and under the coastline and the isobath.
 #
 # The isobath comes from the BSH static H0 grids, *not* from the key's
 # `mean_depth_m` — a hex mean over a 6 km cell cannot resolve a 3 m
@@ -439,6 +447,22 @@ coast_baltic = _coast.clip(
     box(extent_lon_min, extent_lat_min, extent_lon_max, extent_lat_max)
 )
 coast_de = _coast.clip(box(de_lon_min, de_lat_min, de_lon_max, de_lat_max))
+
+subbasin_outline = gpd.read_file(subbasins_path).to_crs(4326).boundary
+basin_borders = gpd.GeoSeries(
+    [
+        a.intersection(b)
+        for a, b in itertools.combinations(subbasin_outline, 2)
+        if a.intersects(b)
+    ],
+    crs="EPSG:4326",
+)
+print(f"subbasin borders: {len(basin_borders)} shared edges between "
+      f"{len(subbasin_outline)} HELCOM polygons")
+borders_baltic = basin_borders.clip(
+    box(extent_lon_min, extent_lat_min, extent_lon_max, extent_lat_max)
+)
+borders_de = basin_borders.clip(box(de_lon_min, de_lat_min, de_lon_max, de_lat_max))
 
 baltic_extent = [extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max]
 de_extent = [de_lon_min, de_lon_max, de_lat_min, de_lat_max]
@@ -503,10 +527,10 @@ def dilution_norm(gdf):
     return LogNorm(vmin=finite.quantile(0.01), vmax=finite.max())
 
 
-def hex_map(gdf, column, ax, extent, norm, coast, title=None, cbar_label=True):
+def hex_map(gdf, column, ax, extent, norm, coast, borders, title=None, cbar_label=True):
     """Draw one relative-density panel: hex polygons through ``norm``,
-    coastline, and the H0 isobath, all on a plain (non-cartopy) lon/lat
-    axis. Everything is already EPSG:4326, so no reprojection can push
+    subbasin borders, coastline, and the H0 isobath, all on a plain
+    (non-cartopy) lon/lat axis. Everything is already EPSG:4326, so no reprojection can push
     hexes, coastline and isobath out of register. An empty ``gdf`` (a
     subbasin with no releases) skips the hex layer and still renders the
     backdrop, keeping the grid layout stable."""
@@ -537,6 +561,9 @@ def hex_map(gdf, column, ax, extent, norm, coast, title=None, cbar_label=True):
             # continuous field.
             edgecolor="face", linewidth=0.4, zorder=1,
         )
+    # Override: neutral mid-grey thin subbasin borders (as 029), so a border
+    # reads neither as coastline (black) nor as part of the hex field.
+    borders.plot(ax=ax, color="0.5", linewidth=basin_border_lw, zorder=1.5)
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
     # One styling override for the isobath: magenta at a hairline width is
     # the canonical anti-viridis, so the 3 m line stays legible over every
@@ -577,11 +604,11 @@ print(f"Baltic: {share_outside_extent(gdf_full):.3f} % of the mapped weight outs
 fig, axes = map_grid(1, 2, baltic_extent)
 hex_map(
     gdf_full, "percentage", axes[0, 0], baltic_extent,
-    percentage_norm(gdf_full), coast_baltic, title="percentage",
+    percentage_norm(gdf_full), coast_baltic, borders_baltic, title="percentage",
 )
 hex_map(
     gdf_full, "dilution", axes[0, 1], baltic_extent,
-    dilution_norm(gdf_full), coast_baltic, title="dilution",
+    dilution_norm(gdf_full), coast_baltic, borders_baltic, title="dilution",
 )
 fig_path = figure_dir / f"HexRelativeDensity_{regime}_{season}_r{hex_radius}m_{member_tag}.png"
 # Print-ready: full 180 mm page width at 300 dpi (see the parse cell).
@@ -602,11 +629,11 @@ export_geojson(gdf_full, f"025_{regime}_{season}_{member_tag}")
 fig, axes = map_grid(1, 2, de_extent)
 hex_map(
     gdf_full, "percentage", axes[0, 0], de_extent,
-    percentage_norm(gdf_full), coast_de, title="percentage",
+    percentage_norm(gdf_full), coast_de, borders_de, title="percentage",
 )
 hex_map(
     gdf_full, "dilution", axes[0, 1], de_extent,
-    dilution_norm(gdf_full), coast_de, title="dilution",
+    dilution_norm(gdf_full), coast_de, borders_de, title="dilution",
 )
 fig_path = (
     figure_dir / f"HexRelativeDensityDE_{regime}_{season}_r{hex_radius}m_{member_tag}.png"
@@ -653,7 +680,8 @@ for i in range(0, len(origin_codes), max_panels_per_figure):
         gdf_sb = origin_gdfs[code]
         hex_map(
             gdf_sb, "percentage", ax, baltic_extent,
-            percentage_norm(gdf_sb), coast_baltic, title=subbasin_id_to_name[code],
+            percentage_norm(gdf_sb), coast_baltic, borders_baltic,
+            title=subbasin_id_to_name[code],
             # The colour column is the same in every panel; naming it once
             # per figure, under the bottom row, keeps the grid uncluttered.
             cbar_label=j >= len(chunk) - ncols,
