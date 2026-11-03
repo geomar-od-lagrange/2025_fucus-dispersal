@@ -207,6 +207,29 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
 - Test first (`tmp_` prototype, one release, ε = 0 / 1 / 5 mm/s): pinned
   fraction and duration, coastal residence, land entries, open-water
   dispersal bias, robustness of the ≥ 30 km beaching pattern.
+- Prototype design (step 1, `tmp_wall_velocity/`, in progress 2026-11-03):
+  - Wall faces per nest and regime = faces exactly 0 at every step of the
+    12 monthly 2019 files (`c_file_<nest>_2019MM1500_*_<regime>.nc`, as
+    `tmp_pin_sites/a_grid.py`). Wet T-cell = at least one non-wall face.
+    A wall face between one wet and one non-wet cell gets ±ε pointing into
+    the wet cell; wall faces with both or neither side wet stay 0 (counted).
+  - Stored as a time-constant NetCDF per nest with the c_file layout (same
+    lon/lat order, `uvel`/`vvel`), loaded like 010's fieldset, a second
+    NestedField pair `UVwall` (`cgrid_velocity`, same grids → same nest
+    choice as `UV`). Kernel: `AdvectionRK4` with every stage sampling
+    `UV + UVwall`.
+  - Runs (production container, 010 settings, 180 d): release 2019-10-18
+    (highest surface_stokes pin share), every 4th particle; regimes
+    surface_stokes and bottom (ε = 1 mm/s is the size of the mean bottom
+    flow at walls) × ε = 0 / 1 / 5 mm/s. ε = 0 must match the production
+    zarr bit for bit on the subset.
+  - Metrics: stalled share of particle-hours (step < 1 m / 10 m) at
+    30/90/180 d and drifters stalled at day 180; pinned (≤ 1e-3 cell of a
+    wall); wall-distance distribution in wall cells; coastal residence
+    (share in cells with ≥ 1 wall); land entries (within grid / at nest
+    switch); crow-flies distance quantiles; overlap of coastal-contact and
+    day-180 position distributions at 2 / 6 / 15 / 30 km between ε runs;
+    runtime.
 - Cost of the full rerun: 010 ~1–1.5 d wall clock (24 regime-years,
   ~15–20 k core-hours), downstream chain ~3 h. Quota (`workquota`
   2026-11-03): 25.1 T of 29 T soft; a full trajectory set is ~3–3.4 T
