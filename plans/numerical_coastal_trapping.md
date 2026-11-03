@@ -196,7 +196,8 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
   regime (+ε on permanent zero faces, 0 elsewhere; `cgrid_velocity`,
   NestedField) and an RK4 kernel sampling `UV + UVwall` at every stage. 003
   and the 6 TB of fields stay as they are; only 010 and downstream rerun.
-  Bottom uses the same coastline walls (checked, see Open questions).
+  Bottom uses the same coastline walls (checked, see Open questions;
+  authors agreed 2026-11-03).
 - Beaching stays with the rate model (docs/beaching.md): in band,
   `trap = trap_wall + (trap_flat − trap_wall)·ff/100` on the shore
   substrate. `trap_wall` there means a hard *shore type* (rock, cliff,
