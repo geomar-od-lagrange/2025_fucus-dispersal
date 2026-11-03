@@ -296,6 +296,23 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
     `Land` field; holds drifters at flooding cells if used without (1)).
     Test of v3 / v3 + reject / v1 + reject (d40–60, ε = 1 / 5) in
     `<outputs>/tmp_wall_velocity/fixtest/`, eval `q_fixtest_eval.py`.
+  - Fix test result (`q_fixtest_eval.log`; 14,233 water-seeded drifters,
+    d40–60; "genuine land" = v3 land set):
+
+    | ε = 1 / 5 mm/s | base (v1) | v3 walls | v3 + reject | v1 + reject |
+    |---|---|---|---|---|
+    | genuine-land entries | 17 / 2 | 17 / 2 | 0 / 0 | 0 / 0 |
+    | particle-hours in intermittent cells | 29.7k / 5.4k | 86.7k / 11.3k | 86.6k / 11.3k | 0 / 0 |
+    | drifters with a rejected step | – | – | 22 / 11 | 234 / 142 |
+    | rejections next to intermittent cells | – | – | 0 % | 95 / 97 % |
+    | trajectories identical to base at d20 | 100 % | 94 / 95 % | 94 / 95 % | 98 / 99 % |
+
+    v3 alone leaves the corner leaks; reject alone (v1) holds drifters at
+    flooding cells. v3 + reject: no land entries, rejections rare (max
+    ~15 h per drifter). Cost: drifters now sit in tidal-flat cells while
+    they are dry (no ε there, faces not walls) — ×3 particle-hours there,
+    ~1.3 % of the total at ε = 1. Recommended: wall set from every step of
+    the full forcing period per regime + reject step on its land set.
 - Cost of the full rerun: 010 ~1–1.5 d wall clock (24 regime-years,
   ~15–20 k core-hours), downstream chain ~3 h. Quota (`workquota`
   2026-11-03): 25.1 T of 29 T soft; a full trajectory set is ~3–3.4 T
