@@ -192,3 +192,20 @@ The coastal dilution hot spots led to an investigation of drifters that pin
 against coast walls; findings and the fix live in
 [numerical_coastal_trapping.md](numerical_coastal_trapping.md). The dilution
 colour range and the ¼-hex area floor wait on that fix.
+
+## Paper pass (2026-11-03)
+
+- `paper` `2be9796` (local): R2 figures copied (executed-notebook code
+  matches the committed notebooks), Fig 8 / 17 / 19 dropped, shoreline
+  classification map added in Methods as the new Fig 1 (so the code key is
+  now Fig 2; numbering above is the old draft's). Captions without session
+  lingo; FACTS refreshed; `% NOTE` at Results: values change after the
+  trapping fix, styling final. Builds (21 pp); only the three pre-existing
+  `TODO_*` citations are undefined. Four image heights reduced to fit.
+- Follow-up: internal names inside the PNG titles (028 member tag, 034
+  `bottom_vs0p8`) scrubbed in the notebooks and recopied (in progress).
+- **For the authors:** (1) dilution top 1e-1 vs 1e-2 (`% TODO(authors)` at
+  the first dilution figure); (2) the biomass reading: every dilution figure
+  is normalised over the pooled release set (per origin subbasin in the
+  overviews), not per release site — "× released biomass per site" needs
+  per-site dilution, which no figure shows; wording to decide.
