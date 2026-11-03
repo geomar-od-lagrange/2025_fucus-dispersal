@@ -223,6 +223,14 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
     surface_stokes and bottom (ε = 1 mm/s is the size of the mean bottom
     flow at walls) × ε = 0 / 1 / 5 mm/s. ε = 0 must match the production
     zarr bit for bit on the subset.
+  - Status 2026-11-03 09:00: wall fields, kernel, sign check (40/40) and
+    ε = 0 bit-identity vs production (21,800 traj × 5 d, max |Δ| = 0) done.
+    Wall = 0-or-NaN at every step (Parcels fills NaN with 0); fine bottom
+    differs from fine surface_stokes by ~156 faces, so walls are per regime.
+    Overhead +19 % runtime. ε = 5 mm/s smoke: formerly pinned drifters sit
+    0.12–0.38 cell (≈ 100–350 m) off the wall and keep moving. 6 runs (180 d)
+    write to `<outputs>/tmp_wall_velocity/run_<regime>_eps<mm>mm.zarr`,
+    ~1 h each; next: metrics.
   - Metrics: stalled share of particle-hours (step < 1 m / 10 m) at
     30/90/180 d and drifters stalled at day 180; pinned (≤ 1e-3 cell of a
     wall); wall-distance distribution in wall cells; coastal residence
