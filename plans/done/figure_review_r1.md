@@ -1,5 +1,7 @@
 # Figure review R1: author remarks on the 2026-10-20 draft
 
+> Done. Current state: [docs/visualisations.md](../../docs/visualisations.md).
+
 The authors' remarks (2026-10-27) on the figures of `paper/main.tex` at
 `baa633c`, turned into work items. Figure numbers are in the order the figures
 appear in that draft; the remarks are quoted in short form.
