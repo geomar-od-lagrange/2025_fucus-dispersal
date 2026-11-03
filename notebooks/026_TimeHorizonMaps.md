@@ -731,9 +731,9 @@ estuaries are bright isolated old-age dots. Zero-water hexes carry no
 dilution and stay out, as on the dilution maps.
 
 Colour: eleven classes of the default colormap at 0, 5, 10, 15, 20, 30, 40,
-60, 80, 100, 140 and 180 d — finer below 100 d, where most hexes sit — plus
-an over class (`extend="max"`), the classes every "days" colourbar of the
-pipeline uses. Fixed, so every regime and season reads on the same classes.
+60, 80, 100, 140 and 180 d — finer below 100 d, where the class edges are closest —
+with no over class (the median of ages < `max_age_days` cannot exceed it),
+the classes every "days" colourbar of the pipeline uses. Fixed, so every regime and season reads on the same classes.
 Exported as
 `026_medianage_<regime>_<season>_<tag>.geojson`, mapped hexes only.
 
@@ -774,13 +774,13 @@ gdf_age = gdf_age[gdf_age["dilution"] > 0]
 age_share_floor = gdf_age["percentage"].quantile(0.05)
 gdf_age = gdf_age[gdf_age["percentage"] >= age_share_floor]
 
-# The default colormap, discretised: eleven classes plus the over class.
+# The default colormap, discretised: eleven classes.
 AGE_BOUNDS_DAYS = [0, 5, 10, 15, 20, 30, 40, 60, 80, 100, 140, 180]
-age_cmap = plt.get_cmap().resampled(len(AGE_BOUNDS_DAYS))
-age_norm = BoundaryNorm(AGE_BOUNDS_DAYS, age_cmap.N, extend="max")
-print("median-age hexes per class (the last one is the over class):")
+age_cmap = plt.get_cmap().resampled(len(AGE_BOUNDS_DAYS) - 1)
+age_norm = BoundaryNorm(AGE_BOUNDS_DAYS, age_cmap.N)
+print("median-age hexes per class:")
 print(
-    pd.cut(gdf_age["median_age_days"], [*AGE_BOUNDS_DAYS, np.inf], right=False)
+    pd.cut(gdf_age["median_age_days"], AGE_BOUNDS_DAYS, right=False)
     .value_counts(sort=False).to_string()
 )
 
@@ -792,7 +792,7 @@ hex_map(
 # The title names the quantity; the bar only needs the unit. Every class
 # edge is ticked: the classes are unequal, and the default locator would
 # label only some of them.
-shared_colorbar(fig, axes, age_norm, age_cmap, "days", "max", ticks=AGE_BOUNDS_DAYS)
+shared_colorbar(fig, axes, age_norm, age_cmap, "days", "neither", ticks=AGE_BOUNDS_DAYS)
 print(f"median age: {share_outside_extent(gdf_age):.3f} % of the mapped weight outside the map extent")
 fig_path = figure_dir / f"MedianAge_{regime}_{season}_r{hex_radius}m_{member_tag}.png"
 fit_height(fig, axes)

@@ -484,6 +484,8 @@ def fit_height(fig):
     plus constrained_layout's own pad above and below. Call after drawing,
     before saving; the seed height only has to be generous."""
     fig.draw_without_rendering()
+    cell, drawn = fig.axes[0].get_position(original=True), fig.axes[0].get_position()
+    assert np.isclose(drawn.width, cell.width, rtol=1e-3), "maps are height-limited; raise the seed"
     content_in = fig.get_tightbbox().height
     h_pad = fig.get_layout_engine().get()["h_pad"]
     fig.set_size_inches(FIGURE_WIDTH_IN, content_in + 2 * h_pad)

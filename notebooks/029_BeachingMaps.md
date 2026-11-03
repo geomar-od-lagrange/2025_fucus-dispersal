@@ -313,8 +313,8 @@ assert window["disp_bin_km"] == disp_bin_km, (
     f"store disp_bin_km {window['disp_bin_km']} != {disp_bin_km}"
 )
 max_age_days = window["max_age_days"]
-assert max(time_horizons_days) <= max_age_days, (
-    f"horizon {max(time_horizons_days)} d is past the store's reduction window "
+assert max([*time_horizons_days, origin_horizon_days]) <= max_age_days, (
+    f"horizon {max([*time_horizons_days, origin_horizon_days])} d is past the store's reduction window "
     f"({max_age_days} d) — rebuild 024e or lower the horizon"
 )
 
@@ -422,6 +422,8 @@ def fit_height(fig):
     plus constrained_layout's own pad above and below. Call after drawing,
     before saving; the seed height only has to be generous."""
     fig.draw_without_rendering()
+    cell, drawn = fig.axes[0].get_position(original=True), fig.axes[0].get_position()
+    assert np.isclose(drawn.width, cell.width, rtol=1e-3), "maps are height-limited; raise the seed"
     content_in = fig.get_tightbbox().height
     h_pad = fig.get_layout_engine().get()["h_pad"]
     fig.set_size_inches(FIGURE_WIDTH_IN, content_in + 2 * h_pad)

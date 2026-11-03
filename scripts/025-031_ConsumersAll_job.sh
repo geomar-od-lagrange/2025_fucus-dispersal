@@ -276,7 +276,7 @@ tally=${logdir}/${SLURM_JOB_NAME}_${SLURM_JOB_ID}.tally
 # `set -e` must not kill the driver when a unit exhausts its retries (or when
 # a wave's grep selects nothing); run_one already swallows its own status and
 # reports FAIL, and the tally below is the authoritative exit code.
-# Two waves: 035 reads what 026 writes for both regimes.
+# Two waves: 035 reads what 026 and 029 write for both regimes.
 set +e
 list_work | grep -v "^035 " | xargs -r -P "${SLURM_NTASKS}" -L1 bash -c 'run_one "$@"' _ \
     | tee "${tally}"

@@ -382,9 +382,9 @@ distribution pulls it away from what most of the particle-time looks like,
 and the median reads as "half the particle-time here is younger". Fixed
 classes, identical for every regime and season (and for every "days"
 colourbar of the pipeline): `BoundaryNorm` at 0, 5, 10, 15, 20, 30, 40, 60,
-80, 100, 140, 180 d with `extend="max"`, the default colormap resampled into
-12 colours (eleven classes and the over class). Finer below 100 d, where most
-hexes sit; colourbar label `days` (the title names the quantity), ticks at
+80, 100, 140, 180 d, the default colormap resampled into
+11 colours, no over class: the median of ages < max_age_days cannot exceed it.
+Finer below 100 d, where the class edges are closest; colourbar label `days` (the title names the quantity), ticks at
 the bounds. **Mask:** a hex is drawn only if its share of the
 window's weight (`percentage`) is at or above the 5th percentile of the
 per-hex shares, zero-water hexes excluded (as on the dilution map). At
