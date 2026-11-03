@@ -53,6 +53,7 @@
 #   pipeline (`dilution_floor` to `dilution_top`, two classes per decade).
 
 # %%
+import itertools
 import re
 from pathlib import Path
 
@@ -71,7 +72,7 @@ from shapely.ops import unary_union
 # # Parameters
 
 # %% tags=["parameters"]
-# Read root of the data twin (BSH static H0).
+# Read root of the data twin (HELCOM polygons, BSH static H0).
 data_root = "../data"
 # Read root of the hex-aggregate store; write root for figures and exports.
 output_root = "../output"
@@ -154,6 +155,7 @@ print(f"release years in the analysis: {analysis_years[0]}–{analysis_years[-1]
 output_root = Path(output_root)
 data_root = Path(data_root)
 store_root = output_root / "HexAggregates"
+subbasins_path = data_root / "helcom_subbasins_2022" / "HELCOM_subbasins_2022_level2.shp"
 time_horizons_days = [int(x) for x in time_horizons_days_csv.split(",") if x]
 area_horizons_days = [int(x) for x in area_horizons_days_csv.split(",") if x] or list(
     range(age_bin_days, max_age_days + 1, age_bin_days)
@@ -179,13 +181,8 @@ print(f"regime={regime}, season={season}, member={member_tag}, window [0, {max_a
 # final size (rationale in docs/visualisations.md).
 FIGURE_WIDTH_IN = 180 / 25.4
 FIGURE_DPI = 300
-# Vertical inches per row for the panel title, and once per figure for the
-# shared colorbar under the grid with its label.
-PANEL_TITLE_IN = 0.25
-COLORBAR_IN = 0.6
-# One page: a taller grid is capped here, its maps turn height-limited and
-# the spare width becomes side margin.
-MAX_FIGURE_HEIGHT_IN = 230 / 25.4
+# Subbasin border stroke, as on every map of the pipeline (docs/visualisations.md).
+basin_border_lw = 0.52
 
 # Shared dilution scale: two classes per decade from `dilution_floor` up to
 # `dilution_top` (at most 1 per km², all of the released particle-time in
@@ -427,7 +424,7 @@ COLUMN_LABEL = {
 }
 
 # %% [markdown]
-# # Map backdrop: coastline and the 3 m isobath
+# # Map backdrop: coastline, subbasin borders and the 3 m isobath
 #
 # The `extent_*` parameters decide the extent, shared by every map of the
 # pipeline. The key tiles the full BSH model domain (North Sea included), so
@@ -438,6 +435,10 @@ COLUMN_LABEL = {
 # merged fine-first as in 024a — fine polygons, plus the coarse ones outside
 # the fine-grid bbox. The outline is drawn minus a 0.001° strip along that
 # bbox, where the two grids' cells meet in open water.
+#
+# Subbasin borders are the HELCOM level-2 polygons' shared edges only, so
+# their outer outlines do not draw a second coastline; drawn over the hexes
+# and under the coastline and the isobath.
 #
 # The isobath comes from the BSH static H0 grids, *not* from the key's
 # `mean_depth_m` — a hex mean over a 6 km cell cannot resolve a 3 m
@@ -486,6 +487,18 @@ coast = (
     .clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
 )
 
+subbasin_outline = gpd.read_file(subbasins_path).to_crs(4326).boundary
+basin_borders = gpd.GeoSeries(
+    [
+        a.intersection(b)
+        for a, b in itertools.combinations(subbasin_outline, 2)
+        if a.intersects(b)
+    ],
+    crs="EPSG:4326",
+).clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
+print(f"subbasin borders: {len(basin_borders)} shared edges between "
+      f"{len(subbasin_outline)} HELCOM polygons")
+
 # Width/height of the extent in visually equal degrees — 1° lon at the
 # extent's mid-latitude against 1° lat.
 domain_aspect = (
@@ -495,29 +508,50 @@ domain_aspect = (
 
 
 def map_grid(nrows, ncols):
-    """A constrained-layout panel grid at full page width. Each map is
-    width-limited, so the panel height follows from the page width and the
-    extent aspect — no figsize arithmetic against the layout engine and no
-    draw-measure-rescale loop. One colorbar per figure sits *under* the
-    grid (``shared_colorbar``), so the fixed allowance is vertical only."""
+    """A constrained-layout panel grid at full page width. The height is only
+    a seed (the maps alone, no decorations); ``fit_height`` sets the final
+    one once the figure is drawn."""
     fig, axes = plt.subplots(nrows=nrows, ncols=ncols, squeeze=False, layout="constrained")
-    fig.set_size_inches(
-        FIGURE_WIDTH_IN,
-        min(
-            nrows * ((FIGURE_WIDTH_IN / ncols) / domain_aspect + PANEL_TITLE_IN) + COLORBAR_IN,
-            MAX_FIGURE_HEIGHT_IN,
-        ),
-    )
+    fig.set_size_inches(FIGURE_WIDTH_IN, nrows * FIGURE_WIDTH_IN / ncols / domain_aspect)
     return fig, axes
+
+
+def fit_height(fig, axes):
+    """Set the figure height at which every map fills its column width, with
+    no blank band between rows. Measured, not estimated: per row, the height
+    the map takes at its cell's full width (the cell's width times the drawn
+    map's height/width) against the cell height constrained_layout gave it,
+    summed over the rows and added to the figure height. The decorations are
+    fixed inches up to the colorbar ``pad`` (a fraction of the grid height),
+    so the correction shrinks a hundredfold per pass; it stops below half a
+    pixel."""
+    for _ in range(5):
+        fig.draw_without_rendering()
+        width_in, height_in = fig.get_size_inches()
+        deficit_in = {}
+        for ax in axes.flat:
+            if not ax.get_visible():
+                continue
+            cell, drawn = ax.get_position(original=True), ax.get_position()
+            full_width_height_in = cell.width * drawn.height / drawn.width * height_in
+            deficit_in[ax.get_subplotspec().rowspan.start] = (
+                full_width_height_in - cell.height * height_in
+            )
+        correction_in = sum(deficit_in.values())
+        if abs(correction_in) < 0.5 / FIGURE_DPI:
+            return
+        fig.set_size_inches(width_in, height_in + correction_in)
+    raise RuntimeError(f"figure height did not settle, last correction {correction_in:.4f} in")
 
 
 def shared_colorbar(fig, axes, norm, cmap, label, extend, **kwargs):
     """One horizontal colorbar under the whole grid. pad override: the
     default 0.05 is a fraction of the whole grid's height, a blank band
-    between the last row and the bar."""
+    between the last row and the bar. panchor=False keeps the maps'
+    top anchor (``hex_map``); the default re-anchors them to the bottom."""
     fig.colorbar(
         ScalarMappable(norm=norm, cmap=cmap), ax=axes, orientation="horizontal",
-        label=label, extend=extend, pad=0.01, **kwargs,
+        label=label, extend=extend, pad=0.01, panchor=False, **kwargs,
     )
 
 
@@ -551,6 +585,9 @@ def hex_map(gdf, column, ax, norm, cmap=None, title=None):
             # continuous field.
             edgecolor="face", linewidth=0.4, zorder=1,
         )
+    # Override: neutral mid-grey thin subbasin borders (as 029), so a border
+    # reads neither as coastline (black) nor as part of the hex field.
+    basin_borders.plot(ax=ax, color="0.5", linewidth=basin_border_lw, zorder=1.5)
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
     # One styling override for the isobath: magenta at a hairline width is
     # the canonical anti-viridis, so the 3 m line stays legible over every
@@ -563,7 +600,12 @@ def hex_map(gdf, column, ax, norm, cmap=None, title=None):
         )
     ax.set_xlim(domain_lon_min, domain_lon_max)
     ax.set_ylim(domain_lat_min, domain_lat_max)
-    ax.set_aspect(1 / np.cos(np.radians(0.5 * (domain_lat_min + domain_lat_max))))
+    # Top anchor: while fit_height measures, any spare cell height falls under
+    # the map, so the title above it keeps its place and the layout responds
+    # linearly to the figure height.
+    ax.set_aspect(
+        1 / np.cos(np.radians(0.5 * (domain_lat_min + domain_lat_max))), anchor="N"
+    )
     ax.set_xticks([])
     ax.set_yticks([])
     if title is not None:
@@ -655,9 +697,10 @@ for column, view in VIEWS.items():
         figure_dir
         / f"TimeHorizonMaps_{regime}_{season}_r{hex_radius}m_{member_tag}_{column}.png"
     )
+    fit_height(fig, axes)
     # Print-ready: full 180 mm page width at 300 dpi (see the parse cell).
     fig.savefig(fig_path, dpi=FIGURE_DPI)
-    print(f"wrote {fig_path}")
+    print(f"wrote {fig_path} ({fig.get_size_inches()[1] * 25.4:.1f} mm tall)")
     plt.show()
 
 for h in time_horizons_days:
@@ -689,9 +732,11 @@ for h in time_horizons_days:
 # estuaries are bright isolated old-age dots. Zero-water hexes carry no
 # dilution and stay out, as on the dilution maps.
 #
-# Colour: seven 25-day classes of the default colormap, 0 to 175 d, with an
-# eighth for 175 d up to the window end (`extend="max"`) — fixed, so every
-# regime and season reads on the same classes. Exported as
+# Colour: eleven classes of the default colormap at 0, 5, 10, 15, 20, 30, 40,
+# 60, 80, 100, 140 and 180 d — finer below 100 d, where the class edges are closest —
+# with no over class (the median of ages < `max_age_days` cannot exceed it),
+# the classes every "days" colourbar of the pipeline uses. Fixed, so every regime and season reads on the same classes.
+# Exported as
 # `026_medianage_<regime>_<season>_<tag>.geojson`, mapped hexes only.
 
 # %%
@@ -731,23 +776,31 @@ gdf_age = gdf_age[gdf_age["dilution"] > 0]
 age_share_floor = gdf_age["percentage"].quantile(0.05)
 gdf_age = gdf_age[gdf_age["percentage"] >= age_share_floor]
 
-# The default colormap, discretised: seven 25 d classes plus the over class.
-AGE_BOUNDS_DAYS = np.arange(0, 176, 25)
-age_cmap = plt.get_cmap().resampled(len(AGE_BOUNDS_DAYS))
-age_norm = BoundaryNorm(AGE_BOUNDS_DAYS, age_cmap.N, extend="max")
+# The default colormap, discretised: eleven classes.
+AGE_BOUNDS_DAYS = [0, 5, 10, 15, 20, 30, 40, 60, 80, 100, 140, 180]
+age_cmap = plt.get_cmap().resampled(len(AGE_BOUNDS_DAYS) - 1)
+age_norm = BoundaryNorm(AGE_BOUNDS_DAYS, age_cmap.N)
+print("median-age hexes per class:")
+print(
+    pd.cut(gdf_age["median_age_days"], AGE_BOUNDS_DAYS, right=False)
+    .value_counts(sort=False).to_string()
+)
 
 fig, axes = map_grid(1, 1)
 hex_map(
     gdf_age, "median_age_days", axes[0, 0], age_norm, cmap=age_cmap,
     title=f"median particle age, ages < {max_age_days} d",
 )
-# The title names the quantity; the bar only needs the unit.
-shared_colorbar(fig, axes, age_norm, age_cmap, "days", "max")
+# The title names the quantity; the bar only needs the unit. Every class
+# edge is ticked: the classes are unequal, and the default locator would
+# label only some of them.
+shared_colorbar(fig, axes, age_norm, age_cmap, "days", "neither", ticks=AGE_BOUNDS_DAYS)
 print(f"median age: {share_outside_extent(gdf_age):.3f} % of the mapped weight outside the map extent")
 fig_path = figure_dir / f"MedianAge_{regime}_{season}_r{hex_radius}m_{member_tag}.png"
+fit_height(fig, axes)
 # Print-ready: full 180 mm page width at 300 dpi (see the parse cell).
 fig.savefig(fig_path, dpi=FIGURE_DPI)
-print(f"wrote {fig_path}")
+print(f"wrote {fig_path} ({fig.get_size_inches()[1] * 25.4:.1f} mm tall)")
 plt.show()
 
 export_geojson(

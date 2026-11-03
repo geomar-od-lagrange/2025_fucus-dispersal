@@ -58,6 +58,7 @@
 #   from the 024a key). Log colour scale.
 
 # %%
+import itertools
 import json
 import re
 import unicodedata
@@ -76,7 +77,7 @@ from shapely.geometry import box
 # # Parameters
 
 # %% tags=["parameters"]
-# Read root of the data twin (BSH static H0).
+# Read root of the data twin (HELCOM polygons, BSH static H0).
 data_root = "../data"
 # Read root of the hex-aggregate store; write root for figures and exports.
 output_root = "../output"
@@ -148,6 +149,7 @@ print(f"release years in the analysis: {analysis_years[0]}–{analysis_years[-1]
 
 output_root = Path(output_root)
 data_root = Path(data_root)
+subbasins_path = data_root / "helcom_subbasins_2022" / "HELCOM_subbasins_2022_level2.shp"
 store_root = output_root / "HexAggregates"
 time_horizons_days = [int(x) for x in time_horizons_days_csv.split(",") if x]
 assert max_age_days % age_bin_days == 0, (
@@ -169,6 +171,8 @@ print(f"regime={regime}, season={season}, member={member_tag}, window [0, {max_a
 # final size (rationale in docs/visualisations.md).
 FIGURE_WIDTH_IN = 180 / 25.4
 FIGURE_DPI = 300
+# Subbasin border stroke, as on every map of the pipeline (docs/visualisations.md).
+basin_border_lw = 0.52
 # Vertical inches a panel needs on top of its map for the horizontal
 # colorbar, the colorbar label and the panel title.
 PANEL_DECORATION_IN = 0.62
@@ -430,7 +434,7 @@ COLUMN_LABEL = {
 }
 
 # %% [markdown]
-# # Map backdrop: coastline and the 3 m isobath
+# # Map backdrop: coastline, subbasin borders and the 3 m isobath
 #
 # The `extent_*` parameters decide the extent, shared by every map of the
 # pipeline. The key tiles the full BSH model domain (North Sea included), so
@@ -444,6 +448,10 @@ COLUMN_LABEL = {
 # beyond the outermost fine centres), unioned on a 1e-3° precision grid —
 # the cell edges are stored rounded to 1e-4°, and an exact union leaves a
 # sliver outline along the nest seam.
+#
+# Subbasin borders are the HELCOM level-2 polygons' shared edges only, so
+# their outer outlines do not draw a second coastline; drawn over the hexes
+# and under the coastline and the isobath.
 #
 # The isobath comes from the BSH static H0 grids, *not* from the key's
 # `mean_depth_m` — a hex mean over a 6 km cell cannot resolve a 3 m
@@ -492,6 +500,18 @@ coast = (
     gpd.GeoSeries([model_water], crs="EPSG:4326")
     .boundary.clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
 )
+
+subbasin_outline = gpd.read_file(subbasins_path).to_crs(4326).boundary
+basin_borders = gpd.GeoSeries(
+    [
+        a.intersection(b)
+        for a, b in itertools.combinations(subbasin_outline, 2)
+        if a.intersects(b)
+    ],
+    crs="EPSG:4326",
+).clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
+print(f"subbasin borders: {len(basin_borders)} shared edges between "
+      f"{len(subbasin_outline)} HELCOM polygons")
 
 # Width/height of the extent in visually equal degrees — 1° lon at the
 # extent's mid-latitude against 1° lat.
@@ -553,8 +573,8 @@ def dilution_norm(gdf):
 
 def hex_map(gdf, column, ax, norm, title=None, cbar_label=True):
     """Draw one relative-density panel: hex polygons through ``norm``,
-    coastline, and the H0 isobath, all on a plain (non-cartopy) lon/lat
-    axis. Everything is already EPSG:4326, so no reprojection can push
+    subbasin borders, coastline, and the H0 isobath, all on a plain
+    (non-cartopy) lon/lat axis. Everything is already EPSG:4326, so no reprojection can push
     hexes, coastline and isobath out of register. An empty ``gdf`` skips
     the hex layer and still renders the backdrop, keeping the grid layout
     stable."""
@@ -585,6 +605,9 @@ def hex_map(gdf, column, ax, norm, title=None, cbar_label=True):
             # continuous field.
             edgecolor="face", linewidth=0.4, zorder=1,
         )
+    # Override: neutral mid-grey thin subbasin borders (as 029), so a border
+    # reads neither as coastline (black) nor as part of the hex field.
+    basin_borders.plot(ax=ax, color="0.5", linewidth=basin_border_lw, zorder=1.5)
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
     # One styling override for the isobath: magenta at a hairline width is
     # the canonical anti-viridis, so the 3 m line stays legible over every

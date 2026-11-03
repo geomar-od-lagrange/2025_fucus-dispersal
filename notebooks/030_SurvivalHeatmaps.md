@@ -58,6 +58,7 @@ zarrs — in the `025`/`026`/`029` lineage. Figures are print-ready (full page
 width, 300 dpi).
 
 ```python
+import itertools
 import re
 from pathlib import Path
 
@@ -75,7 +76,8 @@ from shapely.geometry import box
 # Parameters
 
 ```python tags=["parameters"]
-# Read root of the data twin (BSH wet-cell coastline and fine-grid H0).
+# Read root of the data twin (BSH wet-cell coastline and fine-grid H0, HELCOM
+# subbasins).
 data_root = "../data"
 output_root = "../output"
 regime = "surface_stokes"
@@ -164,6 +166,8 @@ hex_seam_lw = 1.1 * 72 / FIGURE_DPI
 # Height per grid row beyond the map itself (inches): a column title or
 # padding plus the row's colorbar, its ticks and its label.
 ROW_DECORATION_IN = 0.9
+# Subbasin border stroke, as 029 (docs/visualisations.md).
+basin_border_lw = 0.52
 # Discrete colour bins (docs/visualisations.md, 030). Occupancy: log-spaced
 # 1–3 steps from 1e-4 % to 3 % of released, fixed rather than scaled to the
 # data so every member and season reads on the same legend; values outside
@@ -313,6 +317,9 @@ def hex_map(gdf, ax, norm, cmap):
             ax=ax, column="value", norm=norm, cmap=cmap,
             edgecolor="face", linewidth=hex_seam_lw, zorder=1,
         )
+    # Override: mid-grey thin borders (029's), so a subbasin border reads
+    # neither as coastline (black) nor as a hex fill; under the coastline.
+    basin_borders.plot(ax=ax, color="0.5", linewidth=basin_border_lw, zorder=1.5)
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
     ax.set_xlim(extent[0], extent[1])
     ax.set_ylim(extent[2], extent[3])
@@ -332,7 +339,7 @@ def grid_height_in(nrows, ncols, aspect, width_in):
     return nrows * (0.97 * width_in / ncols / aspect + ROW_DECORATION_IN)
 ```
 
-# Map backdrop: the model coastline
+# Map backdrop: the model coastline and the subbasin borders
 
 The BSH HBMnoku wet-cell outline (`coastline.geojson`, the water 024a's key
 areas and the particles' advection use), not a geographic coastline: the
@@ -378,6 +385,25 @@ coast = (
 domain_aspect = (
     (lon_max - lon_min) * np.cos(np.radians(0.5 * (lat_min + lat_max)))
 ) / (lat_max - lat_min)
+
+# Subbasin borders as the edges two HELCOM level-2 polygons share (029's
+# block): the polygon outlines trace every island of the coast they were
+# digitised against, which would smear over the hexes. Clipped to the extent,
+# as the hexes are. No codes; the reference map (033) carries them.
+subbasin_outline = (
+    gpd.read_file(data_root / "helcom_subbasins_2022" / "HELCOM_subbasins_2022_level2.shp")
+    .to_crs(4326).boundary
+)
+basin_borders = gpd.GeoSeries(
+    [
+        a.intersection(b)
+        for a, b in itertools.combinations(subbasin_outline, 2)
+        if a.intersects(b)
+    ],
+    crs="EPSG:4326",
+).clip(box(lon_min, lat_min, lon_max, lat_max))
+print(f"subbasin borders: {len(basin_borders)} shared edges between "
+      f"{len(subbasin_outline)} HELCOM polygons")
 ```
 
 # Comparison grid: occupancy and surviving fraction
@@ -436,8 +462,10 @@ for i, (row_label, gdfs, norm, cmap, cbar_label) in enumerate(rows):
         # the default bar is ~9 mm thick and crowds the row (visualisations.md).
         aspect=40,
     )
-for j, h in enumerate(time_horizons_days):
-    axes[0, j].set_title(f"age {bin_labels[h]}")
+# Column titles on every row, so each row can be cut out and read on its own.
+for i in range(len(rows)):
+    for j, h in enumerate(time_horizons_days):
+        axes[i, j].set_title(f"age {bin_labels[h]}")
 fig_path = figure_dir / f"SurvivalHeatmaps_{regime}_r{hex_radius}m_{season}_{member}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
 fig.savefig(fig_path, dpi=FIGURE_DPI)

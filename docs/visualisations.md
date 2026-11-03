@@ -21,13 +21,13 @@ listed here should be dropped.
 | 026b | 026a per origin subbasin and year | Per-run (regime + season + radius + member) | One percentage and one dilution figure per (origin subbasin, release year) |
 | 027 | Hex distance-quantile maps | Per-run (regime + radius + season) | One 1xN panel row, one panel per quantile (0.1/0.5/0.9), the season's releases pooled across `release_years` |
 | 028 | Subbasin connectivity matrices | Per-run (regime + radius + season + member) | Raw residence over the 180 d window · emission fraction per cumulative horizon (30/60/90/180 d) · interannual range |
-| 029 | Beaching maps | Per-run (regime + radius + member + season) | Where-stranded with the release sites overlaid · source/sink substrate contrast · stranded share per source hex · cumulative horizons (30/60/90/180 d) · afloat by origin subbasin (table + CSV) · stranded-share curve with interannual band · displacement at stranding |
+| 029 | Beaching maps | Per-run (regime + radius + member + season) | Fig 2 pair: where stranded + stranded % by release hex at 180 d · source/sink substrate contrast · cumulative horizons (30/60/90/180 d) · afloat by origin subbasin (table + CSV) · stranded-share curve with interannual band · displacement at stranding |
 | 030 | Survival heatmaps | Per-run (regime + radius + member + season) | 2 × 4 grid, a column per snapshot bin ending at 30/60/90/180 d: occupancy (% of released) row · surviving fraction row, both on discrete bins, one colorbar per row; drifting-fraction curve with interannual band |
 | 031 | Beaching sweep | Per-run (regime + radius + season) | Five statistics across members with interannual bars · where-stranded maps across members |
 | 032 | None — selects, numbers and downscales other notebooks' PNGs | Selection (primary + comparison regime) | Tables A–G · one curated reading order over 025–031 |
-| 033 | Hex shoreline-type map + stranding-vs-substrate panels | Per-run (regime + radius + season + member pair) | Flat fraction per hex · coastline length per hex · stranded weight vs. flat fraction for the production and the substrate-inert member |
-| 034 | Bottom-slowdown comparison | Two regimes (`bottom` vs `bottom_vs0p8`) + one year + radius | Area / √area holding 90 % of particle-time at 30/60/90/180 d · √area ratio 0.8× / 1× vs. horizon · stacked map pair at 90 d |
-| 035 | Area time series | Overlaid (one line per regime, each at its 026 weighting tag) + season | Area / √area holding 90 % of particle-time vs. cumulative horizon, every age-bin edge, pooled line + per-year min–max band |
+| 033 | Hex shoreline-type map + stranding-vs-substrate panels | Per-run (regime + radius + season + member pair) | Flat fraction per hex (reference map: subbasin codes, key, release sites) · coastline length per hex · stranded weight vs. flat fraction for the production and the substrate-inert member |
+| 034 | Bottom-slowdown comparison | Two regimes (`bottom` vs `bottom_vs0p8`) + one year + radius | Area / √area holding 90 % of particle-time at 30/60/90/180 d · √area ratio 0.8× / 1× vs. horizon · side-by-side map pair at 90 d |
+| 035 | Stranding + area time series | Overlaid (one line per regime, each at its 026 weighting tag) + season | Three stacked panels vs. age / horizon, every age-bin edge: stranded % (029's CSV) · area · √area holding 90 % of particle-time (026's CSVs); pooled line + per-year min–max band |
 | 036 | Seeding map | Regime-free (one radius) | The 872 release cells by HELCOM subbasin · land-seeded share per cell |
 
 ## Cross-cutting choices
@@ -55,7 +55,7 @@ per-year band down, and a full 2025 needs 2026 forcing. The driver and job
 scripts pass no year argument, so the notebook default is the study's year
 set. 026b keeps a separate `mapped_years_csv` for which years get panels,
 since each origin is normalised over all of `release_years`; 034 compares one
-fixed `year`; 035 reads 026's CSVs, whose per-year rows already end at the
+fixed `year`; 035 reads 026's and 029's CSVs, whose per-year rows already end at the
 range. 032 lists every year on disk in its coverage table and pools only
 `release_years` in tables A–C (D–G read the consumers' exports).
 
@@ -127,8 +127,8 @@ released drifters present in that hex during the bin
 ([survival_occupancy.md](survival_occupancy.md)). 029's GeoJSON keeps the
 absolute `stranded_weight` beside `pct_released`.
 
-**Log-scale floors.** Every continuous log map of a share — 028's emission
-fraction, 029/031's stranded share — is floored a fixed **four decades below
+**Log-scale floors.** Every continuous log map of a share — 029/031's
+stranded share — is floored a fixed **four decades below
 its peak** (030's discrete bins are fixed outright, see 030): the `exp(−A)` tail of a weighted quantity runs arbitrarily
 far down, and how far depends on the rate-model member, so a percentile floor
 would give every member its own dynamic range. The 025/026 family's
@@ -233,39 +233,61 @@ the captions. Exceptions: 025's German-waters zoom, and the per-trajectory
 3 m isobath draws it on top of all other layers (see the overlay above).
 
 **Panel layout and colorbar placement.** Grids are `layout="constrained"`,
-each map's aspect fixed by its extent, and the panel height derived from
-page width ÷ ncols ÷ extent aspect plus a fixed decoration allowance — no
-draw-measure-rescale loop. The 025/026 family caps the height at one page
-(230 mm); a taller grid's maps turn height-limited and the spare width
-becomes side margin (026/026a/026b 2 × 2 grids, 026a overview). Per-panel colorbars are inset axes whose
-axes-fraction extent equals the map's, so they track the map at any size
-or DPI; they stay per-panel even under a shared norm so columns keep
-identical geometry. The two families place them differently, for the same
-reason read on different axes:
+each map's aspect fixed by its extent. The figure height is never estimated
+by hand; each family fits it to what is drawn, so maps fill the 180 mm width
+with no blank band between rows or at the sides:
 
-- **Shared colourbar (026, 026a)** — one horizontal colourbar per figure
-  under the whole grid (`fig.colorbar(..., ax=axes, pad=0.01)`; the default
-  pad is a fraction of the grid height, a blank band), every panel on the
-  figure's one norm.
+| notebooks | height rule |
+|---|---|
+| 026, 026a | `fit_height(fig, axes)`: seed height from the map aspect, then up to five passes of *measure and correct*. Per row, the height the map would take at its cell's full width minus the cell height constrained_layout gave it; the sum is added to the figure height, until it is below half a pixel. The decorations are fixed inches (except the colourbar `pad`, a fraction of the grid height), so it converges in two or three passes. No height cap, so a tall grid (026a's 4 × 4 overview) simply gets tall. |
+| 029 (pair), 033 | seed height, one draw, then cut to `fig.get_tightbbox()` plus constrained_layout's pad |
+| 034 | tall seed, one draw, the vertical slack of the maps' cells cut once (asserts the maps are width-limited) |
+| 025, 026b | fixed height capped at one page (230 mm); a taller grid's maps turn height-limited and the spare width becomes side margin |
+| 027, 029 (horizon row), 030, 031, 036 | fixed seed arithmetic (page width ÷ columns ÷ extent aspect plus a decoration allowance) |
+
+Maps in a fitted grid are **top-anchored** (`set_aspect(..., anchor="N")`,
+026/026a) so any spare cell height falls below the map and the title above it
+keeps its place while the height is corrected; the shared colourbar then
+passes `panchor=False` (the default re-anchors the maps to the bottom) and
+`pad=0.01` (the default 0.05 is a fraction of the grid height, a blank band).
+Single maps (029, 033) are bottom-anchored (`set_anchor("S")`) instead:
+centred in the cell, the map drifts below constrained_layout's room for the
+inset colourbar and clips its label. Per-panel colourbars are inset axes whose
+axes-fraction extent equals the map's, so they track the map at any size or
+DPI. Placement by family:
+
+- **Shared colourbar (026, 026a, 034, 029 horizon row)** — one horizontal colourbar per figure
+  under the whole grid, row or pair, every panel on the figure's one norm. 034's
+  uses `aspect=40` (default 20): at full width the default bar is ~9 mm thick.
 - **One colourbar per row (030)** — `fig.colorbar(..., ax=axes[i, :],
   location="bottom", aspect=40)` under each row, the row being one quantity
-  on one norm. The maps are width-limited, so the bar spans the full figure
-  width; `aspect=40` (default 20) keeps a full-width bar ~4.5 mm thick
-  instead of ~9 mm. 180 × 149 mm.
-- **025/026 family** — `ax.inset_axes([0, -0.09, 1, 0.035])`, a horizontal
-  bar *under* the map at width 1.0. These grids are up to four columns
-  wide, and a side colorbar plus its tick labels would take a quarter of
-  the page width per column.
-- **027/029/031/033** — `ax.inset_axes([1.02, 0, 0.035, 1.0])`, a vertical
-  bar *right* of the map at height 1.0. These rows are short and the
-  shared extent is taller than wide, so the maps are tall and narrow: a bar under the map would be far wider than the values need
-  and would eat the row height the tall maps want.
-- **Single full-width maps** (029 where-stranded, 036 land-seeded share) —
-  `ax.inset_axes([0, -0.045, 1, 0.022])`, a horizontal bar under a map that
-  spans the whole 180 mm, so the bar runs the full page width. The map is
-  `set_anchor("S")`: centred in its cell it drifts below constrained_layout's
-  room for the inset and clips the colorbar label; bottom-anchored, a
-  too-tall height seed only leaves a band above the title. 180 × 231 mm.
+  on one norm; `aspect=40` keeps a full-width bar ~4.5 mm thick. The column
+  titles repeat on both rows so a row can be cut out and read alone.
+- **025 family** — `ax.inset_axes([0, -0.09, 1, 0.035])`, a horizontal bar
+  *under* each map. These grids are up to four columns wide, and a side
+  colourbar plus its tick labels would take a quarter of the page width per
+  column.
+- **027/031/036 land share** — `ax.inset_axes([1.02, 0, 0.035, 1.0])`, a vertical bar *right*
+  of the map. These rows are short and the extent is taller than wide, so a bar
+  under the map would be far wider than the values need and would eat the row
+  height the tall maps want.
+- **Full-width maps and half-width pairs (029, 033, 036 single copy)** —
+  `ax.inset_axes([0, -0.045, 1, 0.022])` (029's pair: `[0, -0.06, 1, 0.035]`,
+  thicker for a half-width map), a horizontal bar under each map at the map's
+  width.
+
+**Subbasin borders on every map; codes on 033 only.** Every hex map draws the
+HELCOM level-2 borders as the edges two polygons share (`itertools.combinations`
+over the polygon outlines, `intersection`, clipped to the extent), not the
+polygon outlines, which retrace every island of the coast they were digitised
+against. Override: `color="0.5"`, `linewidth=0.52` (`basin_border_lw`), so a
+border reads neither as coastline (black) nor as part of the hex field; 0.52 is
+1.3× the former hairline so it survives print. `zorder=1.5`, above the hexes and
+below the coastline (2) and the isobath (10) (025–035; 036's category map draws
+borders at 2 under its coastline at 3). The shared-edge block is copied into
+each notebook. The subbasin codes, their code → name key and the release sites
+are on the 033 reference map only, so every other map stays readable and the
+paper's reference figure stands alone.
 
 Facet grids split across figures past ~12 panels rather than shrinking the
 maps; 027/029/030/031/033 set `hex_seam_lw = 1.1 * 72 / FIGURE_DPI`, and 031's
@@ -358,10 +380,12 @@ survival-weighted and an unweighted run is plain residence. Considered the
 weight-weighted mean of the bin centres; rejected, a skewed per-hex age
 distribution pulls it away from what most of the particle-time looks like,
 and the median reads as "half the particle-time here is younger". Fixed
-classes, identical for every regime and season: `BoundaryNorm` at 0, 25, …,
-175 d with `extend="max"` (175 d to the window end), the default colormap
-sampled into eight colours (seven classes and the over class); colourbar
-label `days` (the title names the quantity). **Mask:** a hex is drawn only if its share of the
+classes, identical for every regime and season (and for every "days"
+colourbar of the pipeline): `BoundaryNorm` at 0, 5, 10, 15, 20, 30, 40, 60,
+80, 100, 140, 180 d, the default colormap resampled into
+11 colours, no over class: the median of ages < max_age_days cannot exceed it.
+Finer below 100 d, where the class edges are closest; colourbar label `days` (the title names the quantity), ticks at
+the bounds. **Mask:** a hex is drawn only if its share of the
 window's weight (`percentage`) is at or above the 5th percentile of the
 per-hex shares, zero-water hexes excluded (as on the dilution map). At
 production (ALL, 2016–2024) that keeps 10,151 of 10,714 surface and 5,218
@@ -395,7 +419,8 @@ panels.
 
 **Overview.** Per horizon in `overview_horizons_days_csv` (default
 `"30,180"`), one figure with every mapped origin's log-dilution map in a
-4-column grid (4 × 4 for the 16 seeding origins), panel title = origin
+4-column grid (4 × 4 for the 16 seeding origins) filling the 180 mm width
+(026's `fit_height`, no height cap), panel title = origin
 name, panels in a hard-coded geographic order (Kattegat → The Quark),
 figure
 `OriginSubbasinOverview_<regime>_<season>_r<radius>m_<member|unweighted>_T<h>d_dilution.png`.
@@ -403,10 +428,13 @@ Each panel is still normalised over its own origin and drawn on the shared
 dilution scale, hexes below the floor not drawn. Panels use the
 shared extent (the run prints each origin's share of drawn weight outside
 it, and the maximum) and the isobath on top. One figure-wide horizontal colorbar
-(`fig.colorbar(..., ax=axes)`). Overrides: panel titles at
+(`panchor=False`, `pad=0.01`). The per-origin
+`OriginSubbasinTimeHorizonMaps_*` figures (percentage and dilution, one
+figure each, a 2 × 2 horizon grid titled `origin: <name>`) use the same
+layout. Overrides: panel titles at
 `fontsize="medium"` (the longest HELCOM names overrun a 45 mm panel at the
 default `large`); colorbar `pad=0.01` (the default 0.05 is a fraction of
-the whole grid's height, a ~10 mm blank band above the bar). The run also
+the whole grid's height, a blank band above the bar). The run also
 prints each origin's share on zero-water hexes (NaN dilution, not drawn),
 apart from the below-floor share.
 
@@ -479,7 +507,7 @@ the weighted matrix drops less than the unweighted one. No hex geometry, no cart
 a plain subbasin × subbasin grid. Both axes run west → east (KAT SOU GRB KIE
 MEC ARK BOR GDA EGB WGB GRI NBP GFI ALA BOS QUA BOB, 026a's overview order)
 with three-letter codes as tick labels set at plot time; 029's
-where-stranded map is the key. A subbasin missing from the code list
+reference map (033) is the key. A subbasin missing from the code list
 raises.
 
 Three views, each its own figure: the raw residence matrix (log, pooled
@@ -509,16 +537,23 @@ horizon as one two-line `fig.suptitle` (an axes title collides with it once
 the fixed-aspect matrix fills the page). The run context is plain language
 ("surface + Stokes drift, all seasons, survival-weighted"); run keys and
 member tags stay in filenames and prints, and the notebook's
-`REGIME_LABELS` / `SEASON_LABELS` dicts do the mapping at plot time. **Discrete log scale**: a
-`BoundaryNorm` with one class per half decade (edges `10**(k/2)`), the
-default colormap sampled across the classes. The emission views share one
-norm across horizons: the peak rounded up to its half-decade edge, floored
-four decades below it — eight classes, edges 1e-4, 3.16e-4, …, 0.316, 1 in
-every paper run — with `extend="min"` for the sub-floor shares (the
-thinnest run to 1e-7). The raw view spans every non-zero cell (no floor,
-no extend), its decade labels thinned to at most eight. Discrete rather
-than a continuous `LogNorm`: a cell's class reads off the colorbar, where a
-continuous viridis ramp blurs neighbouring decades into one hue. Zeros are
+`REGIME_LABELS` / `SEASON_LABELS` dicts do the mapping at plot time. **Discrete log scale, `cmc.batlow`.** The emission views (fraction and
+interannual mean) share one fixed `BoundaryNorm` across horizons, regimes and
+members: `EMISSION_BOUNDS`, 12 classes at 1–2–5 per decade over 10⁻⁴–1 with
+`extend="min"` for shares under the floor (a fraction is bounded by 1, and
+four decades below it the shares stop mattering; the thinnest runs reach
+1e-7). Every edge is labelled (decades as powers of ten, the 2 and 5 edges by
+mantissa). The raw view has no fixed range: one class per half decade (edges
+`10**(k/2)`) from the smallest non-zero cell to the peak, floored
+`RAW_FLOOR_DECADES = 10` below the peak with `extend="min"` when that cuts
+cells (the survival-weighted `exp(−A)` tail reaches 1e-25 and would take ~70
+classes; 1–2–5 classes would take ~30 colours over ten decades), decade
+labels thinned to at most eight. Override: `cmap=cmc.batlow` (conda-forge
+`cmcrameri`) on every matrix, because connectivity must not share colours
+with the dilution maps' turbo, and a multi-hue map with monotonic lightness
+gives more structure between neighbouring classes than viridis. Discrete
+rather than a continuous `LogNorm`: a cell's class reads off the colorbar,
+where a continuous gradient blurs neighbouring decades. Zeros are
 masked to NaN so empty cells render blank. Cell annotation
 with mean and min–max range is gated at `ANNOTATE_MAX_N = 12`; the axis is
 17 wide, so it is normally off and the range is read from
@@ -533,7 +568,7 @@ rate-model tag in the store filename
 (`HexAgg_beaching_r<radius>m_<regime>_<year>_mMM_<member>.parquet`); it
 selects the partitions, tags every figure filename, and is never parsed.
 `season` selects which monthly partitions are pooled. Two files come from the
-data twin rather than the store: the release-site geojson behind the overlay
+data twin rather than the store: the release-site geojson behind the substrate contrast
 and the shoreline-class table behind the substrate readout, both below. Views
 on one plain EPSG:4326 axis, reusing 025's hex registration but computing
 `hex_seam_lw` from the figure DPI rather than pinning a point value: the
@@ -541,15 +576,23 @@ seam is a fixed-pixel anti-aliasing artefact, not a fraction of hex width,
 so pinning the stroke to ~1 px keeps the seam closed while letting the
 resulting hex dilation shrink as resolution rises.
 
-- **Where-stranded density** — stranded weight per stranding hex as % of the
-  released drifters, summed over the store's `disp_bin` (and `shore_type`
-  where the reducer emits it) axes, on a `LogNorm` floored four decades
-  below the peak (weighted deposition's sparse tail carries fractional
-  weight). One map at the full page width with its colorbar under it (the
-  single full-width layout above); the colorbar carries `extend="min"`
-  because the floor clips hexes (production `ALL`: 110 of 1 221, < 0.01 % of
-  the stranded weight). `hex_map` sets `extend` from the data against the
-  norm on every panel, so the horizon row's shared norm gets the arrow too.
+- **Where stranded, and by origin** (`WhereStranded_*.png`, the paper's Fig 2)
+  — one full-width figure, two half-width maps side by side, each with its own
+  colourbar under it at its width, no subbasin codes and no release markers
+  (those are on 033). Left, **where stranded**: stranded weight per stranding
+  hex as % of the released drifters, summed over the store's `disp_bin` (and
+  `shore_type` where the reducer emits it) axes, on a `LogNorm` floored four
+  decades below the peak (weighted deposition's sparse tail carries
+  fractional weight); the colorbar carries `extend="min"` because the floor
+  clips hexes (production `ALL`: 110 of 1 221, < 0.01 % of the stranded
+  weight). `hex_map` sets `extend` from the data against the norm on every
+  panel, so the horizon row's shared norm gets the arrow too. Right, **by
+  release hex**: per release hex the % of its own drifters stranded at ages
+  below `origin_horizon_days` (default 180) — Σ `weight` with `beach_hex ≥ 0`
+  and `beach_age_bin < origin_horizon_days // age_bin_days` over Σ `weight`,
+  pooled like the left map — on a pinned linear 0–100 scale in the default
+  colormap (a share of the hex's own releases fills the range on any run), so
+  sink and source read off one figure.
   `shore_type` is deliberately **not shown at all** — neither faceted nor
   broken out in the summary. It is a threshold label on the
   HELCOM BRISK + CLMS flat fraction `ff` at the stranding hour (`flat` if
@@ -559,46 +602,6 @@ resulting hex dilation shrink as resolution rises.
   signal is already inside the plotted weight, so a flat/wall split of it
   would re-report the rate model as if it were a result. See
   [beaching.md](beaching.md).
-- **Release-site overlay** (this panel only, `show_release_points`) — the 872
-  REDLIST cells with `F_vesiculo != 0`
-  (`data/helcom_fucus_redlist/fucus_release_points.geojson`, baked by `000`),
-  one hollow marker per cell at its representative point. This is the file
-  `010` opens and seeds particles inside, so the overlay is the seeding set,
-  not a proxy. Without it the panel is a deposition field and the reader has
-  to supply the sources from memory; with it the figure is the source→sink
-  statement the study is about. **Overrides: `markerfacecolor="none"`,
-  `markeredgecolor="magenta"`, `markersize=2.5`, `markeredgewidth=0.4`.**
-  Hollow because sources and sinks overlap across the western Baltic and a
-  filled marker would hide the hex value the reader is comparing against;
-  magenta because the field underneath is a four-decade `LogNorm` of the
-  default map and the marker has to read against both a near-black low end
-  and a yellow high end (the same anti-viridis argument as the 3 m isobath in
-  025/026); 2.5 pt because that is roughly the 10 km REDLIST cell's own size
-  at 180 mm page width, so the marker stands for the cell rather than
-  inventing a point source. Considered and rejected: the cell polygons drawn
-  as outlines (faithful, but 10 km squares are larger than the 6 km hexes and
-  mesh together in the Danish straits and the Åland archipelago); the key's
-  `fucus_area_m2 > 0` hexes drawn as outlines (1 827 hexes against 872 cells —
-  a 10 km cell touches several 6 km hexes, so the footprint is overstated, and
-  a continuous magenta band along the whole Swedish and Finnish coast
-  outweighs the field it annotates); filled dots (clean, but they read as
-  scattered noise rather than as sites, and they occlude). The overlay is
-  deliberately **not** repeated on the beached-fraction or age-horizon panels:
-  the beached-fraction panel's coloured hexes already *are* the release set,
-  and the horizon row is about time, not about where the material came from.
-- **Subbasin borders and codes** (where-stranded panel only) — the HELCOM
-  level-2 borders as the edges two polygons share, no fill, the same geometry
-  and style as 036 (**override: `color="0.5"`, `linewidth=0.52`** — grey so a
-  border reads neither as coastline nor as part of the field, 1.3× the former
-  hairline at the authors' request so it survives print). Each subbasin
-  carries its three-letter code (**override: `fontsize=6`**, small enough to
-  sit inside the western straits at 180 mm, legible in print), the key to
-  028's axes, at the polygon's `representative_point`; KAT, MEC, GDA and ALA
-  are nudged by hand (`LABEL_AT`) off hexes and coast, and SOU, GRB and KIE
-  — straits filled with stranding hexes from shore to shore — get a tight
-  white backing at alpha 0.8 (`BOXED`), which hides less than a leader line
-  from adjacent land would cross. Full polygon outlines rejected: they
-  retrace the coast and its skerries, exactly where the stranding hexes sit.
 - **Source and sink substrate** — printed, not plotted: the shoreline flat
   fraction `ff` at the release sites against the flat fraction where the
   weight lands, aggregated per hex the way 033 does it (nest seam dropped,
@@ -618,9 +621,6 @@ resulting hex dilation shrink as resolution rises.
   10.6 → 19.5 %). Numbers from the `ALL` run, release years 2016–2024, 180 d
   window. Reading the per-hex correlation behind this is 033's job; 029 states the two means so the overlaid map has numbers
   attached.
-- **Stranded share per source hex** — % of each hex's own released drifters
-  stranded within the window, in [0, 100], so the default linear norm, no
-  colour override to defend.
 - **Age-horizon where-stranded maps** — the same log-density map at
   cumulative age cut-offs (`beach_age_bin < T // age_bin_days`, default
   30/60/90/180 d), on the where-stranded map's `LogNorm` (the full-window
@@ -642,7 +642,12 @@ resulting hex dilation shrink as resolution rises.
   `origin_subbasin, origin_name, horizon_days, released_weight, afloat_pct,
   afloat_pct_min, afloat_pct_max, n_years`) says so in its `#` header.
 - **Stranded-share curve** — cumulative stranded % of released against age,
-  with the per-release-year min–max as a shaded band.
+  with the per-release-year min–max as a shaded band
+  (`BeachedFractionCurve_*.png`). Also written to
+  `Exports/029/stranded_curve_<regime>_<season>_<member>.csv` after `#`
+  provenance lines, columns `age_days` (age-bin right edge T, stranding at
+  ages < T), `stranded_pct` (pooled over release years), `stranded_pct_year_min`,
+  `stranded_pct_year_max`, `n_years`; 035 draws it as its top panel.
 - **Displacement at stranding** — stranded share (% of released) over the store's
   `disp_bin` axis (crow-flies displacement from release at the deposit
   step), pooled over sources, with the weight-weighted median printed.
@@ -664,7 +669,7 @@ that **ends** at `T` — ages in `[T − age_bin_days, T)`, index
 titles carry the bin's age span. A snapshot, not 026's cumulative `[0, T)`:
 being afloat at `T` is an instantaneous state, and a survival map
 accumulated over `[0, T)` would be a weighted residence map, which 026
-already draws. One 2 × 4 grid, a column per horizon (titled with the bin's age span):
+already draws. One 2 × 4 grid, a column per horizon (titled with the bin's age span, repeated on both rows so the lower row can be cut out and read alone):
 row 1 **occupancy** in % of the released drifters (`100 · occ / Σocc`, see
 Units above), row 2 the **surviving fraction** `surv / occ`, one colorbar
 under each row (the row is one quantity on one norm); their product is the survival-weighted share
@@ -810,7 +815,7 @@ old consumer products in place under the same names, captioned with the new
 window. Sources: 024f at the production member for a weighted 025/026
 product, else the 024 counts; 024b for 027; 024c / 024g for unweighted /
 weighted 028; 024e for 029 and (every member) 031; 024f for 030. 035
-draws 026's area CSVs, so its sources are those CSVs, each checked against
+draws 026's area CSVs and 029's stranding curve, so its sources are those CSVs, each checked against
 its own stores — a 035 figure drawn from a stale CSV is stale too. 036 has
 no store source and is checked against the 024a key alone (its subbasin
 assignment; the trajectory zarrs behind its land share are not tracked —
@@ -871,18 +876,39 @@ on flat coast because the model puts it there" from "stranding is on flat coast
 because that is where the drift goes" — the latter is the only thing the inert
 member can show.
 
-- **Flat fraction per hex** — the headline map and the paper's
-  shoreline-classification figure (Methods): 029's where-stranded layout,
-  one map at the full page width on the shared extent with its colorbar under
-  it, title on one line (the nest-seam cut belongs in the caption).
-  **One styling override: `cmap="coolwarm"` with a
-  fixed `Normalize(0, 1)`.** Justified because this is not a magnitude but a
-  bounded two-ended axis (0 = fully walled, 1 = fully flat) with a
-  *distinguished midpoint*: 0.5 is exactly what the pipeline assigns coastline
-  it has no class for. The default sequential map has no distinguished
-  midpoint, so "half flat" and "unattributed" would land in an arbitrary
-  mid-ramp colour and the two ends would not read as opposites. The norm is
-  pinned rather than auto-ranged so the white stays at 0.5 across runs.
+- **Flat fraction per hex** (`ShorelineType_*.png`) — the headline map, the
+  paper's shoreline-classification figure (Methods) and its **reference
+  map**: one map at the full page width on the shared extent with its
+  colourbar under it, title on one line (share of unattributed coast; the
+  nest-seam cut belongs in the caption). **No colormap override**: the default
+  sequential map on a pinned `Normalize(0, 1)`, so 0 (fully walled) and 1
+  (fully flat) are the ends of the bar on every run. The value drawn is the
+  one the model uses, with unattributed coast entering as 0.5; that 0.5 is a
+  convention, not a meaningful midpoint, so a diverging map would claim more
+  than the data carries, and the unattributed share goes in the title instead.
+  This is the only map with the **subbasin codes** (`fontsize=6`, small enough
+  to sit inside the western straits at 180 mm and legible in print;
+  `representative_point`, KAT/MEC/GDA/ALA nudged by hand in `LABEL_AT`, SOU,
+  GRB and KIE with a tight white backing at alpha 0.8 in `BOXED` because those
+  straits are filled with hexes shore to shore), an on-map **code → name key**
+  (`fontsize=7`, one step above the codes since it is running text; names
+  from the sidecar's `subbasin_id_to_name`, in the empty land west of the
+  Bothnian Sea so the figure stands alone when extracted) and the **release
+  sites**: the 872 REDLIST cells with `F_vesiculo != 0`
+  (`data/helcom_fucus_redlist/fucus_release_points.geojson`, baked by `000`,
+  the file `010` seeds inside), one hollow marker per cell at its
+  representative point. **Overrides: `markerfacecolor="none"`,
+  `markeredgecolor="magenta"`, `markersize=2.5`, `markeredgewidth=0.4`.**
+  Hollow because the sites sit on the very coastal hexes whose value the
+  reader compares against; magenta because the field is the full-range
+  default map and the marker must read against both its near-black and its
+  yellow end (the isobath's anti-viridis argument); 2.5 pt is roughly the
+  10 km cell's own size at 180 mm, so the marker stands for the cell rather
+  than a point source. Considered the cell polygons as outlines (10 km squares
+  exceed the 6 km hexes and mesh in the Danish straits and the Åland
+  archipelago), the key's `fucus_area_m2 > 0` hexes (1 827 hexes against 872
+  cells, a continuous band along the Swedish and Finnish coast) and filled dots
+  (they read as noise and occlude).
 - **Coastline length per hex** — the denominator of the normalised stranded
   weight, and the map that says how much of the flat-fraction map rests on a
   sliver of coast. Default colormap, default linear norm, same layout.
@@ -961,56 +987,56 @@ either counts partition raises rather than shrinking one side. Parquet only.
   `rcParams["axes.edgecolor"]` — a colour override, so the reference does not
   take the data line's cycle colour; read off the rcParams, not hardcoded.
 - **Map pair** at `map_horizon_days` — 026's percentage and dilution rendering,
-  one figure per view, the two regimes **stacked** (reference on top) under
-  **one shared norm** and one horizontal colourbar inset under the lower map
-  (the stacked maps are height-limited, so a bar under the whole figure would
-  overrun them), so the same colour is the same value in both; dilution is
-  released-normalised on the shared scale, the paper's slowdown figure. The length-ratio
-  figure stays an output but is not in the paper set (its ratios are in the
-  CSV). Shared extent (the validation
-  cell prints the particle-time it cuts off — 0 % for 2019). The Baltic is taller than
-  wide, so two full-width stacked maps would be ~2.4× the page width tall: the
-  figure height is fixed at 220 mm (`MAP_PAIR_HEIGHT_IN`, one page with its
-  caption) and the maps take the width that leaves them (~95 mm), still about
-  1.6× the linear size of the side-by-side full-domain pair. Considered side by
-  side on the crop (same map size, fills the width); rejected on the authors'
-  request for a stacked pair.
+  one figure per view, the two regimes **side by side** (reference left) at the
+  full 180 mm width under **one shared norm** and one horizontal colourbar below
+  the pair (`aspect=40`, `pad=0.01`), so the same colour is the same value in
+  both; dilution is released-normalised on the shared scale, the paper's
+  slowdown figure. The height is a tall seed with the maps' vertical slack
+  measured and cut once. The length-ratio figure stays an output but is not in
+  the paper set (its ratios are in the CSV). Shared extent (the validation
+  cell prints the particle-time it cuts off, 0 % for 2019).
 
 Figures at 180 mm × 300 dpi as above.
 
 ## Notebook 035 — Area time series (special case)
 
-[`035_AreaTimeSeries`](../notebooks/035_AreaTimeSeries.py) draws 026's area
-exports `Exports/026/026_areas_<regime>_<season>_<tag>.csv` for several
-regimes on shared axes — R1's "how much water holds the cloud by T". No
-parquet; it runs after 026 for every regime it draws.
+[`035_AreaTimeSeries`](../notebooks/035_AreaTimeSeries.py) draws, on one age
+axis, 029's stranding curve and 026's area exports
+`Exports/026/026_areas_<regime>_<season>_<tag>.csv` for several regimes —
+"how much has stranded, and how much water holds the cloud, by T". CSV only,
+no parquet; it runs after 026 (every regime it draws) and 029
+(`Exports/029/stranded_curve_<stranded_regime>_<season>_<stranded_member>.csv`).
 
 | parameter | default | |
 |---|---|---|
 | `regimes_csv`, `tags_csv` | `surface_stokes,bottom`, `<production member>,unweighted` | one 026 weighting tag per regime, position by position (D3) |
+| `stranded_regime`, `stranded_member` | `surface_stokes`, `<production member>` | the 029 run whose stranding curve is panel (a); stranding needs the Stokes forcing |
 | `season` | `ALL` | one release season per figure |
 | `area_quantile` | 0.9 | must be a `q` the CSV holds, else it raises |
 | `hex_radius` | 6000 | labels the figure only; the CSV names carry no radius |
 
-- **Two panels stacked** on a shared x axis, area (km²) over √area (km),
-  against the cumulative horizon `T` (ages in `[0, T)`, every age-bin edge
-  026 exported), y from zero so the regimes compare as ratios, top 12 % above
-  the highest band for the labels. No title and no legend: each line is named
-  by a text label (`REGIME_LABELS`, e.g. "surface + Stokes drift", plus the
-  weighting) in its colour at the first horizon (above the topmost line,
-  below the others — the lines cross later); override `color=` on the label,
-  so it reads as the line's name. The season and the band go in the caption.
+- **Three panels stacked** on one shared x axis "age / horizon T (d)": (a)
+  stranded % of released, (b) area holding `q` (km²), (c) √area (km). Stranding
+  is cumulative by age as the area is by horizon (ages in `[0, T)`, every
+  age-bin edge), so the panels share the axis. y from zero so regimes compare
+  as ratios, top 20 % above the highest band for labels and the panel letter.
+  Panel letters (a)–(c) sit inside the panels, top right. No title and no
+  legend: each line is named by a text label (`REGIME_LABELS`, plus the
+  weighting) in its colour at the first horizon (above the topmost line, below
+  the others, since the lines cross later); `color=` on the label is an
+  override so it reads as the line's name. The season and the band go in the
+  caption.
 - **One colour per regime** from the default cycle, indexed by its position
-  in `regimes_csv` so a regime keeps its colour when another is missing; the
-  pooled value is a line with markers (one per exported horizon), the
-  per-release-year min–max a band in the same colour at `alpha=0.3`. The
-  pooled value can sit outside the band — it ranks the summed weights, which
-  spread over more hexes than any one year's.
-- **Missing export** — a regime whose CSV is absent is printed as `MISSING:`
-  and left out (the figure draws what exists, so a one-regime interim works);
-  no CSV at all raises.
-- A computed table of the plotted values (pooled, per-year min and max, both
-  quantities) is printed; no export of its own — the numbers are 026's.
+  in `regimes_csv` so a regime keeps its colour when another is missing (the
+  stranding curve takes its regime's colour); the pooled value is a line with
+  markers (one per exported horizon), the per-release-year min–max a band in
+  the same colour at `alpha=0.3`. The pooled area can sit outside the band: it
+  ranks the summed weights, which spread over more hexes than any one year's.
+- **Missing export** — a regime whose area CSV is absent is printed as
+  `MISSING:` and left out (a one-regime interim still draws); no area CSV at
+  all raises, and so does a missing stranding curve (panel (a) would
+  otherwise silently vanish under the three-panel name).
+- A computed table of the plotted values is printed; no export of its own.
 
 `output_root/Figures/035/AreaTimeSeries_<season>_r<radius>m.png`, 180 mm ×
 300 dpi; 032 picks the year-pooled season's figure. Considered drawing the
@@ -1060,7 +1086,7 @@ right-hand panel on its own at the full page width.
 - **Land-share panel**: default colormap, fixed `Normalize(0, 100)`, colorbar
   right of the map (027/033 placement for the tall Baltic crop). The
   single-panel copy is one map at the full page width with the
-  colorbar under it, 029's where-stranded layout.
+  colorbar under it, 033's full-width layout.
 - **Legend** under both panels, three columns, entries in colour order with
   the cell count per subbasin.
 - A table of cells, share of cells and mean land-seeded share per subbasin is

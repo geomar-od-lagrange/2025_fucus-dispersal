@@ -32,11 +32,12 @@
 #         bottom unweighted)                              x 5 seasons   15
 #   029, 030  surface_stokes, production member           x 5 seasons   10
 #   031  surface_stokes, every 024e member on disk        x 5 seasons    5
-#   035  both regimes in one figure (reads 026's CSVs)    x 5 seasons    5
+#   035  both regimes in one figure (026's, 029's CSVs)   x 5 seasons    5
 #                                                                     ----
 #                                                                       85
 #
-# 035 draws the 026 area exports of both regimes, so the 035 units run as a
+# 035 draws the 026 area exports of both regimes and the 029 stranding curve
+# of surface_stokes, so the 035 units run as a
 # second wave after every other unit has finished; the first wave is one
 # flat pool with no ordering between its units.
 #
@@ -275,7 +276,7 @@ tally=${logdir}/${SLURM_JOB_NAME}_${SLURM_JOB_ID}.tally
 # `set -e` must not kill the driver when a unit exhausts its retries (or when
 # a wave's grep selects nothing); run_one already swallows its own status and
 # reports FAIL, and the tally below is the authoritative exit code.
-# Two waves: 035 reads what 026 writes for both regimes.
+# Two waves: 035 reads what 026 and 029 write for both regimes.
 set +e
 list_work | grep -v "^035 " | xargs -r -P "${SLURM_NTASKS}" -L1 bash -c 'run_one "$@"' _ \
     | tee "${tally}"

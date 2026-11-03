@@ -14,15 +14,22 @@ jupyter:
     name: python3
 ---
 
-# Area holding the cloud vs. elapsed time
+# Stranding and the area holding the cloud vs. elapsed time
 
-The R1 area of plans/done/horizons_and_weighting.md D6 as a time series, one
-line per regime: the smallest water area holding a share `q` of the
-particle-time accumulated by horizon `T` (cumulative, ages in `[0, T)`),
-and its square root as a length scale. Reads only 026's area exports
-`Exports/026/026_areas_<regime>_<season>_<tag>.csv` — no parquet, no
-Dask. Each regime is read at its own weighting tag (a 024f rate-model
-member, or `unweighted` for the 024 counts), as 026 wrote it.
+Three time series on one age axis. The cumulative percentage of released
+drifters **stranded** by age `T` (029's stranding curve, one rate-model
+member of one regime), and the R1 area of
+plans/done/horizons_and_weighting.md D6, one line per regime: the smallest
+water area holding a share `q` of the particle-time accumulated by horizon
+`T` (cumulative, ages in `[0, T)`), and its square root as a length scale.
+Stranding is cumulative by age just as the area is by horizon, so "stranded
+by T" and "area at horizon T" share the x axis.
+
+Reads only CSV exports — no parquet, no Dask: 026's
+`Exports/026/026_areas_<regime>_<season>_<tag>.csv`, each regime at its own
+weighting tag (a 024f rate-model member, or `unweighted` for the 024
+counts), and 029's `Exports/029/stranded_curve_<regime>_<season>_<member>.csv`.
+Runs after 026 and 029.
 
 `pooled` (every release year summed) is the line; the per-release-year
 min–max of the same reduction is the shaded band. A pooled value need not
@@ -40,7 +47,7 @@ import matplotlib.pyplot as plt
 # Parameters
 
 ```python tags=["parameters"]
-# Read root of 026's exports; write root for the figure.
+# Read root of 026's and 029's exports; write root for the figure.
 output_root = "../output"
 # Hex radius 026 ran at. Labels the figure only: the 026 area CSV names
 # carry no radius, so this must match the 026 run that wrote them.
@@ -49,6 +56,11 @@ hex_radius = 6000
 # rate-model member, or "unweighted"), position by position.
 regimes_csv = "surface_stokes,bottom"
 tags_csv = "step_wc0p1_ts3_tcinf_tf1_tw0,unweighted"
+# Regime and 024e rate-model member of the stranding panel: the 029 run whose
+# stranding curve is drawn (stranding needs the Stokes forcing, so only the
+# surface_stokes regime has one).
+stranded_regime = "surface_stokes"
+stranded_member = "step_wc0p1_ts3_tcinf_tf1_tw0"
 # Release season: DJF, MAM, JJA, SON or ALL.
 season = "ALL"
 # Share of the particle-time whose holding area is drawn; must be one of the
@@ -69,6 +81,10 @@ if len(regimes) != len(tags):
 
 output_root = Path(output_root)
 export_dir = output_root / "Exports" / "026"
+stranded_path = (
+    output_root / "Exports" / "029"
+    / f"stranded_curve_{stranded_regime}_{season}_{stranded_member}.csv"
+)
 
 # Print-ready output: one full text-width (180 mm) figure at 300 dpi, so it
 # lands in the manuscript at its final size (rationale in
@@ -79,7 +95,8 @@ FIGURE_DPI = 300
 figure_dir = output_root / "Figures" / "035"
 figure_dir.mkdir(parents=True, exist_ok=True)
 
-print(f"season {season}, q = {area_quantile:g}, regimes {list(zip(regimes, tags))}")
+print(f"season {season}, q = {area_quantile:g}, regimes {list(zip(regimes, tags))}; "
+      f"stranding: {stranded_regime} ({stranded_member})")
 ```
 
 # Read the 026 area exports
@@ -113,14 +130,27 @@ if not frames:
     raise FileNotFoundError(f"none of the 026 area exports exist: {[str(p) for p in missing]}")
 areas = pd.concat(frames, ignore_index=True)
 drawn = [r for r in regimes if r in set(areas["regime"])]
-# Plain-language line labels; the run keys stay in filenames and prints.
-REGIME_LABELS = {
-    "surface": "surface",
-    "surface_stokes": "surface + Stokes drift",
-    "bottom": "bottom",
-}
 ```
 
+# Read the 029 stranding curve
+
+Columns `age_days, stranded_pct, stranded_pct_year_min,
+stranded_pct_year_max, n_years`, `age_days` the age-bin right edge `T`
+(stranding at ages < T), `#` header lines carrying the run's provenance.
+Required: without it the figure's top panel has nothing to show, so a
+missing curve raises rather than drawing a two-panel figure under the
+three-panel name.
+
+```python
+if not stranded_path.exists():
+    raise FileNotFoundError(
+        f"029 stranding curve missing: {stranded_path} — run 029 for "
+        f"{stranded_regime}, season {season}, member {stranded_member}"
+    )
+stranded = pd.read_csv(stranded_path, comment="#").set_index("age_days")
+print(f"{stranded_path.name}: ages {stranded.index.min()}–{stranded.index.max()} d "
+      f"({len(stranded)}), {int(stranded['n_years'].iloc[0])} release years")
+```
 # Pooled value and interannual range
 
 Per regime and horizon: the pooled value and the min–max over the release
@@ -147,53 +177,94 @@ print(table.round(1).to_string())
 
 # Figure
 
-Two panels stacked on a shared horizon axis, area over `√area`; one colour
-per regime, by its position in `regimes_csv` in the default cycle (so a
-regime keeps its colour when another one's export is missing), shared by
-the regime's line, its band and its label. Each line is named by a text
-label in its colour at its first horizon instead of a legend box, which at
-print width covers curves or eats a strip of the page. No title and no
-band key: the season and the band (per-release-year min–max) go in the
-caption.
+Three panels stacked on a shared age axis, from the top: (a) stranded % of
+released, (b) area, (c) `√area`. One colour per regime, by its position in
+`regimes_csv` in the default cycle (so a regime keeps its colour when
+another one's export is missing), shared by the regime's line, its band and
+its label; the stranding curve takes its regime's colour. Each line is
+named by a text label in its colour at its first horizon instead of a
+legend box, which at print width covers curves or eats a strip of the page.
+Panel letters sit inside the panels, top right. No title and no band key:
+the season and the band (per-release-year min–max) go in the caption.
 
 ```python
-PANELS = {
-    "area_km2": f"area holding {100 * area_quantile:g} % (km²)",
-    "length_km": f"√area holding {100 * area_quantile:g} % (km)",
-}
 colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+# Plain-language line labels; the run keys stay in filenames and prints.
+REGIME_LABELS = {
+    "surface": "surface",
+    "surface_stokes": "surface + Stokes drift",
+    "bottom": "bottom",
+}
 
-fig, axes = plt.subplots(len(PANELS), 1, sharex=True, layout="constrained")
-# Print-ready width; two stacked line panels at 0.4 of the page width each.
-fig.set_size_inches(FIGURE_WIDTH_IN, 0.8 * FIGURE_WIDTH_IN)
-for ax, (value, ylabel) in zip(axes, PANELS.items()):
-    for regime in drawn:
-        color = colors[regimes.index(regime)]
-        t = table.loc[regime]
-        tag = areas.loc[areas["regime"] == regime, "tag"].iloc[0]
-        weighting = "unweighted" if tag == "unweighted" else "survival-weighted"
+
+def regime_color(regime):
+    """The regime's default-cycle colour by its position in `regimes_csv`;
+    a stranding regime not drawn as an area line takes the next free one."""
+    return colors[regimes.index(regime) if regime in regimes else len(regimes)]
+
+
+def series_panel(ax, lines, ylabel):
+    """Pooled line + per-year band + inline label per series, y from zero.
+    `lines` is a list of (label, color, frame, value column, min, max)."""
+    for label, color, t, value, lo, hi in lines:
         # The band takes the line's colour so each regime reads as one
         # object; alpha keeps the other regime's line visible through it.
-        ax.fill_between(
-            t.index, t[f"{value}_year_min"], t[f"{value}_year_max"],
-            color=color, alpha=0.3,
-        )
-        # Markers mark the horizons the 026 table actually holds.
+        ax.fill_between(t.index, t[lo], t[hi], color=color, alpha=0.3)
+        # Markers mark the horizons the exported table actually holds.
         ax.plot(t.index, t[value], marker="o", color=color)
         # Inline label in the line's colour at the first horizon, where the
-        # regimes are furthest apart (they cross later): above the topmost
-        # line, below every other, so it names the line without a legend.
-        topmost = t[value].iloc[0] >= max(table.loc[r, value].iloc[0] for r in drawn)
+        # regimes are furthest apart (they cross later): above the topmost of
+        # several lines, below every other, so it names the line without a
+        # legend. A lone line rises from its first horizon, so its label goes
+        # below, into the empty space under the curve.
+        topmost = len(lines) > 1 and t[value].iloc[0] >= max(
+            f[v].iloc[0] for _, _, f, v, _, _ in lines
+        )
         ax.annotate(
-            f"{REGIME_LABELS.get(regime, regime)} ({weighting})", (t.index[0], t[value].iloc[0]),
+            label, (t.index[0], t[value].iloc[0]),
             xytext=(4, 10 if topmost else -10), textcoords="offset points",
             ha="left", va="bottom" if topmost else "top", color=color,
         )
     ax.set_ylabel(ylabel)
-    # From zero, so the two regimes' areas compare as ratios by eye; the top
-    # leaves a text line of headroom over the highest band for its label.
-    ax.set_ylim(0, 1.12 * max(table.loc[r, f"{value}_year_max"].max() for r in drawn))
-axes[-1].set_xlabel("horizon T (d), ages in [0, T)")
+    # From zero, so the regimes compare as ratios by eye; the top leaves a
+    # text line of headroom over the highest band (at a third of the page
+    # width per panel) for the labels and the panel letter.
+    ax.set_ylim(0, 1.2 * max(f[hi].max() for _, _, f, _, _, hi in lines))
+
+
+def area_lines(value):
+    """The `series_panel` series of one area quantity, one per drawn regime."""
+    out = []
+    for regime in drawn:
+        tag = areas.loc[areas["regime"] == regime, "tag"].iloc[0]
+        weighting = "unweighted" if tag == "unweighted" else "survival-weighted"
+        out.append((
+            f"{REGIME_LABELS.get(regime, regime)} ({weighting})", regime_color(regime),
+            table.loc[regime], value, f"{value}_year_min", f"{value}_year_max",
+        ))
+    return out
+
+
+PANELS = [
+    (
+        [(REGIME_LABELS.get(stranded_regime, stranded_regime),
+          regime_color(stranded_regime), stranded,
+          "stranded_pct", "stranded_pct_year_min", "stranded_pct_year_max")],
+        "stranded (% of released)",
+    ),
+    (area_lines("area_km2"), f"area holding {100 * area_quantile:g} % (km²)"),
+    (area_lines("length_km"), f"√area holding {100 * area_quantile:g} % (km)"),
+]
+
+fig, axes = plt.subplots(len(PANELS), 1, sharex=True, layout="constrained")
+# Print-ready width; three stacked line panels at a third of the page width
+# each.
+fig.set_size_inches(FIGURE_WIDTH_IN, FIGURE_WIDTH_IN)
+for ax, letter, (lines, ylabel) in zip(axes, "abc", PANELS):
+    series_panel(ax, lines, ylabel)
+    # Top right: the line labels sit at the first horizon, top left.
+    ax.text(0.99, 0.96, f"({letter})", transform=ax.transAxes, ha="right", va="top")
+axes[-1].set_xlabel("age / horizon T (d)")
 fig_path = figure_dir / f"AreaTimeSeries_{season}_r{hex_radius}m.png"
 fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
@@ -203,7 +274,7 @@ plt.show()
 # Validation prints
 
 ```python
-print(f"drawn: {drawn}")
+print(f"drawn: {drawn}; stranding: {stranded_regime} ({stranded_member})")
 if missing:
     print(f"NOT drawn ({len(missing)} missing export(s)):")
     for p in missing:
@@ -214,4 +285,8 @@ for regime in drawn:
         ((t["area_km2"] < t["area_km2_year_min"]) | (t["area_km2"] > t["area_km2_year_max"])).sum()
     )
     print(f"{regime}: {len(t)} horizons, pooled outside the per-year range at {outside}")
+print(f"stranded by {stranded.index.max()} d: {stranded['stranded_pct'].iloc[-1]:.1f} % "
+      f"[{stranded['stranded_pct_year_min'].iloc[-1]:.1f}–"
+      f"{stranded['stranded_pct_year_max'].iloc[-1]:.1f}]; "
+      f"area and stranding ages agree: {set(stranded.index) == set(table.index.get_level_values('horizon_days'))}")
 ```

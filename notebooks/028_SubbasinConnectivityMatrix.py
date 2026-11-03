@@ -40,7 +40,8 @@
 # 2. **Emission fraction** `x / x.sum(axis=1)` — the fraction of an origin's
 #    particle-time that sits in each target, one figure per age horizon
 #    `T` (cumulative, half-open `age < T` days, the same convention as 026's
-#    horizons). Rows sum to 1, so origins are comparable.
+#    horizons). Rows sum to 1, so origins are comparable. Fixed classes at
+#    1–2–5 per decade over 10⁻⁴–1.
 # 3. **Interannual range** — the emission fraction recomputed per release
 #    year; mean / min / max per (origin, target, horizon).
 #
@@ -70,6 +71,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from cmcrameri import cm as cmc
 from matplotlib.colors import BoundaryNorm
 
 # %% [markdown]
@@ -481,6 +483,12 @@ def code(c):
     return SUBBASIN_CODE[subbasin_id_to_name[c]] if c in subbasin_id_to_name else c
 
 
+# Colormap override (docs/visualisations.md, 028): batlow, multi-hue with
+# monotonic lightness, so neighbouring log classes differ in hue as well as
+# lightness and connectivity reads apart from the dilution maps' turbo.
+MATRIX_CMAP = cmc.batlow
+
+
 def draw(ax, values, columns, norm):
     """imshow one origin × target matrix with subbasin codes as tick labels.
 
@@ -498,7 +506,7 @@ def draw(ax, values, columns, norm):
         for i, v in enumerate(values[:, -1]):
             if np.isfinite(v):
                 ax.text(xpos[-1], i, f"{100 * v:.0f}", ha="center", va="center")
-    im = ax.imshow(values, norm=norm)
+    im = ax.imshow(values, norm=norm, cmap=MATRIX_CMAP)
     # Tick labels set at plot time only (AGENTS.md: don't mutate the frame
     # index for presentation).
     if columns[-1] == STRANDED:
@@ -522,22 +530,10 @@ def half_decade(x, up):
     return int(np.ceil(k - 1e-9)) if up else int(np.floor(k + 1e-9))
 
 
-def class_norm(k_lo, k_hi, extend):
-    """Discrete log scale: one class per half decade between the edges
-    10**(k_lo/2) and 10**(k_hi/2), the default colormap sampled across them."""
-    edges = 10.0 ** (np.arange(k_lo, k_hi + 1) / 2)
-    return BoundaryNorm(edges, ncolors=plt.get_cmap().N, extend=extend)
-
-
-def colorbar(fig, ax, im, label):
-    """Shared-width colorbar under the matrix, decades labelled — every
-    decade up to eight of them, then every n-th so the labels never touch."""
+def colorbar(fig, ax, im, label, ticks, tick_labels):
+    """Shared-width colorbar under the matrix, labelled at `ticks`."""
     cb = fig.colorbar(im, ax=ax, location="bottom", label=label)
-    exps = [int(np.round(np.log10(e))) for e in im.norm.boundaries
-            if np.isclose(np.log10(e), np.round(np.log10(e)))]
-    step = int(np.ceil(len(exps) / 8))
-    exps = [x for x in exps if (x - exps[-1]) % step == 0]
-    cb.set_ticks([10.0 ** x for x in exps], labels=[f"$10^{{{x}}}$" for x in exps])
+    cb.set_ticks(ticks, labels=tick_labels)
     return cb
 
 
@@ -584,8 +580,9 @@ def save(fig, name):
 # Pooled over the whole window, ages `< max_age_days`. The log scale is not
 # cosmetic: the within-subbasin diagonal dominates by orders of magnitude, so a
 # linear scale washes out every cross-subbasin entry. One discrete class per
-# half decade, as the emission views, but spanning every non-zero cell (no
-# floor): this is the magnitude picture. Zeros are masked to NaN so empty
+# half decade over up to ten decades below the peak: this is the magnitude
+# picture, unbounded and ~10 decades wide, where the emission views' 1–2–5
+# classes would run to ~30 colours. Zeros are masked to NaN so empty
 # cells render blank rather than as the bottom of the colour scale.
 
 # %%
@@ -596,14 +593,31 @@ print(f"raw matrix {raw.shape}, {dropped:.1%} of {value_col} dropped as -1 "
       f"origin/target")
 
 raw_values = raw.to_numpy()
-raw_norm = class_norm(
-    half_decade(raw_values[raw_values > 0].min(), up=False),
-    half_decade(raw_values.max(), up=True),
-    extend="neither",
+# One class per half decade, edges 10**(k/2), from the smallest non-zero cell
+# to the largest. Counts have no fixed range the way a fraction does, and the
+# span runs to ~10 decades, so 1–2–5 classes would give ~30 colours. Floored
+# RAW_FLOOR_DECADES below the peak: the unweighted counts start at one sample
+# and stay above it, but the survival-weighted `exp(−A)` tail runs to 1e-25
+# and would otherwise spread the scale over ~70 classes.
+RAW_FLOOR_DECADES = 10
+k_peak = half_decade(raw_values.max(), up=True)
+k_min = half_decade(raw_values[raw_values > 0].min(), up=False)
+k_floor = max(k_min, k_peak - 2 * RAW_FLOOR_DECADES)
+raw_edges = 10.0 ** (np.arange(k_floor, k_peak + 1) / 2)
+raw_norm = BoundaryNorm(
+    raw_edges, ncolors=MATRIX_CMAP.N, extend="min" if k_min < k_floor else "neither"
 )
+print(f"raw classes: {len(raw_edges) - 1} half decades from {raw_edges[0]:.3g} "
+      f"to {raw_edges[-1]:.3g}; smallest non-zero cell {raw_values[raw_values > 0].min():.3g}")
+# Decades labelled — every decade up to eight of them, then every n-th, so
+# the labels never touch.
+raw_exps = [round(np.log10(e)) for e in raw_edges if np.isclose(np.log10(e), round(np.log10(e)))]
+raw_step = int(np.ceil(len(raw_exps) / 8))
+raw_exps = [x for x in raw_exps if (x - raw_exps[-1]) % raw_step == 0]
 fig, ax = matrix_figure(named_ids)
 im = draw(ax, np.where(raw_values > 0, raw_values, np.nan), named_ids, norm=raw_norm)
-colorbar(fig, ax, im, f"residence ({value_col})")
+colorbar(fig, ax, im, f"residence ({value_col})", [10.0 ** x for x in raw_exps],
+         [f"$10^{{{x}}}$" for x in raw_exps])
 # Run context and horizon as one two-line figure title: the combined string
 # overruns the 180 mm page on one line, and a separate axes title can be
 # pushed into the figure title once the fixed-aspect matrix fills the page.
@@ -621,24 +635,32 @@ save(fig, f"SubbasinConnectivity_raw_{regime}_{season}_{member_tag}_T{max_age_da
 # particle-time and the stranded cell the share of it lost to beaching.
 # One figure per horizon, on one discrete log scale shared across horizons —
 # the off-diagonal shares span several decades, and a common scale makes the
-# horizons comparable figure to figure. Discrete half-decade classes rather
-# than a continuous ramp: a cell's class is read off the colorbar, where a
-# continuous viridis gradient blurs neighbouring shares into one hue.
+# horizons comparable figure to figure. Discrete classes rather than a
+# continuous ramp: a cell's class is read off the colorbar, where a
+# continuous gradient blurs neighbouring shares into one hue.
 
 # %%
 emission = {h: emission_matrix(h) for h in time_horizons_days}
 targets = emission[time_horizons_days[0]].columns.tolist()
 
-# Shared scale across horizons, floored four decades below the peak (the
-# peak rounded up to its half-decade edge): the thinnest off-diagonal shares
-# run to 1e-7 and would otherwise stretch the scale until every meaningful
-# cell reads the same colour (same treatment as 029's stranding maps). Eight
-# half-decade classes; shares under the floor take the `extend="min"` colour.
-FLOOR_DECADES = 4
+# One fixed scale for every emission figure (horizons, regimes, members): a
+# fraction is bounded by 1, and four decades below it the shares stop
+# mattering (the thinnest off-diagonal ones run to 1e-7 and would otherwise
+# stretch the scale until every meaningful cell reads the same colour).
+# Classes at 1–2–5 per decade, 12 of them over 1e-4–1: a class is a readable
+# value range on the colorbar. Shares under 1e-4 take the `extend="min"`
+# colour.
+EMISSION_BOUNDS = [m * 10.0**e for e in range(-4, 0) for m in (1, 2, 5)] + [1.0]
+norm = BoundaryNorm(EMISSION_BOUNDS, ncolors=MATRIX_CMAP.N, extend="min")
+# Every edge labelled, log-axis style: the decades as powers of ten, the 2 and
+# 5 edges by their mantissa ("%g" decimals collide at the low end).
+emission_labels = [
+    f"$10^{{{e}}}$" if m == 1 else f"{m}" for e in range(-4, 0) for m in (1, 2, 5)
+] + ["1"]
 stacked = np.concatenate([e.to_numpy().ravel() for e in emission.values()])
-k_peak = half_decade(np.nanmax(stacked), up=True)
-norm = class_norm(k_peak - 2 * FLOOR_DECADES, k_peak, extend="min")
-print(f"emission classes: edges {[f'{e:.3g}' for e in norm.boundaries]}")
+print(f"emission classes: edges {EMISSION_BOUNDS}; peak {np.nanmax(stacked):.3g}, "
+      f"{(stacked[stacked > 0] < EMISSION_BOUNDS[0]).mean():.1%} of the non-zero "
+      f"cells under the floor")
 
 # One figure per horizon rather than a panel grid: 17 codes per axis need
 # cells of a few mm, which a four-panel grid on a 180 mm page cannot give.
@@ -646,7 +668,7 @@ for h in time_horizons_days:
     values = emission[h].to_numpy()
     fig, ax = matrix_figure(targets)
     im = draw(ax, np.where(values > 0, values, np.nan), targets, norm=norm)
-    colorbar(fig, ax, im, "emission fraction")
+    colorbar(fig, ax, im, "emission fraction", EMISSION_BOUNDS, emission_labels)
     fig.suptitle(f"{title_context}\nage < {h} d")
     save(fig, f"SubbasinConnectivity_emission_{regime}_{season}_{member_tag}_T{h}d.png")
 
@@ -701,7 +723,8 @@ for h in time_horizons_days:
                         f"{spread[h]['max'][i, j]:.1g}",
                         ha="center", va="center",
                     )
-    colorbar(fig, ax, im, "emission fraction (mean over years)")
+    colorbar(fig, ax, im, "emission fraction (mean over years)", EMISSION_BOUNDS,
+             emission_labels)
     fig.suptitle(f"{title_context}\n"
                  f"age < {h} d, {len(years)}-year mean")
     save(fig, f"SubbasinConnectivity_interannual_{regime}_{season}_{member_tag}_T{h}d.png")
