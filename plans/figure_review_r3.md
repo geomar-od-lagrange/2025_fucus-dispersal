@@ -122,3 +122,25 @@ but no new input paths or store names.
 
 - 2026-11-03: plan written (branch `wr/figures-r3`, worktree
   `.claude/worktrees/figures-r3`).
+- 2026-11-03: notebooks done:
+  - `1fde301`: 028, 030, 034, plus `cmcrameri` in pixi.
+  - `c1ba270`: 029, 033, 035.
+  - `49e3598`: 025–027.
+  - Docs `ad4c666`.
+  - Review fixes: 026 median age has no over class (`extend="neither"`, since
+    the median of ages < 180 d cannot exceed it); 029 horizon assert; width
+    asserts in the 029/033 `fit_height`.
+- 2026-11-03: paper pushed to Overleaf as `4340291` and the median-age
+  follow-up. Builds with `module load texlive/20220321 && make`, 21 pp.
+- **Open, for the authors:**
+  1. **Page fit.** The article class gives a 121 × 193 mm text block, so the
+     180 mm PNGs print at 0.674×. Fig 1, 4, 5 and 9–11 overflow the page by
+     30–80 pt; Fig 6 and 7 by 2 pt. Every figure sits on its own page. Left
+     as is until the journal template is chosen (authors, 2026-11-03).
+  2. **028 under-floor colour.** It is hard to tell from the 10⁻⁴–2·10⁻⁴
+     class, and 22–31 % of non-zero cells fall below the floor. Options: a
+     distinct `set_under`, or leave those cells blank.
+  3. **`pixi.lock` format.** Now v7, which needs a newer pixi.
+- The 025 and 026b grids keep the old height arithmetic with the 230 mm cap
+  (not paper figures). 026b's dilution scale is not the shared fixed scale
+  (predates R3).
