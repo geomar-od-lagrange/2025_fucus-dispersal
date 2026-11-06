@@ -1,6 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=024f_BuildSurvivalOccupancy
-# One cell per (year, month) = |YEARS| x 12 = 48 cells, but each cell is now a
+# One cell per (release year, month) that has a BeachingForcing sidecar on
+# disk -- 12 per full release year, fewer for a partial one. Each cell is a
 # seconds-per-sidecar numpy pass, so a small allocation drains the grid in
 # minutes. Raise --ntasks on the command line when sweeping several members in
 # one job.
@@ -17,8 +18,8 @@
 # written by 024d_BuildBeachingForcing plus the 024a key, writes one survocc
 # parquet per (regime, release_year, release_month, rate-model member). Same
 # rate model as 024e_BuildBeaching, but accumulates residence weighted by the
-# surviving (un-beached) fraction S = exp(-A) over a longer horizon
-# (OCCUPANCY_MAX_DAYS, notebook default 120 d).
+# surviving (un-beached) fraction S = exp(-A), keyed by origin subbasin and
+# target hex, over the same reduction window (MAX_AGE_DAYS).
 #
 # Usage: sbatch scripts/024f_BuildSurvivalOccupancy_job.sh [regime] [hex_radius] [stagger_max_s]
 #
@@ -29,13 +30,15 @@
 #   TAU_STRONG_HOURS  e-folding time above W_C
 #   TAU_CALM_DAYS    background in-band timescale, d; 0 = off
 #   DELTA       linear edge width around W_C, m/s; 0 = hard step
-#   BAND_M, OCCUPANCY_MAX_DAYS  the occupancy horizon is this reducer's
-#                               analogue of 024e's MAX_FLOAT_DAYS
+#   TRAP_FLAT, TRAP_WALL  strong-wave rate factor on fully flat /
+#               fully walled shore; the realised factor is
+#               TRAP_WALL + (TRAP_FLAT - TRAP_WALL)*ff/100
+#   BAND_M, MAX_AGE_DAYS  reduction window over the sidecar obs axis (d),
+#                         the same for 024e/024f/024g
 #
 # 024a_BuildHexKey_job.sh and 024d_BuildBeachingForcing_job.sh must have run
-# first for the matching hex_radius / (regime, year).
-
-YEARS=(2016 2017 2018 2019)
+# first for the matching hex_radius / (regime, year); the (year, month) grid is
+# read off the sidecars they wrote, and $YEARS restricts it to a subset.
 
 # Drop any CPU-bind mask inherited from an outer allocation (present when
 # submitted from inside an interactive job); --exact sets each step's own.
@@ -43,13 +46,40 @@ unset SLURM_CPU_BIND SLURM_CPU_BIND_LIST SLURM_CPU_BIND_TYPE SLURM_CPU_BIND_VERB
 
 regime="${1:-surface_stokes}"
 hex_radius="${2:-6000}"
+output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
+
+# "<year> <month>" per cell: the distinct release months that have a
+# BeachingForcing sidecar on disk for this regime. The year set is not a
+# literal -- it is whatever 024d has written, so a release year joins the grid
+# as soon as its sidecars land, and a partial year contributes only the months
+# it actually has. $YEARS (space-separated) restricts it; unset takes all.
+list_cells() {
+    for p in "${output_root}/BeachingForcing/${regime}"/*/*.zarr; do
+        [ -d "${p}" ] || continue
+        year=$(basename "$(dirname "${p}")")
+        [ -z "${YEARS:-}" ] || [[ " ${YEARS} " == *" ${year} "* ]] || continue
+        stamp=$(basename "${p}")
+        stamp=${stamp#*_BSH_}
+        month=${stamp:4:2}
+        echo "${year} ${month#0}"
+    done | sort -u -k1,1n -k2,2n
+}
+
+# Work-list preview, for eyeballing what a $YEARS selection resolves to
+# without submitting: `LIST_ONLY=1 bash <this script> [regime] [hex_radius]`.
+if [ -n "${LIST_ONLY:-}" ]; then
+    list_cells
+    exit 0
+fi
 
 W_C="${W_C:-0.1}"
 TAU_STRONG_HOURS="${TAU_STRONG_HOURS:-3.0}"
 TAU_CALM_DAYS="${TAU_CALM_DAYS:-0.0}"
 DELTA="${DELTA:-0.0}"
 BAND_M="${BAND_M:-2000.0}"
-OCCUPANCY_MAX_DAYS="${OCCUPANCY_MAX_DAYS:-120}"
+TRAP_FLAT="${TRAP_FLAT:-1.0}"
+TRAP_WALL="${TRAP_WALL:-0.0}"
+MAX_AGE_DAYS="${MAX_AGE_DAYS:-180}"
 
 # Executed-notebook names carry the same member tag the notebook builds for the
 # store filename, so a notebook and the parquet it wrote are matched by eye.
@@ -60,6 +90,9 @@ member="step_wc$(fmt_g "${W_C}")_ts$(fmt_g "${TAU_STRONG_HOURS}")_tc${tc}"
 if awk -v x="${DELTA}" 'BEGIN { exit !(x > 0) }'; then
     member="${member}_d$(fmt_g "${DELTA}")"
 fi
+if awk -v a="${TRAP_FLAT}" -v b="${TRAP_WALL}" 'BEGIN { exit !(a != 1 || b != 1) }'; then
+    member="${member}_tf$(fmt_g "${TRAP_FLAT}")_tw$(fmt_g "${TRAP_WALL}")"
+fi
 member="${member//./p}"
 echo "member: ${member}"
 
@@ -67,18 +100,14 @@ echo "member: ${member}"
 # script — de-synchronises the Jupyter kernel start-up race.
 stagger_max_s="${3:-15}"
 
-output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
 export output_root regime hex_radius stagger_max_s member
 export W_C TAU_STRONG_HOURS TAU_CALM_DAYS DELTA
-export BAND_M OCCUPANCY_MAX_DAYS
+export TRAP_FLAT TRAP_WALL
+export BAND_M MAX_AGE_DAYS
 
 mkdir -p notebooks_executed/Visualisations/
 
-for year in "${YEARS[@]}"; do
-    for month in $(seq 1 12); do
-        printf '%s\0' "${year} ${month}"
-    done
-done | xargs -0 -P "${SLURM_NTASKS}" -n 1 bash -c '
+list_cells | tr '\n' '\0' | xargs -0 -P "${SLURM_NTASKS}" -n 1 bash -c '
     read -r year month <<< "$1"
     tenths=$(( RANDOM % (stagger_max_s * 10 + 1) ))
     sleep "$(( tenths / 10 )).$(( tenths % 10 ))"
@@ -108,7 +137,9 @@ done | xargs -0 -P "${SLURM_NTASKS}" -n 1 bash -c '
             -p tau_calm_days ${TAU_CALM_DAYS} \
             -p delta ${DELTA} \
             -p band_m ${BAND_M} \
-            -p occupancy_max_days ${OCCUPANCY_MAX_DAYS} \
+            -p trap_flat ${TRAP_FLAT} \
+            -p trap_wall ${TRAP_WALL} \
+            -p max_age_days ${MAX_AGE_DAYS} \
             -k python
         rc=$?
         [ ${rc} -eq 0 ] && break

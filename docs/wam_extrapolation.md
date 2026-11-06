@@ -2,7 +2,7 @@
 
 [`024d_BuildBeachingForcing`](../notebooks/024d_BuildBeachingForcing.py) samples
 onshore Stokes drift from the CMEMS Baltic wave hindcast (FMI-WAM,
-`BALTICSEA_MULTIYEAR_WAV_003_015`, 1 nmi ≈ 1.6 × 1.9 km, hourly) into the
+`BALTICSEA_MULTIYEAR_WAV_003_015`, 1′ × 1/36°, ≈ 1.3–1.9 km E–W × 1.85 km N–S, hourly) into the
 beaching forcing sidecar. **WAM's water mask is not BSH's**, so a bare
 nearest-cell lookup leaves much of the BSH coastline with no wave data — and no
 wave data means zero onshore forcing, a coastline that cannot strand at any

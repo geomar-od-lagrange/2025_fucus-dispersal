@@ -2,7 +2,7 @@
 jupyter:
   jupytext:
     cell_metadata_filter: tags,-all
-    formats: md,ipynb
+    formats: py:percent,md,ipynb
     text_representation:
       extension: .md
       format_name: markdown
@@ -44,12 +44,10 @@ from hextraj.hex_analysis import hex_connectivity_dask
 ```
 
 ```python
-# Pattern: Fucus_BSH_YYYYMMDDTHHMMSS_{regime}_dt{N}min_seed{S}.
-# `surface_stokes` must precede `surface` so the alternation matches the
-# longer form first.
-_ZARR_STEM_RE = re.compile(
-    r"^Fucus_BSH_(\d{8}T\d{6})_(surface_stokes|surface|bottom)_dt\d+min_seed\d+$"
-)
+# Pattern: Fucus_BSH_YYYYMMDDTHHMMSS_{regime}_dt{N}min_seed{S}. The regime
+# is any word (`surface_stokes`, `bottom_vs0p8`, ...): the `_dt<N>min_seed<S>`
+# tail anchors where it ends, and the caller checks it against `regime`.
+_ZARR_STEM_RE = re.compile(r"^Fucus_BSH_(\d{8}T\d{6})_(\w+)_dt\d+min_seed\d+$")
 
 
 def parse_zarr_stem(path):

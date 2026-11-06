@@ -15,22 +15,51 @@
 # ---
 
 # %% [markdown]
-# # Time-horizon dispersal maps per origin subbasin
+# # Time-horizon relative-density maps per origin subbasin
 #
 # 026 split by **origin** (HELCOM) subbasin: for each subbasin that seeds
-# releases, the same four-panel elapsed-time-horizon density map 026
-# produces — target-hex occupancy at 10/20/50/100 d — but restricted to
-# trajectories released from that subbasin. Target hexes still range over
-# the whole domain (a subbasin's particles disperse anywhere); only the
-# release side is filtered.
+# releases, the same elapsed-time-horizon relative-density maps 026
+# produces, but restricted to trajectories released from that subbasin.
+# Target hexes still range over the whole domain (a subbasin's particles
+# disperse anywhere); only the release side is filtered.
 #
-# Origin subbasin is the `helcom_subbasin` of each `release_hex` (024a
-# attaches it as an integer id; the id→name map lives in the key's JSON
-# sidecar). Releases outside any named subbasin (`_outside`, id -1) and
-# land-seeded releases (`release_hex` -1, absent from the key) carry no
-# origin subbasin and are reported but not mapped. Reads the 024a key + 024
-# counts — no trajectory zarrs, no Dask cluster. One regime per run;
-# August/September releases pooled across all available years.
+# Two stores feed this, selected by the `member` parameter, and the value
+# read from either is called `weight` from then on:
+#
+# | `member` | store | `weight` | origin subbasin |
+# |---|---|---|---|
+# | `""` | 024 counts (`HexAgg_counts_*`) | `n_obs`, every sample counts 1 | key `helcom_subbasin` of `release_hex` |
+# | rate-model tag | 024f survocc (`HexAgg_survocc_*_<member>`) | `surv`, each sample weighted by its un-beached fraction `exp(−A)` | the store's `origin_subbasin` |
+#
+# Both are read over the same age window `[0, max_age_days)`. The
+# subbasin id→name map lives in the key's JSON sidecar. Releases outside
+# any named subbasin (origin -1) carry no origin and are reported, not
+# mapped.
+#
+# Each origin is normalised over **its own** releases, so a panel answers
+# "where does *this* source's particle-time go?", not "how big is this
+# source". Every dilution map — the per-origin grids and the overview
+# figures (one per `overview_horizons_days_csv` horizon, every origin's
+# dilution map on one page) — draws through the fixed log scale shared
+# with 026 and 034, so a colour is the same fraction of *that origin's*
+# released particle-time per km² in every panel.
+#
+# A horizon `T` is **cumulative**: every `age_bin` whose window starts
+# before `T`, i.e. elapsed time in `[0, T)`. The map is therefore the
+# particle-time the cloud has accumulated by `T`, not a 10-day snapshot at
+# `T`.
+#
+# Two views per horizon:
+#
+# - `percentage` — 100 · weight(hex) / Σ weight, normalised **per horizon**
+#   over the origin's particle-time still mapped (the shape of the cloud
+#   present). Linear colour scale, one per figure.
+# - `dilution` — weight(hex) / the origin's released particle-time over
+#   `[0, T)` (`N_released · T`) / water area (km², `water_area_m2` from the
+#   024a key). A transfer function — times the origin's released biomass it
+#   gives biomass-time per km² — so stranding loss and domain exits lower
+#   it, and Σ dilution · area ≤ 1. The fixed log scale shared by every
+#   dilution figure (`dilution_floor` to `dilution_top`, two classes per decade).
 
 # %%
 import json
@@ -41,139 +70,368 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import matplotlib as mpl
+import xarray as xr
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import BoundaryNorm, Normalize
+from matplotlib.ticker import FuncFormatter
 from shapely.geometry import box
-from cartopy.io.shapereader import natural_earth
+from shapely.ops import unary_union
 
 # %% [markdown]
 # # Parameters
 
 # %% tags=["parameters"]
-# Read root of the hex-aggregate store.
+# Read root of the data twin (BSH static H0).
+data_root = "../data"
+# Read root of the hex-aggregate store; write root for figures and exports.
 output_root = "../output"
-# Which regime's counts partitions to read; one regime per run.
-regime = "surface"
+# Which regime's partitions to read; one regime per run.
+regime = "surface_stokes"
+# Rate-model member tag. "" reads the unweighted 024 counts store (n_obs);
+# any other string reads the 024f survocc store for that member and maps its
+# survival-weighted `surv`. Opaque — never parsed.
+member = ""
+# Release season: DJF, MAM, JJA, SON or ALL (every month).
+season = "ALL"
+# Release years pooled: "first-last" (inclusive) or one year ("2019").
+# Partitions of other years stay on disk unopened (2025 is partial).
+release_years = "2016-2024"
 # Hex radius of the store (built by 024a/024). Must match the files on disk.
 hex_radius = 6000
-# Age-bin granularity of the counts store (must match 024). Horizons must
+# Age-bin granularity of the store (must match 024 / 024f). Horizons must
 # be whole multiples of this.
 age_bin_days = 10
-
-# Release months to keep (Aug, Sep), pooled across all available years.
-# Empty ⇒ all releases.
-release_months_csv = "8,9"
+# Reduction window (days): only ages in [0, max_age_days) are read. Cuts the
+# uncapped counts store to the window 024f was built with, so weighted and
+# unweighted maps cover the same ages. A multiple of age_bin_days.
+max_age_days = 180
 # Elapsed-time horizons to map, in days. Each must be a multiple of
-# age_bin_days.
-time_horizons_days_csv = "10,20,50,100"
+# age_bin_days and ≤ max_age_days.
+time_horizons_days_csv = "30,60,90,180"
+# Horizons of the overview figures (one figure per horizon, one dilution
+# panel per origin on a shared colour scale), in days: same rules as the map
+# horizons.
+overview_horizons_days_csv = "30,180"
+
 # Origin subbasins to map, by HELCOM name (comma-separated). Empty ⇒ every
 # named subbasin that seeds releases.
 origin_subbasins_csv = ""
 
-# Colormap: log-density spans several decades, so a perceptually uniform
-# map is load-bearing (justified in docs/visualisations.md, as for 025).
-cmap = "viridis"
+# Isobath to overlay on every panel, in metres of BSH H0 (floor position,
+# see docs/h0_semantics.md). Fucus vesiculosus no longer grows below ~3 m.
+isobath_m = 3.0
 
-# Per-panel height in inches (panel widths are aspect-derived).
-panel_height_in = 6
-# Figure DPI as a multiple of the matplotlib default. >1 sharpens the
-# inline/embedded raster panels — the one plotting default we override here
-# (rationale in docs/visualisations.md).
-fig_dpi_scale = 2
+# Floor and top of the dilution colour scale, fraction of the released
+# particle-time per km², whole decades. The same in every dilution figure
+# (026, 026a, 034): the authors' fixed scale, two classes per decade
+# (docs/visualisations.md). Every hex with weight is drawn: values below the
+# floor take the under colour, values above the top the over colour; white is
+# only "no particles".
+dilution_floor = 1e-7
+dilution_top = 0.1
+
+# Map extent (degrees), one for every map of the pipeline — the per-origin
+# grids and the overview alike: the Baltic with the Belt Sea and Kattegat,
+# North Sea cropped (docs/visualisations.md). Set all four to 0 to fall back
+# to the key's full bounds.
+extent_lon_min = 9.0
+extent_lon_max = 30.7
+extent_lat_min = 53.0
+extent_lat_max = 66.0
 
 # %% [markdown]
 # # Parse parameters
+#
+# `SEASON_MONTHS` lives here rather than in the parameters cell because
+# papermill only injects primitives; `season` selects one entry.
 
 # %%
+SEASON_MONTHS = {
+    "DJF": [12, 1, 2],
+    "MAM": [3, 4, 5],
+    "JJA": [6, 7, 8],
+    "SON": [9, 10, 11],
+    "ALL": list(range(1, 13)),
+}
+if season not in SEASON_MONTHS:
+    raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
+season_months = SEASON_MONTHS[season]
+# `release_years` is "first-last" (inclusive) or a single year.
+first_year, _, last_year = release_years.partition("-")
+analysis_years = range(int(first_year), int(last_year or first_year) + 1)
+assert len(analysis_years), f"release_years {release_years!r} is an empty range"
+print(f"release years in the analysis: {analysis_years[0]}–{analysis_years[-1]}")
+
 output_root = Path(output_root)
-release_months = [int(x) for x in release_months_csv.split(",") if x]
+data_root = Path(data_root)
+store_root = output_root / "HexAggregates"
 time_horizons_days = [int(x) for x in time_horizons_days_csv.split(",") if x]
-origin_subbasins_filter = [s.strip() for s in origin_subbasins_csv.split(",") if s.strip()]
-for h in time_horizons_days:
+overview_horizons_days = [int(x) for x in overview_horizons_days_csv.split(",") if x]
+assert max_age_days % age_bin_days == 0, (
+    f"max_age_days {max_age_days} d is not a multiple of age_bin_days {age_bin_days} d"
+)
+for h in [*time_horizons_days, *overview_horizons_days]:
+    assert h > 0, f"horizon {h} d holds no age bin"
     assert h % age_bin_days == 0, (
         f"horizon {h} d is not a multiple of age_bin_days {age_bin_days} d; "
-        f"it would fall in a neighbouring age bin"
+        f"it would cut a bin in half"
     )
-# Set from the stock default so re-running this cell is idempotent.
-mpl.rcParams["figure.dpi"] = fig_dpi_scale * mpl.rcParamsDefault["figure.dpi"]
+    assert h <= max_age_days, f"horizon {h} d is past max_age_days {max_age_days} d"
+n_age_bins = max_age_days // age_bin_days
 
-# PNG figures land under the outputs tree (outside the repo), one subdir per
-# notebook stage. savefig inherits figure.dpi (set above), so saved panels are
-# as sharp as the inline ones — no dpi= kwarg needed.
+member_tag = member or "unweighted"
+print(f"regime={regime}, season={season}, member={member_tag}, window [0, {max_age_days}) d")
+
+# Print-ready output: every saved figure is one full text-width (180 mm)
+# page-width figure at 300 dpi, so panels land in the manuscript at their
+# final size (rationale in docs/visualisations.md).
+FIGURE_WIDTH_IN = 180 / 25.4
+FIGURE_DPI = 300
+# Vertical inches per row for the panel title, and once per figure for the
+# shared colorbar under the grid with its label.
+PANEL_TITLE_IN = 0.25
+COLORBAR_IN = 0.6
+# One page: a taller grid is capped here, its maps turn height-limited and
+# the spare width becomes side margin.
+MAX_FIGURE_HEIGHT_IN = 230 / 25.4
+
+origin_subbasins_filter = [s.strip() for s in origin_subbasins_csv.split(",") if s.strip()]
+
+# Shared dilution scale: two classes per decade from `dilution_floor` up to
+# `dilution_top` (at most 1 per km², all of the released particle-time in
+# one km² of water).
+DILUTION_CLASSES_PER_DECADE = 2
+for bound in (dilution_floor, dilution_top):
+    assert np.isclose(np.log10(bound), round(np.log10(bound))), f"{bound} is not a whole decade"
+dilution_bounds = np.logspace(
+    np.log10(dilution_floor), np.log10(dilution_top),
+    round(DILUTION_CLASSES_PER_DECADE * np.log10(dilution_top / dilution_floor)) + 1,
+)
+# turbo, not the default colormap (docs/visualisations.md): dilution is
+# multiplied by a per-site released biomass downstream, so it has to read in
+# absolute terms over many decades — one high-contrast colour per half
+# decade. Every hex with weight is drawn (masking sub-floor hexes made
+# material look as if it vanished): below the floor in the under colour, above
+# the top in the over colour — the lowest and highest class colours, shown as
+# the colorbar's extend="both" triangles. White is only "no particles".
+dilution_cmap = plt.get_cmap("turbo").resampled(len(dilution_bounds) - 1)
+dilution_norm = BoundaryNorm(dilution_bounds, dilution_cmap.N)
+# Tick labels on the whole decades only; the half-decade edges stay unlabelled.
+decade_format = FuncFormatter(
+    lambda x, _: f"$10^{{{round(np.log10(x))}}}$"
+    if np.isclose(np.log10(x), round(np.log10(x))) else ""
+)
+print(
+    f"dilution scale: {dilution_floor:g}–{dilution_top:g} per km² of released particle-time, "
+    f"{dilution_cmap.N} classes"
+)
+
 figure_dir = output_root / "Figures" / "026a"
 figure_dir.mkdir(parents=True, exist_ok=True)
+export_dir = output_root / "Exports" / "026a"
+export_dir.mkdir(parents=True, exist_ok=True)
 
 
 def _slug(name):
-    """Filename-safe slug of a HELCOM subbasin name, so per-subbasin PNGs get
-    clean names. NFKD + ASCII fold transliterates accents (Å → A) before
-    collapsing every non-alphanumeric run to a single underscore."""
+    """Filename-safe slug of a HELCOM subbasin name. NFKD + ASCII fold
+    transliterates accents (Å → A) before collapsing every non-alphanumeric
+    run to a single underscore."""
     ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
     return re.sub(r"[^0-9A-Za-z]+", "_", ascii_name).strip("_")
 
 # %% [markdown]
-# # Read key + subbasin names + pool counts across years
+# # Read key + pool the store across years
 #
-# Layout: flat files under ``output_root/HexAggregates/`` —
-# ``HexAgg_key_r<radius>m.parquet`` (+ a ``.json`` sidecar carrying the
-# subbasin id→name map) and
-# ``HexAgg_counts_r<radius>m_<regime>_<year>.parquet``. Globbing every year
-# pools across years; the release year is parsed from each filename so the
-# `release_doy → month` conversion is leap-correct.
+# Layout: flat files under ``output_root/HexAggregates/`` — the key
+# ``HexAgg_key_r<radius>m.parquet``, the counts partitions
+# ``HexAgg_counts_r<radius>m_<regime>_<year>.parquet`` (one per release
+# year) and the survocc partitions
+# ``HexAgg_survocc_r<radius>m_<regime>_<year>[_mMM]_<member>.parquet`` (one
+# per release month, or one per year when 024f ran with
+# `release_month = 0`). Every partition is read and reduced immediately to
+# per-`(origin_subbasin, age_bin, target_hex)` sums — a counts partition is O(10^8) rows, the reduction
+# O(10^6). The season's release days and the age window are pushed into the
+# parquet read as filters; the doy set is built per partition year so the
+# month↔doy mapping is leap-correct, and a monthly survocc partition outside
+# the season is not opened at all. The release year comes from the filename.
+#
+# Sentinels: `target_hex = -1` (no in-key position — the drifter left the
+# BSH domain) in both stores, plus `release_hex = -1` (land-seeded
+# particles) in the counts store; 024f holds water-seeded drifters only.
+# Those rows carry no geometry and are excluded from the maps — numerator
+# *and* normalisation denominator — and their share is reported.
 
 # %%
-store_root = output_root / "HexAggregates"
 key_path = store_root / f"HexAgg_key_r{hex_radius}m.parquet"
 key = gpd.read_parquet(key_path)
 subbasin_id_to_name = {
     int(k): v
     for k, v in json.loads(key_path.with_suffix(".json").read_text())["subbasin_id_to_name"].items()
 }
+subbasin_of_hex = key.set_index("hex_id")["helcom_subbasin"]
 
-# Match exactly four year digits after the regime so `surface` does not also
-# glob `surface_stokes_*` files (prefix collision).
-_COUNTS_RE = re.compile(rf"HexAgg_counts_r{hex_radius}m_{regime}_(\d{{4}})\.parquet$")
-counts_files = sorted(
-    store_root.glob(f"HexAgg_counts_r{hex_radius}m_{regime}_[0-9][0-9][0-9][0-9].parquet")
-)
-if not counts_files:
-    raise FileNotFoundError(
-        f"no counts partitions for regime {regime!r} at {store_root} — run 024."
+# The glob is loose and the regex selects: it pins exactly four year digits
+# after the regime (so `surface` does not also take `surface_stokes_*`) and,
+# for a member, the whole tag after the optional month.
+if member:
+    store_glob = f"HexAgg_survocc_r{hex_radius}m_{regime}_*_{member}.parquet"
+    part_re = re.compile(
+        rf"HexAgg_survocc_r{hex_radius}m_{regime}_(?P<year>\d{{4}})(?:_m(?P<month>\d{{2}}))?"
+        rf"_{re.escape(member)}\.parquet$"
     )
+else:
+    store_glob = f"HexAgg_counts_r{hex_radius}m_{regime}_*.parquet"
+    part_re = re.compile(rf"HexAgg_counts_r{hex_radius}m_{regime}_(?P<year>\d{{4}})\.parquet$")
+
+partitions = []
+years_not_read = set()
+for f in sorted(store_root.glob(store_glob)):
+    m = part_re.search(f.name)
+    if m is None:
+        continue
+    if int(m["year"]) not in analysis_years:
+        years_not_read.add(int(m["year"]))
+        continue
+    month = m.groupdict().get("month")
+    partitions.append((f, int(m["year"]), None if month is None else int(month)))
+if years_not_read:
+    print(f"on disk but outside release_years, not read: {sorted(years_not_read)}")
+if not partitions:
+    raise FileNotFoundError(
+        f"no partitions matching {store_glob!r} for release years {release_years} "
+        f"at {store_root} — "
+        + ("run 024f." if member else "run 024.")
+    )
+partition_years = sorted({year for _, year, _ in partitions})
+# A whole-year partition next to monthly ones of the same year covers the
+# same releases twice.
+mixed = sorted(
+    year for f, year, month in partitions
+    if month is None and sum(y == year for _, y, _ in partitions) > 1
+)
+if mixed:
+    raise ValueError(f"years {mixed} carry both a whole-year and monthly partitions")
 
 parts = []
-for f in counts_files:
-    year = int(_COUNTS_RE.search(f.name).group(1))
-    df = pd.read_parquet(f).reset_index(drop=True)
-    df["release_month"] = pd.to_datetime(
-        (year * 1000 + df["release_doy"].astype("int32")).astype(str), format="%Y%j"
-    ).dt.month
-    parts.append(df)
-counts = pd.concat(parts, ignore_index=True)
-print(f"key: {len(key):,} hexes; pooled {len(counts_files)} year partition(s)")
+store_attrs = []
+# Released particle-time per age bin and origin: every released water-seeded
+# drifter contributes one sample per output step to age bin 0, sentinel rows
+# included (024f's exact denominator, docs/survival_occupancy.md; the counts
+# store holds the same identity over `release_hex ≥ 0`). Horizon T releases
+# this times T / age_bin_days.
+released_per_bin = {}
+pooled_years = set()
+weight_raw = 0.0
+weight_sentinel = 0.0
+for f, year, month in partitions:
+    if month is not None and month not in season_months:
+        continue
+    days = pd.date_range(f"{year}-01-01", f"{year}-12-31")
+    season_doys = set(days[days.month.isin(season_months)].dayofyear.tolist())
+    filters = [("release_doy", "in", season_doys), ("age_bin", "<", n_age_bins)]
+    if member:
+        df = pd.read_parquet(
+            f, columns=["origin_subbasin", "target_hex", "age_bin", "surv", "occ"],
+            filters=filters,
+        )
+        store_attrs.append(df.attrs)
+        released_bin0 = df[df["age_bin"] == 0].groupby("origin_subbasin")["occ"].sum()
+        df = df.drop(columns="occ").rename(columns={"surv": "weight"})
+        sentinel = df["target_hex"] < 0
+    else:
+        df = pd.read_parquet(
+            f, columns=["release_hex", "target_hex", "age_bin", "n_obs"], filters=filters
+        )
+        bin0 = df[(df["age_bin"] == 0) & (df["release_hex"] >= 0)]
+        released_bin0 = bin0.groupby(
+            subbasin_of_hex.reindex(bin0["release_hex"].to_numpy()).fillna(-1).astype("int64")
+            .to_numpy()
+        )["n_obs"].sum()
+        df = df.rename(columns={"n_obs": "weight"})
+        sentinel = (df["release_hex"] < 0) | (df["target_hex"] < 0)
+    for code, n in released_bin0.items():
+        released_per_bin[int(code)] = released_per_bin.get(int(code), 0.0) + float(n)
+    weight_raw += float(df["weight"].sum())
+    weight_sentinel += float(df.loc[sentinel, "weight"].sum())
+    df = df[~sentinel]
+    if not member:
+        df["origin_subbasin"] = (
+            subbasin_of_hex.reindex(df["release_hex"].to_numpy())
+            .fillna(-1).astype("int64").to_numpy()
+        )
+    parts.append(
+        df.groupby(["origin_subbasin", "age_bin", "target_hex"], as_index=False)["weight"].sum()
+    )
+    if len(df):
+        pooled_years.add(year)
+    print(f"  {f.name}: {len(df):,} in-season valid rows")
+    del df, sentinel
+if not parts:
+    raise ValueError(f"no {season} partitions among {len(partitions)} on disk")
+binned = (
+    pd.concat(parts, ignore_index=True)
+    .groupby(["origin_subbasin", "age_bin", "target_hex"], as_index=False)["weight"]
+    .sum()
+)
+del parts
 
-if release_months:
-    counts = counts[counts["release_month"].isin(release_months)]
-    print(f"Keeping release months {release_months}: {len(counts):,} rows")
-else:
-    print(f"All release months: {len(counts):,} rows")
+# A pooled store must be one reduction window, at least as long as the one
+# mapped here (the horizons are ≤ max_age_days, asserted above).
+if member:
+    # One window, binning and rate-model point across every pooled partition;
+    # provenance (builder, git_sha, slurm_job_id) and the partition's own
+    # release_year/release_month are not compared.
+    pooled_keys = (
+        "max_age_days", "age_bin_days", "w_c", "tau_strong_hours",
+        "tau_calm_days", "delta", "trap_flat", "trap_wall", "band_m",
+    )
+    if any("max_age_days" not in a for a in store_attrs):
+        raise ValueError(
+            "survocc partitions without build attrs (old schema, written before "
+            "max_age_days was recorded) — rebuild them with the current 024f reducer"
+        )
+    settings = {tuple(a[k] for k in pooled_keys) for a in store_attrs}
+    assert len(settings) == 1, (
+        f"pooled survocc partitions disagree on {pooled_keys}: "
+        f"{sorted(settings)} — rebuild 024f"
+    )
+    store_build = dict(zip(pooled_keys, settings.pop()))
+    store_max_age_days = store_build["max_age_days"]
+    store_age_bin_days = store_build["age_bin_days"]
+    assert store_age_bin_days == age_bin_days, (
+        f"store age_bin_days {store_age_bin_days} != {age_bin_days}"
+    )
+    assert store_max_age_days >= max_age_days, (
+        f"store window {store_max_age_days} d < max_age_days {max_age_days} d — "
+        f"rebuild 024f or lower max_age_days"
+    )
+    print(f"024f window: {store_max_age_days} d in {store_age_bin_days} d bins")
+
+# Years are taken after the season filter: a year whose partitions hold no
+# release in this season (the partial last release year has no JJA or SON)
+# is reported, not pooled.
+pooled_years = sorted(pooled_years)
+for y in sorted(set(partition_years) - set(pooled_years)):
+    print(f"no {season} releases in {y}; dropped")
+print(f"key: {len(key):,} hexes; season {season} (months {season_months}), "
+      f"release years {pooled_years}")
+print(f"{len(binned):,} (origin, age_bin, target) rows")
+print(
+    f"sentinel (-1) hexes excluded: {weight_sentinel:,.0f} of {weight_raw:,.0f} weight "
+    f"({100 * weight_sentinel / weight_raw:.4f} %)"
+)
 
 # %% [markdown]
-# # Attach origin subbasin
+# # Resolve the origin subbasins to map
 #
-# Each trajectory's origin subbasin is the `helcom_subbasin` of its
-# `release_hex`. Land-seeded releases (`release_hex` -1) are absent from the
-# key and map to NaN; releases whose hex centroid sits outside every named
-# polygon carry id -1 (`_outside`). Both lack a named origin and are
-# excluded from the per-subbasin maps (counted in the print below), leaving
-# the named origin subbasins to loop over.
+# `origin_subbasin` is -1 for releases whose hex sits outside every named
+# HELCOM polygon (or is absent from the key); they carry no named origin, so
+# they are reported here and dropped from the maps.
 
 # %%
-counts["origin_subbasin"] = counts["release_hex"].map(key.set_index("hex_id")["helcom_subbasin"])
-
 origin_codes_present = sorted(
-    int(c) for c in counts["origin_subbasin"].dropna().unique() if c >= 0
+    int(c) for c in binned["origin_subbasin"].unique() if c >= 0
 )
 name_to_id = {v: k for k, v in subbasin_id_to_name.items()}
 unknown = [n for n in origin_subbasins_filter if n not in name_to_id]
@@ -182,142 +440,402 @@ if unknown:
 filter_ids = {name_to_id[n] for n in origin_subbasins_filter}
 origin_codes = [c for c in origin_codes_present if not filter_ids or c in filter_ids]
 
-n_landseed = int(counts["origin_subbasin"].isna().sum())
-n_outside_hex = int(counts.loc[counts["origin_subbasin"] == -1, "release_hex"].nunique())
 print(
     f"origin subbasins to map ({len(origin_codes)}): "
     f"{', '.join(subbasin_id_to_name[c] for c in origin_codes)}"
 )
 print(
-    f"excluded origins: {n_outside_hex:,} release hex(es) outside any named subbasin "
-    f"(_outside), {n_landseed:,} land-seeded count rows (release_hex -1)"
+    f"excluded origin -1 (no named subbasin): "
+    f"{binned.loc[binned['origin_subbasin'] < 0, 'weight'].sum():,.0f} weight"
 )
 
 # %% [markdown]
-# # Rendering helpers
+# # Relative density
 #
-# Identical to 026 (`to_hex_gdf` joins a per-`target_hex` count table to the
-# key geometry; `log_density_plot` draws hex polygons + coastline on a plain
-# EPSG:4326 axis, colouring through a shared `LogNorm`).
+# `to_hex_gdf` sums `weight` per target hex over a selected release set,
+# joins the key geometry and derives both views: `percentage` normalised
+# over the weight passed in (that horizon's own share of the particle-time
+# present), `dilution` over the released particle-time `released` of the
+# same release set and horizon. `released_of(code, h)` is an origin's.
+#
+# Hexes whose wet polygon has no water area (`water_area_m2` 0 — the hex
+# is all land in the BSH coastline, yet a sub-grid trajectory position
+# fell inside it) get no `dilution`; they still carry a `percentage`.
 
 # %%
-def to_hex_gdf(counts_df, key_df):
-    """Build a hex GeoDataFrame from per-target_hex counts + a key
-    GeoDataFrame. Sums ``n_obs`` over ``target_hex`` and joins to
-    ``key_df`` on ``target_hex`` ↔ ``hex_id``."""
-    return (
-        counts_df.groupby("target_hex")["n_obs"].sum()
-        .rename("count").reset_index()
-        .merge(key_df[["hex_id", "geometry"]], left_on="target_hex", right_on="hex_id")
+def to_hex_gdf(binned_df, key_df, released):
+    """Per-target-hex relative density as a GeoDataFrame. ``percentage``
+    is the share of the passed-in particle-time; ``dilution`` is the hex's
+    weight as a fraction of ``released`` (the release set's released
+    particle-time over the same ages, in samples) per km² of water."""
+    gdf = (
+        binned_df.groupby("target_hex", as_index=False)["weight"].sum()
+        .merge(
+            key_df[["hex_id", "geometry", "water_area_m2"]],
+            left_on="target_hex", right_on="hex_id",
+        )
         .pipe(gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326")
+    )
+    gdf["percentage"] = 100 * gdf["weight"] / gdf["weight"].sum()
+    gdf["dilution"] = gdf["weight"] / released / (
+        gdf["water_area_m2"].where(gdf["water_area_m2"] > 0) / 1e6
+    )
+    return gdf
+
+
+def released_of(code, h):
+    """Released particle-time (samples) of origin ``code`` over ``[0, h)``."""
+    return released_per_bin[code] * h // age_bin_days
+
+
+COLUMN_LABEL = {
+    "percentage": "share of particle-time (%)",
+    "dilution": "fraction of released particle-time per km²",
+}
+
+# %% [markdown]
+# # Map backdrop: coastline and the 3 m isobath
+#
+# The `extent_*` parameters decide the extent, shared by every map of the
+# pipeline. The key tiles the full BSH model domain (North Sea included), so
+# some weight can lie outside it; each map prints that share.
+#
+# Coastline is the model's own: the outline of the BSH HBMnoku wet cells
+# (`coastline.geojson`, the polygons 024a takes the hex water area from),
+# merged fine-first as in 024a — fine polygons, plus the coarse ones outside
+# the fine-grid bbox. The outline is drawn minus a 0.001° strip along that
+# bbox, where the two grids' cells meet in open water.
+#
+# The isobath comes from the BSH static H0 grids, *not* from the key's
+# `mean_depth_m` — a hex mean over a 6 km cell cannot resolve a 3 m
+# contour. H0 is the floor position (`H0 > 0` is always wet, see
+# docs/h0_semantics.md), NaN over land, so `contour` masks land for free.
+# Fine grid takes precedence where it covers (German Bight / western
+# Baltic); the coarse grid is blanked inside the fine bbox so the two do
+# not draw the same contour twice.
+
+# %%
+if any((extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max)):
+    domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max = (
+        extent_lon_min, extent_lat_min, extent_lon_max, extent_lat_max
+    )
+else:
+    domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max = key.total_bounds
+
+h0_fine = xr.open_dataset(
+    data_root / "bsh_hbmnoku_static/static_file_fine/H0_file_fine.nc"
+).H0
+h0_coarse = xr.open_dataset(
+    data_root / "bsh_hbmnoku_static/static_file_coarse/H0_file_coarse.nc"
+).H0
+h0_coarse_outside_fine = h0_coarse.where(
+    ~(
+        (h0_coarse.lon >= h0_fine.lon.min()) & (h0_coarse.lon <= h0_fine.lon.max())
+        & (h0_coarse.lat >= h0_fine.lat.min()) & (h0_coarse.lat <= h0_fine.lat.max())
+    )
+)
+
+wet = gpd.read_file(data_root / "bsh_hbmnoku_static/coastline.geojson")
+# Fine bbox padded by half a fine cell, so every fine cell lies inside it.
+fine_bbox = box(
+    float(h0_fine.lon.min()) - 0.5 * abs(float(h0_fine.lon.diff("lon").mean())),
+    float(h0_fine.lat.min()) - 0.5 * abs(float(h0_fine.lat.diff("lat").mean())),
+    float(h0_fine.lon.max()) + 0.5 * abs(float(h0_fine.lon.diff("lon").mean())),
+    float(h0_fine.lat.max()) + 0.5 * abs(float(h0_fine.lat.diff("lat").mean())),
+)
+wet_fine_first = unary_union([
+    unary_union(wet.loc[wet["grid"] == "fine", "geometry"].tolist()),
+    unary_union(wet.loc[wet["grid"] == "coarse", "geometry"].tolist()).difference(fine_bbox),
+])
+coast = (
+    gpd.GeoSeries([wet_fine_first], crs="EPSG:4326").boundary
+    .difference(fine_bbox.exterior.buffer(1e-3))
+    .clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
+)
+
+# Width/height of the extent in visually equal degrees — 1° lon at the
+# extent's mid-latitude against 1° lat.
+domain_aspect = (
+    (domain_lon_max - domain_lon_min)
+    * np.cos(np.radians(0.5 * (domain_lat_min + domain_lat_max)))
+) / (domain_lat_max - domain_lat_min)
+
+
+def map_grid(nrows, ncols):
+    """A constrained-layout panel grid at full page width. Each map is
+    width-limited, so the panel height follows from the page width and the
+    extent aspect — no figsize arithmetic against the layout engine and no
+    draw-measure-rescale loop. One colorbar per figure sits *under* the
+    grid (``shared_colorbar``), so the fixed allowance is vertical only."""
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, squeeze=False, layout="constrained")
+    fig.set_size_inches(
+        FIGURE_WIDTH_IN,
+        min(
+            nrows * ((FIGURE_WIDTH_IN / ncols) / domain_aspect + PANEL_TITLE_IN) + COLORBAR_IN,
+            MAX_FIGURE_HEIGHT_IN,
+        ),
+    )
+    return fig, axes
+
+
+def shared_colorbar(fig, axes, norm, cmap, label, extend, **kwargs):
+    """One horizontal colorbar under the whole grid. pad override: the
+    default 0.05 is a fraction of the whole grid's height, a blank band
+    between the last row and the bar."""
+    fig.colorbar(
+        ScalarMappable(norm=norm, cmap=cmap), ax=axes, orientation="horizontal",
+        label=label, extend=extend, pad=0.01, **kwargs,
     )
 
 
-def log_density_plot(gdf, ax, extent, norm, title=None, coast=None):
-    """Plot hex density + coastline on a plain (non-cartopy) lon/lat axis.
-    Everything stays in EPSG:4326 so hexes and coastline share one
-    coordinate system. Colour scales the raw ``count`` through a shared
-    ``LogNorm``, so each panel's colorbar reads in particle counts (not
-    log10) while spanning the several decades of density. Empty ``gdf``
-    skips the hex layer so empty panels render with stable layout."""
-    if not gdf.empty:
-        # cmap + log norm justified in docs/visualisations.md (as 025);
-        # legend=True draws a per-panel colorbar keyed to the shared scale.
+def share_outside_extent(gdf):
+    """Share (%) of ``gdf``'s weight on hexes whose representative point lies
+    outside the map extent — what the crop cuts off a map."""
+    point = gdf.geometry.representative_point()
+    inside = point.x.between(domain_lon_min, domain_lon_max) & point.y.between(
+        domain_lat_min, domain_lat_max
+    )
+    return 100 * gdf.loc[~inside, "weight"].sum() / gdf["weight"].sum()
+
+
+def hex_map(gdf, column, ax, norm, cmap=None, title=None):
+    """Draw one relative-density panel: hex polygons through ``norm`` and
+    ``cmap`` (None: the default colormap), coastline, and the H0 isobath,
+    all on a plain (non-cartopy) lon/lat axis. Everything is already
+    EPSG:4326, so no reprojection can push hexes, coastline and isobath out
+    of register. An empty ``gdf`` skips the hex layer and still renders the
+    backdrop, keeping the grid layout stable. The colorbar is the caller's
+    (one per figure, ``shared_colorbar``)."""
+    # Only hexes touching the extent: off-extent patches still count in
+    # constrained_layout's bounding box and push the title off the page.
+    gdf = gdf.cx[domain_lon_min:domain_lon_max, domain_lat_min:domain_lat_max]
+    if not gdf.empty and gdf[column].notna().any():
         gdf.plot(
-            ax=ax, column="count", cmap=cmap, norm=norm, legend=True,
+            ax=ax, column=column, norm=norm, cmap=cmap,
+            missing_kwds={"color": "none"},
+            # Default polygon stroke is a black hairline that dominates at
+            # Baltic zoom; matching edge to fill makes the hexes read as a
+            # continuous field.
             edgecolor="face", linewidth=0.4, zorder=1,
         )
-    if coast is not None:
-        coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
-    lon_min_, lon_max_, lat_min_, lat_max_ = extent
-    ax.set_xlim(lon_min_, lon_max_)
-    ax.set_ylim(lat_min_, lat_max_)
-    ax.set_aspect(1 / np.cos(np.radians(0.5 * (lat_min_ + lat_max_))))
+    coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
+    # One styling override for the isobath: magenta at a hairline width is
+    # the canonical anti-viridis, so the 3 m line stays legible over every
+    # fill colour. Drawn last at zorder 10, above every other artist: where
+    # it runs along the coast it must sit on the black line, not under it.
+    for h0 in (h0_fine, h0_coarse_outside_fine):
+        ax.contour(
+            h0.lon, h0.lat, h0, levels=[isobath_m],
+            colors="magenta", linewidths=0.3, zorder=10,
+        )
+    ax.set_xlim(domain_lon_min, domain_lon_max)
+    ax.set_ylim(domain_lat_min, domain_lat_max)
+    ax.set_aspect(1 / np.cos(np.radians(0.5 * (domain_lat_min + domain_lat_max))))
     ax.set_xticks([])
     ax.set_yticks([])
     if title is not None:
         ax.set_title(title)
 
 
-# %%
-# The hex key decides the extent — no manual crop. The key tiles the full
-# BSH model domain (North Sea included), so this shows the whole covered
-# area; the dispersal cloud occupies wherever it actually reaches.
-domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max = key.total_bounds
-domain_extent = [domain_lon_min, domain_lon_max, domain_lat_min, domain_lat_max]
+def below_floor_report(gdf):
+    """Shares (%) of ``gdf``'s weight that the dilution maps leave out:
+    below the floor, and on zero-water hexes (no dilution)."""
+    dilution = gdf["dilution"]
+    return (
+        gdf.loc[dilution < dilution_floor, "percentage"].sum(),
+        gdf.loc[dilution.isna(), "percentage"].sum(),
+    )
 
-# Natural Earth 10m coastline via cartopy's shapereader (cached locally),
-# clipped to the domain extent once.
-_coast_gdf = gpd.read_file(
-    natural_earth(resolution="10m", category="physical", name="coastline")
-)
-coast = _coast_gdf.clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
 
-# Aspect ratio that keeps 1° lon at lat_mean visually equal to 1° lat.
-domain_aspect = (
-    (domain_lon_max - domain_lon_min) * np.cos(np.radians(0.5 * (domain_lat_min + domain_lat_max)))
-) / (domain_lat_max - domain_lat_min)
+def export_geojson(gdf, name, **extra_columns):
+    """Write one map product as GeoJSON for collaborators (EPSG:4326, hex
+    geometry + the value columns)."""
+    out = gdf[["hex_id", "geometry", "weight", "percentage", "dilution"]].assign(**extra_columns)
+    path = export_dir / f"{name}.geojson"
+    out.to_file(path, driver="GeoJSON")
+    print(f"wrote {path}")
+
 
 # %% [markdown]
 # # Map per origin subbasin
 #
-# One four-panel figure per origin subbasin — the 026 layout, each horizon
-# selecting `age_bin = horizon // age_bin_days`. The colour scale is shared
-# across a subbasin's four horizons but independent between subbasins, so
-# every figure self-scales like 026 (reading its own decades of density);
-# cross-subbasin totals differ by orders of magnitude, so one global scale
-# would wash out the smaller sources. Target hexes span the whole domain.
+# One figure per (origin subbasin, view) — the 026 horizon grid restricted
+# to that subbasin's releases. Horizon `T` keeps every `age_bin` whose
+# 10-day window starts before `T` (elapsed time in `[0, T)`), so the panels
+# nest. Percentage and dilution go to separate figures rather than one
+# eight-panel grid, so each map keeps a readable size at 180 mm page width.
+# One colour scale and one colorbar per figure: `percentage` linear from 0
+# to the 99th percentile pooled over the panels (a few hexes sit decades
+# above the bulk; the over-range arrow marks the saturation), `dilution` the
+# fixed log scale, below-floor hexes in the under colour.
 
 # %%
-horizon_age_bins = {h: h // age_bin_days for h in time_horizons_days}
 ncols = 2
 nrows = int(np.ceil(len(time_horizons_days) / ncols))
 
 for code in origin_codes:
-    counts_sb = counts[counts["origin_subbasin"] == code]
+    name = subbasin_id_to_name[code]
+    binned_sb = binned[binned["origin_subbasin"] == code]
     gdfs = {
-        h: to_hex_gdf(counts_sb[counts_sb["age_bin"] == horizon_age_bins[h]], key)
+        h: to_hex_gdf(
+            binned_sb[binned_sb["age_bin"] * age_bin_days < h], key, released_of(code, h)
+        )
         for h in time_horizons_days
     }
-    nonempty = [g["count"] for g in gdfs.values() if not g.empty]
-    if not nonempty:
-        print(f"{subbasin_id_to_name[code]}: no occupied target hexes — skipping")
+    if all(g.empty for g in gdfs.values()):
+        print(f"{name}: no occupied target hexes — skipping")
         continue
-    all_counts = pd.concat(nonempty)
-    norm = LogNorm(vmin=all_counts.min(), vmax=all_counts.max())
-    fig, axes = plt.subplots(
-        nrows=nrows, ncols=ncols,
-        figsize=(
-            panel_height_in * domain_aspect * ncols,
-            panel_height_in * nrows,
-        ),
-        layout="constrained",
+    print(
+        f"{name}: mapped weight outside the map extent "
+        + ", ".join(f"{h} d {share_outside_extent(gdfs[h]):.3f} %" for h in time_horizons_days)
     )
-    fig.suptitle(f"origin: {subbasin_id_to_name[code]}")
-    for ax, h in zip(axes.flat, time_horizons_days):
-        log_density_plot(gdfs[h], ax, domain_extent, norm, title=f"{h} d", coast=coast)
-    for ax in axes.flat[len(time_horizons_days):]:
+    # Σ mapped weight / released particle-time: what stranding (survival
+    # weights) and domain exits have taken from this origin by T.
+    print(
+        f"{name}: remaining / released "
+        + ", ".join(
+            f"{h} d {gdfs[h]['weight'].sum() / released_of(code, h):.4f}"
+            for h in time_horizons_days
+        )
+    )
+    print(
+        f"{name}: weight below the dilution floor "
+        + ", ".join(f"{h} d {below_floor_report(gdfs[h])[0]:.3f} %" for h in time_horizons_days)
+    )
+    percentage_all = pd.concat([gdfs[h]["percentage"] for h in time_horizons_days])
+    views = {
+        "percentage": (
+            Normalize(vmin=0, vmax=percentage_all.quantile(0.99)), None, "max", {},
+        ),
+        "dilution": (dilution_norm, dilution_cmap, "both", {"format": decade_format}),
+    }
+    for column, (norm, cmap, extend, colorbar_kwargs) in views.items():
+        fig, axes = map_grid(nrows, ncols)
+        fig.suptitle(f"origin: {name}")
+        for ax, h in zip(axes.flat, time_horizons_days):
+            hex_map(gdfs[h], column, ax, norm, cmap=cmap, title=f"{h} d")
+        for ax in axes.flat[len(time_horizons_days):]:
+            ax.set_visible(False)
+        shared_colorbar(fig, axes, norm, cmap, COLUMN_LABEL[column], extend, **colorbar_kwargs)
+        fig_path = (
+            figure_dir
+            / f"OriginSubbasinTimeHorizonMaps_{regime}_{season}_r{hex_radius}m_{member_tag}"
+            f"_{_slug(name)}_{column}.png"
+        )
+        # Print-ready: full 180 mm page width at 300 dpi (see the parse cell).
+        fig.savefig(fig_path, dpi=FIGURE_DPI)
+        print(f"wrote {fig_path}")
+        plt.show()
+    for h in time_horizons_days:
+        export_geojson(
+            gdfs[h], f"026a_{regime}_{season}_{member_tag}_T{h}d_{_slug(name)}",
+            origin_subbasin=name,
+        )
+
+# %% [markdown]
+# # Overview: every origin on one page
+#
+# One figure per `overview_horizons_days` horizon: one dilution panel per
+# origin subbasin in a 4-column grid, panel title = origin name, panels
+# ordered geographically from the entrance (Kattegat) to the north-east.
+# Each panel is still normalised over its own origin's releases, and every
+# panel draws through the fixed log scale under a single colorbar for
+# the whole figure, so a colour means the same fraction of an origin's
+# released particle-time per km² in every panel — and in every other dilution figure
+# — and a compact cloud reads directly against a spread-out one. Hexes below
+# `dilution_floor` take the under colour; the share of each origin's weight
+# they hold is printed.
+#
+# Panels share the extent of every other map and carry the 3 m isobath on
+# top, as every map does.
+
+# %%
+# West → east, south → north: entrance, western Baltic, Baltic Proper, gulfs,
+# Bothnia. Origins not listed here are appended in code order.
+OVERVIEW_ORDER = [
+    "Kattegat", "The Sound", "Great Belt", "Kiel Bay", "Bay of Mecklenburg",
+    "Arkona Basin", "Bornholm Basin", "Gdansk Basin", "Eastern Gotland Basin",
+    "Western Gotland Basin", "Gulf of Riga", "Northern Baltic Proper",
+    "Gulf of Finland", "Åland Sea", "Bothnian Sea", "The Quark",
+]
+overview_codes = [name_to_id[n] for n in OVERVIEW_ORDER if name_to_id[n] in origin_codes]
+overview_codes += [c for c in origin_codes if c not in overview_codes]
+overview_ncols = 4
+overview_nrows = int(np.ceil(len(overview_codes) / overview_ncols))
+
+for h in overview_horizons_days:
+    gdfs = {
+        code: to_hex_gdf(
+            binned[(binned["origin_subbasin"] == code) & (binned["age_bin"] * age_bin_days < h)],
+            key, released_of(code, h),
+        )
+        for code in overview_codes
+    }
+    fig, axes = map_grid(overview_nrows, overview_ncols)
+    for ax, code in zip(axes.flat, overview_codes):
+        hex_map(gdfs[code], "dilution", ax, dilution_norm, cmap=dilution_cmap)
+        # Panel titles one step below the default size: at four maps per
+        # 180 mm row the longest HELCOM names would run into the neighbours.
+        ax.set_title(subbasin_id_to_name[code], fontsize="medium")
+    for ax in axes.flat[len(overview_codes):]:
         ax.set_visible(False)
+    shared_colorbar(
+        fig, axes, dilution_norm, dilution_cmap, COLUMN_LABEL["dilution"], "both",
+        format=decade_format,
+    )
+    fig.suptitle(f"by origin subbasin, ages < {h} d")
     fig_path = (
         figure_dir
-        / f"OriginSubbasinTimeHorizonMaps_{regime}_r{hex_radius}m_{_slug(subbasin_id_to_name[code])}.png"
+        / f"OriginSubbasinOverview_{regime}_{season}_r{hex_radius}m_{member_tag}_T{h}d_dilution.png"
     )
-    fig.savefig(fig_path)
+    # Print-ready: full 180 mm page width at 300 dpi (see the parse cell).
+    fig.savefig(fig_path, dpi=FIGURE_DPI)
     print(f"wrote {fig_path}")
     plt.show()
+    # Per origin: the share of the origin's particle-time below the floor
+    # (under colour) and on hexes with no water area (NaN dilution, not
+    # drawn), and the share of the mapped weight outside the map extent.
+    outside = {code: share_outside_extent(gdfs[code]) for code in overview_codes}
+    for code in overview_codes:
+        below, no_water = below_floor_report(gdfs[code])
+        print(
+            f"    {subbasin_id_to_name[code]}: {below:.2f} % below floor, "
+            f"{no_water:.2f} % on zero-water hexes, "
+            f"{outside[code]:.3f} % of the mapped weight outside the map extent, "
+            f"remaining / released {gdfs[code]['weight'].sum() / released_of(code, h):.4f}"
+        )
+    below_all = {code: below_floor_report(gdfs[code])[0] for code in overview_codes}
+    print(
+        f"  {h} d: weight below the dilution floor at most "
+        f"{max(below_all.values()):.3f} % ({subbasin_id_to_name[max(below_all, key=below_all.get)]}), "
+        f"mean over origins {np.mean(list(below_all.values())):.3f} %, "
+        f"above the top at most "
+        f"{max(g.loc[g['dilution'] > dilution_top, 'percentage'].sum() for g in gdfs.values()):.3f} %"
+    )
+    worst = max(outside, key=outside.get)
+    print(
+        f"  {h} d: mapped weight outside the map extent at most {outside[worst]:.3f} % "
+        f"({subbasin_id_to_name[worst]})"
+    )
 
 # %% [markdown]
 # # Validation prints
 
 # %%
-print(f"regime={regime}, hex_radius={hex_radius} m, age_bin_days={age_bin_days}")
-print(f"release months: {release_months or 'all'}")
+print(f"regime={regime}, season={season} {season_months}, hex_radius={hex_radius} m")
+print(f"member={member_tag}, age_bin_days={age_bin_days}, max_age_days={max_age_days}")
+print(f"release years pooled: {pooled_years}")
+print(f"sentinel (-1) share of raw weight: {100 * weight_sentinel / weight_raw:.4f} %")
 print(f"origin subbasins mapped: {len(origin_codes)}")
+longest = max(time_horizons_days)
 for code in origin_codes:
-    counts_sb = counts[(counts["origin_subbasin"] == code) & (counts["target_hex"] != -1)]
-    in_horizons = counts_sb[counts_sb["age_bin"].isin(horizon_age_bins.values())]
+    binned_sb = binned[
+        (binned["origin_subbasin"] == code) & (binned["age_bin"] * age_bin_days < longest)
+    ]
+    gdf_sb = to_hex_gdf(binned_sb, key, released_of(code, longest))
     print(
-        f"  {subbasin_id_to_name[code]}: "
-        f"{counts_sb['release_hex'].nunique():,} origin hex(es), "
-        f"sum(n_obs) over mapped horizons={int(in_horizons['n_obs'].sum()):,}"
+        f"  {subbasin_id_to_name[code]} (to {longest} d): "
+        f"{len(gdf_sb):,} occupied target hexes, "
+        f"sum(weight)={binned_sb['weight'].sum():,.0f}, "
+        f"max percentage={gdf_sb['percentage'].max():.4f} %"
     )

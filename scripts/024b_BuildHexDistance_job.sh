@@ -5,6 +5,7 @@
 #SBATCH --mem-per-cpu=8G
 #SBATCH --time=08:00:00
 #SBATCH --partition=base
+#SBATCH --output=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs/logs/aggregates/%x_%j.out
 
 # Multi-task dask layout, one task per SLURM task, adjust --ntasks at submit:
 #   task 0: dask scheduler + one local worker process set
@@ -40,19 +41,48 @@ cleanup() {
 }
 trap cleanup EXIT
 
-SRUN_STEP="srun --ntasks=1 --cpus-per-task=${SLURM_CPUS_PER_TASK} --exact"
-WORKER_ARGS="--scheduler-file ${SCHEDULER_FILE} --interface ib0"
+# Drop any CPU-bind mask inherited from the batch step; otherwise a step that
+# lands on a second node of a fragmented allocation fails with "CPU binding
+# outside of job step allocation" and srun exits 64 before papermill ever
+# starts (jobs 23836462 / 23836463). -N1 keeps a single-task step from being
+# spread over the allocation's nodes, --exact sets its own binding, and
+# --mem-per-cpu stops the first step claiming the node's whole memory.
+unset SLURM_CPU_BIND SLURM_CPU_BIND_LIST SLURM_CPU_BIND_TYPE SLURM_CPU_BIND_VERBOSE
+
+SRUN_STEP="srun -n1 -N1 --exact --cpus-per-task=${SLURM_CPUS_PER_TASK}"
+SRUN_STEP="${SRUN_STEP} --mem-per-cpu=${SLURM_MEM_PER_CPU}M"
+WORKER_ARGS="--scheduler-file ${SCHEDULER_FILE}"
 
 # Task 0: scheduler + attached workers (shape auto-detected from cgroup).
 # dask worker --scheduler-file polls the file until it appears, so no
-# explicit wait loop needed here.
+# explicit wait loop needed for the workers.
+#
+# No --interface: only the srp nodes carry ib0, and an allocation that lands
+# wholly or partly on clk nodes then either loses its scheduler at start-up
+# ("'ib0' is not a valid network interface", jobs 23841556 / 23841559 /
+# 23843372) or brings one up on an address the papermill task cannot route to
+# ("OSError: [Errno 101] Network is unreachable", jobs 23841547 / 23841550).
+# Dask binds the node's default address instead; these jobs are GPFS-bound and
+# minutes long, so the IB bandwidth was never what set their wall time.
 ${SRUN_STEP} pixi run bash -c "
-    dask scheduler --interface ib0 --scheduler-file ${SCHEDULER_FILE} &
+    dask scheduler --scheduler-file ${SCHEDULER_FILE} &
     dask worker ${WORKER_ARGS} &
     wait
 " &
 
-sleep 30
+# The scheduler writes ${SCHEDULER_FILE} once it is listening, and the
+# notebook's Client(scheduler_file=...) blocks forever if it never does -- a
+# scheduler that dies at start-up otherwise burns the entire walltime instead
+# of failing (23841556 hit its 8 h limit after 70 s of actual work). Wait for
+# the file rather than for a fixed interval, and give up bounded.
+for _ in $(seq 60); do
+    [ -s "${SCHEDULER_FILE}" ] && break
+    sleep 5
+done
+if [ ! -s "${SCHEDULER_FILE}" ]; then
+    echo "dask scheduler did not come up within 300 s -- giving up" >&2
+    exit 1
+fi
 
 # Task 1: papermill, one (regime, year) per job.
 ${SRUN_STEP} pixi run papermill --cwd notebooks/ \
