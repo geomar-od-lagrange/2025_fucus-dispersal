@@ -36,13 +36,17 @@ module load singularity/3.11.5
 # reading the bottom 2D fields and walls. Not passed by hand: the per-regime
 # wrapper scripts/010_FucusDispersal_bottom_ub49_job.sh pins it, so the regime
 # name in the script name is the one the run writes (docs/bottom_friction.md).
+# Off 0 every release also reuses the RNG seed of the `bottom` run of the same
+# start time (read off its zarr name under output_root), so both regimes start
+# from identical positions: a paired experiment. A release whose bottom zarr
+# is missing or ambiguous is not run and fails the job.
 # OUTPUT_ROOT and SIMULATION_DAYS (env) override the output root and the run
 # length, for test runs; a test root needs 2d_fields/ and wall_fields/ (links
 # to the real ones do).
 year="${1:-2019}"
 n_releases="${2:-73}"
 # %g as 010 formats it, so 49.0 and 49 both name `bottom_ub49`.
-break_off_speed_mm_s=$(LC_NUMERIC=C printf '%g' "${3:-0}")
+break_off_speed_mm_s=$(LC_ALL=C printf '%g' "${3:-0}")
 # The output regime, as 010 derives it (for the executed-notebook name only).
 if [ "${break_off_speed_mm_s}" = 0 ]; then
     output_regime=bottom
@@ -135,10 +139,37 @@ fi
 
 echo "year=${year} releases=[${release_ns}] break_off_speed_mm_s=${break_off_speed_mm_s} output_regime=${output_regime} simulation_days=${simulation_days} wall_velocity_mm_s=${wall_velocity_mm_s} output_root=${output_root} SLURM_NTASKS=${SLURM_NTASKS}"
 
+# The RNG seed of the `bottom` run released at start stem $1
+# (YYYYMMDDTHHMMSS), from its zarr name
+# Trajectories/bottom/<year>/Fucus_BSH_<stem>_bottom_dt<N>min_seed<S>.zarr.
+# Prints the seed; exactly one such zarr must exist, else it says why on
+# stderr and returns 1 -- never a fresh seed, which would unpair the release.
+paired_seed() {
+    local stem=$1 matches seed
+    mapfile -t matches < <(compgen -G \
+        "${output_root}/Trajectories/bottom/${year}/Fucus_BSH_${stem}_bottom_dt${output_dt_mins}min_seed*.zarr")
+    if [ "${#matches[@]}" -ne 1 ]; then
+        echo "FAIL ${stem} ${output_regime}: ${#matches[@]} bottom zarrs to pair with" \
+             "under ${output_root}/Trajectories/bottom/${year}/, need exactly 1" >&2
+        return 1
+    fi
+    seed=${matches[0]##*_seed}
+    seed=${seed%.zarr}
+    if ! [[ "${seed}" =~ ^[0-9]+$ ]]; then
+        echo "FAIL ${stem} ${output_regime}: no seed in ${matches[0]}" >&2
+        return 1
+    fi
+    echo "${seed}"
+}
+
 # Releases at doy = 1 + 5n over the selected n; a full year is 73 of
 # them (doys 1..361, leap-year-agnostic). Each start_time runs the bottom 2D
 # fields under 010's wall-velocity RK4 with the bottom walls, with bed
 # friction at break_off_speed_mm_s (on U and V, not on the wall velocity).
+# The work list is built first, so a release whose paired seed is missing is
+# counted here and the job can fail on it after the others have run.
+work=()
+n_unpaired=0
 for n in ${release_ns}; do
     doy=$((1 + 5 * n))
     # Derive both times from year+doy; never feed an ISO datetime back into
@@ -146,7 +177,19 @@ for n in ${release_ns}; do
     start_time=$(date -d "${year}-01-01 +$((doy - 1)) days" +%Y-%m-%dT00:15:00)
     end_time=$(date -d "${year}-01-01 +$((doy - 1 + simulation_days)) days" +%Y-%m-%dT00:15:00)
 
-    printf '%s\0' "${start_time} ${end_time} bottom $((RANDOM * 32768 + RANDOM))"
-done | xargs -0 -P ${SLURM_NTASKS} -n 1 bash -c 'run_experiment $1' _
+    if [ "${break_off_speed_mm_s}" = 0 ]; then
+        seed=$((RANDOM * 32768 + RANDOM))
+    elif ! seed=$(paired_seed "${start_time//[-:]/}"); then
+        n_unpaired=$((n_unpaired + 1))
+        continue
+    fi
+    work+=("${start_time} ${end_time} bottom ${seed}")
+done
+echo "releases to run: ${#work[@]}, not run for want of a paired bottom seed: ${n_unpaired}"
+if [ "${#work[@]}" -gt 0 ]; then
+    printf '%s\0' "${work[@]}" | xargs -0 -P ${SLURM_NTASKS} -n 1 bash -c 'run_experiment $1' _
+fi
 
 jobinfo
+# A release left unpaired is a hole that must not pass as a finished job.
+[ "${n_unpaired}" -eq 0 ]

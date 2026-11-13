@@ -56,6 +56,23 @@ the bottom one: `submit_010.sh` maps the regime argument to
 job, so one script per output regime keeps all three right with no
 regime-name parsing; the run logic stays in one file.
 
+## Paired seeds
+
+Each `bottom_ub49` release reuses the RNG seed of the `bottom` release with
+the same start time, read off its zarr name
+`Trajectories/bottom/<year>/Fucus_BSH_<YYYYMMDDTHHMMSS>_bottom_dt60min_seed<N>.zarr`
+under the same `output_root` (`paired_seed` in the bottom job script). Both
+regimes then start from identical positions, so they differ by the friction
+alone (at U_b = 0 the run is the `bottom` zarr bit for bit) and per-release
+differences need no sampling floor for the release jitter. A release with no
+or several matching `bottom` zarrs is not run: the job prints
+`FAIL <stem> bottom_ub49: …` and exits non-zero once the other releases are
+done; it never draws a fresh seed. Hence `bottom_ub49` is submitted only once
+the `bottom` zarrs of its years are on disk (a refilled `bottom` release is
+paired with its refill's seed). Considered: fresh seeds as for every other
+regime, rejected: friction would then be compared across different release
+positions in every cell.
+
 Downstream, `bottom_ub49` is one more regime for 024/024b/024c and the
 025–028 consumers (unweighted, like `bottom`); beaching (024d–g, 029–031) is
 `surface_stokes`-only. `scripts/025-031_ConsumersAll_job.sh` runs it by
