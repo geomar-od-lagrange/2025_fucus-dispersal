@@ -428,6 +428,14 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
     real set = `land_seed == 0` = numpy land-set lookup
     (`f_check_024d.log`); before the skip 6 land seeds within ~ε·dt of a
     wet face stepped out of land.
+  - Kernel port: 010 with the window walls reproduces the prototype
+    ε = 2 v3 + reject runs bit for bit (21,800 traj × 480 h, both regimes,
+    nrej equal; `c_T3_*.log`); with the land-seed skip water seeds stay bit
+    identical (72 h), only 5 / 4 near-face land seeds differ. Open: T4
+    (full walls, 180 d, jobs 24918405 ss / 24918406 bottom, pre-skip kernel,
+    roots `tmp_wall_integration/root_T4_*`): d_metrics (land entries,
+    pinning), e_wallset_diff A=T4 B=T3 (divergence only next to the 68/79
+    reopened cells), MaxRSS for the memory sizing.
 - Launch recipe (step 4; assumes `<outputs>/Trajectories/`,
   `BeachingForcing/` and the derived HexAggregates stores are moved aside,
   the 024a key `HexAgg_key_r6000m.*` stays; walls in `<outputs>/wall_fields/`):
