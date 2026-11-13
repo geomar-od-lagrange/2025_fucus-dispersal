@@ -20,6 +20,13 @@ numbers and draft code in `tmp_bottom_friction/` (untracked), runs in
   no ± members. `velocity_scale` / `bottom_vs0p8` dropped entirely (not a
   yardstick either; bottom-flow uncertainty is discussed separately in the
   paper). Full 2016–2025 sweep, after the ε = 2 rerun.
+- **Paired seeds (decided, coordinator 2026-11-13):** every `bottom_ub49`
+  release reuses the seed of the ε = 2 `bottom` zarr of the same start stem
+  (`paired_seed` in the bottom job script; missing/ambiguous → that release
+  fails, no fresh seed). So the sweep starts only once the `bottom` zarrs of
+  its years are on disk (`--dependency=afterany:<bottom 010 ids>` works: the
+  lookup runs at job start). Lookup tested on a mock root
+  (`<outputs>/tmp_friction_integration/test_paired_seed.log`).
 - Prototype done (§Prototype results); test 5 done (§Test plan).
 - Next: merge after the rerun's refills → `submit_010.sh bottom_ub49` for
   2016–2025 → `submit_downstream_chain.sh` on those ids (024/024b/024c,
