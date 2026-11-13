@@ -5,7 +5,7 @@
 # is fine — no SLURM). Designed to flush out integration issues from a
 # fresh clone, not to produce scientifically meaningful trajectories:
 # uses a 4 h Parcels window, 1 particle per release cell, all three
-# regimes (surface, bottom, surface_stokes).
+# regimes (surface_stokes, bottom).
 #
 # Usage from the repo root:
 #     ./scripts/0-31-smoke-test.sh
@@ -35,7 +35,7 @@ cd "${REPO_ROOT}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-${REPO_ROOT}/output_smoke}"
 mkdir -p "${OUTPUT_ROOT}"
 
-REGIMES=(surface bottom surface_stokes)
+REGIMES=(surface_stokes bottom)
 
 echo "=== Smoke test: stages 000–031 ==="
 echo "Repo:        ${REPO_ROOT}"
@@ -68,6 +68,17 @@ for c in data/bsh_hbmnoku_demo/c_file_fine_2020/c_file_fine_2020010100_*.nc \
 done
 
 # 004 (extract_coastline): skipped — output already in the data twin.
+
+for regime in "${REGIMES[@]}"; do
+    echo
+    echo "==== 005 BuildWallFields (${regime}, the one smoke c-file per grid) ===="
+    pixi run papermill notebooks/005_BuildWallFields.ipynb \
+        "${OUTPUT_ROOT}/005_${regime}_smoke.ipynb" \
+        -p regime "${regime}" \
+        -p output_root "${OUTPUT_ROOT}" \
+        -p files_per_partition 1 \
+        --cwd notebooks/
+done
 
 for regime in "${REGIMES[@]}"; do
     echo

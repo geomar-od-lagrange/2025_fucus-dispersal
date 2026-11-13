@@ -168,7 +168,7 @@ filename.
   CSV (so after 026 and 029).
 - `notebooks/036_*` — seeding map: the release cells by HELCOM subbasin
   (the 024a key's assignment) and the land-seeded share per cell, read
-  from the first two time steps of one regime-year of trajectory zarrs.
+  from `land_seed` of one regime-year of trajectory zarrs.
 
 ## Data access
 

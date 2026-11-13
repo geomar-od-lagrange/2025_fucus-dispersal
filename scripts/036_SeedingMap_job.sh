@@ -9,8 +9,8 @@
 set -euo pipefail
 
 # Lightweight: reads the data twin's release cells and HELCOM subbasins, the
-# 024a key, and the first two time steps of one regime-year of trajectory
-# zarrs (the land-seeded share per cell), no Dask cluster. One figure per
+# 024a key, and 010's per-trajectory land_seed of one regime-year of
+# trajectory zarrs (the land-seeded share per cell), no Dask cluster. One figure per
 # hex_radius, no season or member: the release set is the same for every run.
 #   sbatch scripts/036_SeedingMap_job.sh 6000
 # land_regime (surface_stokes), land_release_year (2019) and

@@ -456,7 +456,7 @@ away.
 | `029_BeachingMaps_job.sh`, `030_SurvivalHeatmaps_job.sh` | `[regime] [hex_radius] [member] [season]` |
 | `031_BeachingSweep_job.sh` | `[regime] [hex_radius] [members_csv] [labels_csv] [baseline_member] [season]` |
 | `035_AreaTimeSeries_job.sh` | `[season] [hex_radius] [member]` — draws `surface_stokes` at 026 tag `member` (default the production member) and `bottom` unweighted, from 026's area CSVs |
-| `036_SeedingMap_job.sh` | `[hex_radius]` — no season or member; also reads the first two time steps of one regime-year of trajectory zarrs (notebook defaults `surface_stokes` 2019). Not in the consumer driver: the release set does not change between runs |
+| `036_SeedingMap_job.sh` | `[hex_radius]` — no season or member; also reads `land_seed` of one regime-year of trajectory zarrs (notebook defaults `surface_stokes` 2019). Not in the consumer driver: the release set does not change between runs |
 
 Every default is `regime=surface_stokes`, `hex_radius=6000`. `age_bin_days`,
 `max_age_days`, `time_horizons_days_csv`, `disp_bin_km` and the origin/year

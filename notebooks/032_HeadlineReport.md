@@ -957,8 +957,8 @@ figure_specs = [
         notebook="036", stem="SeedingMap_r{radius}m", name="seeding_map",
         sources=[],
         note="The REDLIST release cells by HELCOM subbasin (the 024a key's shoreward rule, "
-        "cell counts in the legend), and the share of each cell's seeded particles that start "
-        "on BSH land and never move.",
+        "cell counts in the legend), and the share of each cell's seeded particles released "
+        "in a land cell (010's land_seed).",
     ),
     dict(
         notebook="025", stem="HexRelativeDensity_{regime}_{pooled}_r{radius}m_{tag}",

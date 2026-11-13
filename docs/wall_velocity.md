@@ -12,7 +12,7 @@ any step that would end on land. Diagnosis, prototype and ε sweep:
 |---|---|
 | wall + land fields per nest × regime | `notebooks/005_BuildWallFields.py`, `scripts/005_BuildWallFields_job.sh` → `output_root/wall_fields/walls_{fine,coarse}_<regime>.nc` |
 | kernel, parameters | `notebooks/010_FucusDispersal.py`: `wall_velocity_mm_s = 2.0`, `reject_land_steps = True`, `wall_fields = "wall_fields"` |
-| per-trajectory outputs | `land_seed` (once), `nrej` (running count of rejected steps, every output step) |
+| per-trajectory outputs | `land_seed` (once), `nrej` (running count of rejected steps, every output step; 0 for land seeds) |
 | real-drifter set | `land_seed == 0` in 021–024b, 024d, 036 |
 
 ## Wall set and sign (005)
@@ -40,6 +40,10 @@ every stage; `UVwall` is a NestedField of C-grid VectorFields built like
 wall-normal velocity becomes `u = (1 − ξ)·ε + ξ·U_open`, so under onshore
 `U_open` drifters rest at `ξ* = ε / (ε + |U_open|)` instead of 1e-12, stay
 resolvable, and leave when the forcing relaxes.
+
+Land seeds (below) are not advected: they start in a cell that never
+carries flow, where plain RK4 returns exactly zero, so skipping them changes
+no position at ε = 0 and saves ~35 % of the field samples.
 
 With `reject_land_steps`, a step whose end position lies in a land cell
 (`Land`, `cgrid_tracer` = constant per cell) is not taken; the particle keeps
