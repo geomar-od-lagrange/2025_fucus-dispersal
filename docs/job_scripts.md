@@ -154,8 +154,10 @@ walls, 010's `break_off_speed_mm_s = 49`, output under
 One script per output regime keeps `submit_010.sh`'s regime → script lookup,
 the job name (`010-bottom_ub49-<year>…`, so it neither adopts nor blocks a
 `bottom` run) and the chain's regime discovery from the script name as for
-any regime ([bottom_friction.md](bottom_friction.md)). At U_b = 0 the
-trajectories are bitwise those of the frictionless kernel.
+any regime ([bottom_friction.md](bottom_friction.md)). Its releases reuse
+the seeds of the `bottom` zarrs on disk (paired seeds, same section there), so
+it runs after `bottom`; a release without exactly one `bottom` zarr is not run
+and fails the job.
 
 ### Refilling lost releases
 
@@ -494,7 +496,11 @@ second wave that starts once every other unit has finished.
 `STAGES` / `REGIMES` / `SEASONS` restrict the matrix (default regimes
 `surface_stokes bottom bottom_ub49`; 029/030/031 need `surface_stokes`
 among them, 035 `surface_stokes` or `bottom`, 034 `bottom_ub49`, or `bottom`
-once `bottom_ub49` counts exist). The 031 member list is
+once `bottom_ub49` counts exist). With the default regimes (`REGIMES` unset)
+the `bottom_ub49` units of 025–028 and 034 are listed only where their store
+(counts, distance, connectivity) is on disk, so a run before the
+`bottom_ub49` sweep has no FAIL lines for it; an explicit `REGIMES`, as the
+chain passes, is taken as given. The 031 member list is
 read off `HexAggregates/` inside the job, not at submit time — the reducers
 write those stores minutes earlier in the chain below, so any hardcoded list
 would be stale by construction.

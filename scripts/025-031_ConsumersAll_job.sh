@@ -41,7 +41,11 @@
 # Every stage honours $REGIMES: a regime-specific stage runs only for the
 # regimes listed, 029/030/031 only when surface_stokes is, 035 when
 # surface_stokes or bottom is (it draws both), 034 when bottom_ub49 is, or
-# bottom is and bottom_ub49 counts exist (it draws both).
+# bottom is and bottom_ub49 counts exist (it draws both). With the default
+# regimes (REGIMES unset) a bottom_ub49 unit of 025-028 is listed only where
+# its store is on disk, so a run before the bottom_ub49 sweep reports no FAIL
+# for it; an explicit REGIMES (the chain sets one) is taken as given, and a
+# missing store then fails its unit.
 #
 # 035 draws the 026 area exports of both regimes and the 029 stranding curve
 # of surface_stokes, so the 035 units run as a
@@ -209,6 +213,13 @@ list_work() {
     local stage regime season member
     # Whether $1 is one of the listed regimes.
     has_regime() { [[ " ${regimes} " == *" $1 "* ]]; }
+    # Whether regime $1's unit is dropped: default regimes, bottom_ub49, and
+    # no partition of its store $2 (counts, distance, connectivity) on disk.
+    store_missing() {
+        [ -z "${REGIMES:-}" ] && [ "$1" = bottom_ub49 ] && ! compgen -G \
+            "${output_root}/HexAggregates/HexAgg_$2_r${hex_radius}m_$1_[0-9][0-9][0-9][0-9].parquet" \
+            > /dev/null
+    }
     if [ -n "${WORK_LIST:-}" ]; then
         grep -v "^[[:blank:]]*\(#\|$\)" "${WORK_LIST}"
         return
@@ -217,6 +228,7 @@ list_work() {
         case "${stage}" in
             025|026|026a|026b)
                 for regime in ${regimes}; do
+                    store_missing "${regime}" counts && continue
                     # Survival-weighted where 024d sidecars exist, unweighted
                     # otherwise (only surface_stokes has them).
                     member=-
@@ -227,12 +239,14 @@ list_work() {
                 done ;;
             027)
                 for regime in ${regimes}; do
+                    store_missing "${regime}" distance && continue
                     for season in ${seasons}; do
                         echo "${stage} ${regime} ${season} -"
                     done
                 done ;;
             028)
                 for regime in ${regimes}; do
+                    store_missing "${regime}" connectivity && continue
                     for season in ${seasons}; do
                         echo "028 ${regime} ${season} -"
                         # surface_stokes twice: the unweighted 024c matrix and
@@ -254,11 +268,15 @@ list_work() {
                 done ;;
             034)
                 # bottom_ub49 against bottom in one figure (both fixed in the
-                # job script): redrawn when either side changes, but a
-                # bottom-only run before any bottom_ub49 counts exist skips it.
-                has_regime bottom_ub49 || { has_regime bottom && compgen -G \
-                    "${output_root}/HexAggregates/HexAgg_counts_r${hex_radius}m_bottom_ub49_[0-9][0-9][0-9][0-9].parquet" \
-                    > /dev/null; } || continue
+                # job script): redrawn when either side changes. An explicit
+                # bottom_ub49 is taken as given; with the default regimes or a
+                # bottom-only run it waits for bottom_ub49 counts on disk.
+                { has_regime bottom_ub49 || has_regime bottom; } || continue
+                if [ -z "${REGIMES:-}" ] || ! has_regime bottom_ub49; then
+                    compgen -G \
+                        "${output_root}/HexAggregates/HexAgg_counts_r${hex_radius}m_bottom_ub49_[0-9][0-9][0-9][0-9].parquet" \
+                        > /dev/null || continue
+                fi
                 for season in ${seasons}; do
                     echo "034 bottom_ub49 ${season} -"
                 done ;;
