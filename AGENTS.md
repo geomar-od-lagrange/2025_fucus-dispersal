@@ -110,11 +110,15 @@ filename.
 
 - `notebooks/00x_*.{md,py}` — inputs and preprocessing (start-location
   prep, Stokes download, 2D-field extraction, BSH coastline
-  extraction), with `scripts/00x_*_job.sh` SLURM wrappers.
+  extraction, wall-velocity and land fields per nest × regime for 010
+  (`005`, after 003)), with `scripts/00x_*_job.sh` SLURM wrappers.
 - `scripts/010_FucusDispersal_{surface,bottom,surface_stokes}_job.sh` +
   `notebooks/010_FucusDispersal.md` — Parcels runs, papermill-swept
-  across (year, doy, regime). Writes trajectory zarrs under
-  `output_root/Trajectories/<regime>/<year>/`.
+  across (year, doy, regime), RK4 with a wall velocity ε = 2 mm/s off
+  land and a land-step reject (docs/wall_velocity.md). Writes trajectory
+  zarrs under `output_root/Trajectories/<regime>/<year>/`, with a
+  per-trajectory `land_seed` flag that defines the real-drifter set
+  downstream.
 - `notebooks/020..023_*.md` — per-trajectory visualisations (raw lines,
   time stats, distance vs. time, density + mean-age heatmaps).
 - `notebooks/024a_*` — static hex key (geometry/attrs, once per radius);

@@ -54,6 +54,18 @@ products of `025`/`026`/`026a`/`026b`/`027`/`029`/`033`, long-form CSV for
 share per origin subbasin
 (`afloat_by_origin_<regime>_<season>_<member>.csv`).
 
+## Wall fields (005)
+
+`scripts/005_BuildWallFields_job.sh <regime>` runs
+`notebooks/005_BuildWallFields` once per regime (`surface_stokes`, `bottom`;
+`bottom_vs0p8` reads the bottom walls) after 003 and before any 010 run: a
+Dask cluster of one-core tasks (the 024 layout) ANDs the zero faces of every
+`c_file` of the regime and writes `output_root/wall_fields/walls_{fine,coarse}_<regime>.nc`
+([wall_velocity.md](wall_velocity.md)). `OUTPUT_ROOT` (env) points it at a
+test root. The 010 job scripts take `OUTPUT_ROOT` and `SIMULATION_DAYS` the
+same way, for short test runs on a root that links `2d_fields/` and
+`wall_fields/`.
+
 ## The 2D-field preprocessor (003)
 
 `scripts/003_prepare_2d_fields_job.sh` fans out one `srun` step per BSH
