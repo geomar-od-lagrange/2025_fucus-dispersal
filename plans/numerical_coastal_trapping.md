@@ -403,6 +403,16 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
     024b, 024d, 036) reads `land_seed` instead: once ε acts on land seeds
     the old test misclassifies them, and with v3 walls a seed in a cell
     that is dry at release is a water seed.
+  - Status 2026-11-13 evening: code committed (005, 010, downstream
+    land_seed, docs/wall_velocity.md). Walls built
+    (`<outputs>/wall_fields/`, 14,582 stems 2016-01-01..2025-12-31, ~9 min
+    per regime on 48 one-core tasks): fine surface_stokes 9,664 signed
+    faces / 122,564 wet cells, fine bottom 9,662 / 122,550 (differ by 52
+    faces, 14 land cells), coarse 4,044 / 34,053 in both; no thin walls.
+    005 on the prototype run window reproduces the prototype v3 files bit
+    for bit; the full set opens 68 (ss) / 79 (bottom) fine cells the
+    window set called land (`tmp_wall_integration/e_wallset_diff.log`).
+    Validation runs (`tmp_wall_integration/`) in flight.
 - Cost of the full rerun: 010 ~1–1.5 d wall clock (24 regime-years,
   ~15–20 k core-hours), downstream chain ~3 h. Quota (`workquota`
   2026-11-03): 25.1 T of 29 T soft; a full trajectory set is ~3–3.4 T
