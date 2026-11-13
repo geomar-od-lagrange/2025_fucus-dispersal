@@ -133,8 +133,9 @@ rerunning the same command after a failed submit adopts instead of duplicating.
 ### Velocity-scaled variant regimes
 
 `VELOCITY_SCALE` runs the bottom 2D fields with Parcels'
-`Field.set_scaling_factor` on U and V of both nest levels; the kernel stays
-plain `AdvectionRK4`. Off 1.0 the run writes under its own regime,
+`Field.set_scaling_factor` on U and V of both nest levels; the kernel and the
+wall velocity ε (bottom walls) stay as in the 1× run
+([wall_velocity.md](wall_velocity.md)). Off 1.0 the run writes under its own regime,
 `<regime>_vs<scale>` with `.` spelled `p` — `0.8` → `bottom_vs0p8`, in the
 directory name and the zarr stem — so every downstream stage keys on it like
 any other regime. A uniform factor in a time-varying flow is not a slowed

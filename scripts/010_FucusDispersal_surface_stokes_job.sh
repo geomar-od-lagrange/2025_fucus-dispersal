@@ -27,16 +27,22 @@ module load singularity/3.11.5
 # a missing tail, and a prefix count cannot express one.
 # Submit via `scripts/submit_010.sh <regime> <year> [n_releases]`, which sizes
 # `--ntasks` from whichever of the two selects the work.
+# OUTPUT_ROOT and SIMULATION_DAYS (env) override the output root and the run
+# length, for test runs; a test root needs 2d_fields/ and wall_fields/ (links
+# to the real ones do).
 year="${1:-2019}"
 n_releases="${2:-73}"
 
 repo_root=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
-output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
+output_root=${OUTPUT_ROOT:-/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs}
 container=parcels-container_2024.10.07-7af7fd0.sif
-simulation_days=220
+simulation_days=${SIMULATION_DAYS:-220}
 calc_dt_mins=5
 output_dt_mins=60
 particles_per_cell=100
+# Wall velocity (mm/s) on never-flowing faces, plus the land-step reject
+# (docs/wall_velocity.md); the walls come from output_root/wall_fields/ (005).
+wall_velocity_mm_s=2.0
 
 # Drop any CPU-bind mask inherited by the batch step; otherwise every one of
 # the concurrent srun steps below dies at launch with "CPU binding outside of
@@ -70,12 +76,14 @@ run_experiment() {
             -p calc_dt_mins ${calc_dt_mins} \
             -p output_dt_mins ${output_dt_mins} \
             -p particles_per_cell ${particles_per_cell} \
+            -p wall_velocity_mm_s ${wall_velocity_mm_s} \
+            -p reject_land_steps True \
             -p data_root ${repo_root}/data \
             -p output_root ${output_root} \
             -k python"
 }
 export -f run_experiment
-export repo_root output_root container calc_dt_mins output_dt_mins particles_per_cell
+export repo_root output_root container calc_dt_mins output_dt_mins particles_per_cell wall_velocity_mm_s
 
 # Either the first `n_releases` of the schedule, or exactly the indices in
 # RELEASE_NS. submit_010.sh sizes --ntasks from the same selection, so the

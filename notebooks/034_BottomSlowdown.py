@@ -19,8 +19,8 @@
 #
 # How much does the bottom-regime dispersal footprint shrink if the bottom-cell
 # current is assumed 20 % slower? Compares the 1× `bottom` regime against the
-# `bottom_vs0p8` variant (010 with `velocity_scale = 0.8`, plain
-# `AdvectionRK4`, no drag model) on the **same release doys of one year** —
+# `bottom_vs0p8` variant (010 with `velocity_scale = 0.8` on the bottom
+# current, same kernel and wall velocity, no drag model) on the **same release doys of one year** —
 # the variant is only run for one release per month, so the 1× side is
 # restricted to those doys too. Reads the 024 counts partitions and the 024a
 # key; parquet only, no Dask.
