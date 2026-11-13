@@ -16,6 +16,8 @@ jupyter:
 # Import
 
 ```python
+import math
+
 from parcels import FieldSet, JITParticle, ParticleSet, NestedField, Variable
 from zarr.storage import MemoryStore
 
@@ -55,17 +57,19 @@ end_time = "2019-01-11"
 # under output_root/2d_fields/ and the wall fields the fieldset reads.
 regime = "surface_stokes"
 
-# Uniform factor on the U and V the kernel samples, at every nest level.
-# 1.0 is the model current as given. Anything else is a sensitivity variant
-# (e.g. 0.8 for an assumed 20 % bottom slowdown) and writes under its own
-# regime name, `<regime>_vs<scale>` with "." spelled "p" (`bottom_vs0p8`),
-# so it never mixes with the 1x trajectories downstream.
-velocity_scale = 1.0
+# Bed-friction break-off speed U_b (mm/s), for drifters sliding on the bed:
+# at every RK4 stage the drifter moves along the sampled current U at
+# max(|U| - U_b, 0), at rest for |U| <= U_b (docs/bottom_friction.md). 0 is
+# off and reproduces the frictionless kernel bit for bit. Anything else
+# writes under its own regime name, `<regime>_ub<U_b>` with "." spelled "p"
+# (49 -> `bottom_ub49`), so it never mixes with the frictionless
+# trajectories downstream.
+break_off_speed_mm_s = 0.0
 
 # Wall velocity ε (mm/s): every C-grid face that never carries flow in the
 # forcing period and borders a wet cell carries ε pointing away from land,
-# added to UV at every RK4 stage (docs/wall_velocity.md). Same ε in m/s on
-# both nests; not multiplied by velocity_scale. 0 adds exact zeros.
+# added to the drift at every RK4 stage, after the bed friction
+# (docs/wall_velocity.md). Same ε in m/s on both nests. 0 adds exact zeros.
 wall_velocity_mm_s = 2.0
 
 # Drop a step whose end position lies in a land cell (keep the old
@@ -124,8 +128,8 @@ path_wall_fields = output_root / wall_fields
 # The name every downstream stage keys on (Trajectories/<output_regime>/).
 # `regime` alone still picks the 2D-field set the fieldset reads.
 output_regime = (
-    regime if velocity_scale == 1.0
-    else f"{regime}_vs{velocity_scale:g}".replace(".", "p")
+    regime if break_off_speed_mm_s == 0
+    else f"{regime}_ub{break_off_speed_mm_s:g}".replace(".", "p")
 )
 
 start_time = datetime.fromisoformat(start_time)
@@ -136,7 +140,8 @@ calc_dt = timedelta(minutes=calc_dt_mins)
 output_dt = timedelta(minutes=output_dt_mins)
 
 print(f"start: {start_time} | end: {end_time}")
-print(f"forcing: {regime} | velocity_scale: {velocity_scale} | output regime: {output_regime}")
+print(f"forcing: {regime} | output regime: {output_regime}")
+print(f"bed-friction break-off speed: {break_off_speed_mm_s} mm/s")
 print(f"wall velocity: {wall_velocity_mm_s} mm/s | reject land steps: {reject_land_steps}")
 ```
 
@@ -254,21 +259,6 @@ V_nested_field = NestedField("V", [current_fieldset_fine.V, current_fieldset_coa
 nested_fieldset = FieldSet(U_nested_field, V_nested_field)
 ```
 
-# Velocity scale
-
-`Field.set_scaling_factor` multiplies the field data as each time chunk is
-loaded (`rescale_and_set_minmax` in `FieldSet.computeTimeChunk`, after the
-NaN-to-zero fill), so the kernel samples scaled U and V. It is set on the
-member fields of each nest level: those are the Field objects the per-level
-C-grid VectorFields wrap and the chunk loader visits. The C-grid
-interpolation is linear in U and V, so the sampled velocity scales by
-exactly the factor. 1.0 multiplies by one, which is exact in floating point.
-
-```python
-for field in [*U_nested_field, *V_nested_field]:
-    field.set_scaling_factor(velocity_scale)
-```
-
 # Wall velocity and land
 
 The 005 fields per nest: `uvel`/`vvel` are a unit wall velocity (±1 on
@@ -315,15 +305,27 @@ nested_fieldset.add_field(
     NestedField("Land", [wall_fieldset_fine.Land, wall_fieldset_coarse.Land])
 )
 nested_fieldset.add_constant("reject_land_steps", int(reject_land_steps))
+nested_fieldset.add_constant("U_b", break_off_speed_mm_s / 1000.0)
 ```
 
 # Kernel
 
-`parcels.AdvectionRK4` with `UV + UVwall` at every stage. The step is
-taken unless `reject_land_steps` is set and its end position lies in a
-land cell; then the particle keeps its position and `nrej` counts the
-rejection. With ε = 0 the wall terms are exact zeros and, without the
-reject, every position is the plain RK4 one bit for bit.
+`parcels.AdvectionRK4` on the drift `f·UV + UVwall` at every stage, with
+the bed-friction factor `f = 1 − U_b/|U|` for `|U| > U_b`, else 0
+(docs/bottom_friction.md). `f` acts on the velocity interpolated at the
+stage position, the flow an object there feels, so the step is RK4 of
+`dx/dt = f(U)·U`. `|U|` is in m/s: on the spherical mesh `fieldset.UV`
+returns deg/s, and the kernel undoes Parcels' conversion (1852·60 m per
+degree, × cos(lat) for U) at the stage latitude; `f` is a scalar, so it
+scales the deg/s components directly. The wall velocity ε is added after
+the friction: a numerical device, not part of the current the drifter
+feels. With U_b = 0, `f` is exactly 1 wherever UV ≠ 0 (and UV = 0 where it
+is 0), so every position is the frictionless kernel's bit for bit.
+
+The step is taken unless `reject_land_steps` is set and its end position
+lies in a land cell; then the particle keeps its position and `nrej` counts
+the rejection. With ε = 0, U_b = 0 and no reject, every position is the
+plain RK4 one bit for bit.
 
 Land seeds are not advected at all: they start in a cell that never
 carries flow, where plain RK4 returns exactly zero, so skipping them
@@ -331,27 +333,51 @@ changes no position at ε = 0 and saves their 9 field samples per step
 (~35 % of the particles).
 
 ```python
-def AdvectionRK4Wall(particle, fieldset, time):
+def AdvectionRK4WallFriction(particle, fieldset, time):
     if particle.land_seed == 0:
         (u1, v1) = fieldset.UV[particle]
         (uw1, vw1) = fieldset.UVwall[particle]
-        u1 = u1 + uw1
-        v1 = v1 + vw1
+        us = u1 * 111120.0 * math.cos(particle.lat * math.pi / 180.0)
+        vs = v1 * 111120.0
+        s = math.sqrt(us * us + vs * vs)
+        f = 0.0
+        if s > fieldset.U_b:
+            f = 1.0 - fieldset.U_b / s
+        u1 = u1 * f + uw1
+        v1 = v1 * f + vw1
         lon1, lat1 = (particle.lon + u1 * 0.5 * particle.dt, particle.lat + v1 * 0.5 * particle.dt)
         (u2, v2) = fieldset.UV[time + 0.5 * particle.dt, particle.depth, lat1, lon1, particle]
         (uw2, vw2) = fieldset.UVwall[time + 0.5 * particle.dt, particle.depth, lat1, lon1, particle]
-        u2 = u2 + uw2
-        v2 = v2 + vw2
+        us = u2 * 111120.0 * math.cos(lat1 * math.pi / 180.0)
+        vs = v2 * 111120.0
+        s = math.sqrt(us * us + vs * vs)
+        f = 0.0
+        if s > fieldset.U_b:
+            f = 1.0 - fieldset.U_b / s
+        u2 = u2 * f + uw2
+        v2 = v2 * f + vw2
         lon2, lat2 = (particle.lon + u2 * 0.5 * particle.dt, particle.lat + v2 * 0.5 * particle.dt)
         (u3, v3) = fieldset.UV[time + 0.5 * particle.dt, particle.depth, lat2, lon2, particle]
         (uw3, vw3) = fieldset.UVwall[time + 0.5 * particle.dt, particle.depth, lat2, lon2, particle]
-        u3 = u3 + uw3
-        v3 = v3 + vw3
+        us = u3 * 111120.0 * math.cos(lat2 * math.pi / 180.0)
+        vs = v3 * 111120.0
+        s = math.sqrt(us * us + vs * vs)
+        f = 0.0
+        if s > fieldset.U_b:
+            f = 1.0 - fieldset.U_b / s
+        u3 = u3 * f + uw3
+        v3 = v3 * f + vw3
         lon3, lat3 = (particle.lon + u3 * particle.dt, particle.lat + v3 * particle.dt)
         (u4, v4) = fieldset.UV[time + particle.dt, particle.depth, lat3, lon3, particle]
         (uw4, vw4) = fieldset.UVwall[time + particle.dt, particle.depth, lat3, lon3, particle]
-        u4 = u4 + uw4
-        v4 = v4 + vw4
+        us = u4 * 111120.0 * math.cos(lat3 * math.pi / 180.0)
+        vs = v4 * 111120.0
+        s = math.sqrt(us * us + vs * vs)
+        f = 0.0
+        if s > fieldset.U_b:
+            f = 1.0 - fieldset.U_b / s
+        u4 = u4 * f + uw4
+        v4 = v4 * f + vw4
         dlon = (u1 + 2 * u2 + 2 * u3 + u4) / 6.0 * particle.dt
         dlat = (v1 + 2 * v2 + 2 * v3 + v4) / 6.0 * particle.dt
         land = fieldset.Land[time + particle.dt, particle.depth, particle.lat + dlat, particle.lon + dlon, particle]
@@ -472,7 +498,7 @@ output_store = pset.ParticleFile(
 
 ```python
 pset.execute(
-    AdvectionRK4Wall,
+    AdvectionRK4WallFriction,
     dt=calc_dt,
     endtime=end_time,
     output_file=output_store,
