@@ -451,7 +451,8 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
       --dependency=afterany:${vs}
   # then by hand once their inputs exist: 034 (bottom + bottom_vs0p8 2019
   # counts), sbatch scripts/036_SeedingMap_job.sh 6000 (surface_stokes 2019
-  # zarrs), 033 unchanged (no trajectory input)
+  # zarrs), 033 after 024e (scripts/033_ShorelineTypeMap_job.sh, its
+  # header example)
   ```
 - Cost of the full rerun: 010 ~1–1.5 d wall clock (24 regime-years,
   ~15–20 k core-hours), downstream chain ~3 h. Quota (`workquota`
