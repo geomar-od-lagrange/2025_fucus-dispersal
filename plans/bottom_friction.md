@@ -159,11 +159,23 @@ tmp_wall_velocity bottom run, 21,800 drifters, 2019-10-18, production
   1 m / 15 m / 0.8 %. The kink adds no visible dt sensitivity; dt 5 min
   stays.
 - **Cost**: execute 70–73 s vs 66 s (3 d, 1 cpu), JIT.
-- **Effect** (180 d, `c_compare_effect.log`; 30 km EPSG:3035 squares,
-  overlap = Σ min(p, q) of the 0–H d occupancy, floor = `bottom` half vs
-  half):
+- **Effect** (water seeds, 14,253; 30 km EPSG:3035 squares; overlap =
+  Σ min(p, q) of the 0–H d occupancy; floor = `bottom` half vs half, rng
+  20261103). Interim, first 60 d of the 180-d runs
+  (`c_compare_effect_60d.log`; the 180-d evaluation, job 24918758, writes
+  `c_compare_effect.log` when `run_wall` / `run_ub49` finish):
 
-RESULTS_EFFECT
+  | | `bottom` | `bottom_ub49` |
+  |---|---|---|
+  | median distance from release, d30 | 24.8 km | 8.4 km |
+  | area holding 90 % of particle-time, 0–30 / 0–60 d | 177,300 / 198,000 km² | 166,500 / 172,800 km² |
+  | overlap with `bottom`, 0–30 / 0–60 d | floor 0.925 / 0.936 | 0.849 / 0.793 |
+
+  Friction shrinks the drift distance by ~2/3 and takes the occupancy
+  overlap 2–3× further from 1 than the sampling floor. The area-90 metric
+  barely moves (−6 / −13 %): it is set by the spread of the ~500 release
+  cells along the whole coast, not by how far drifters travel; drift
+  distance and overlap are the metrics that see friction.
 
 ## Wiring (after the ε = 2 refills have started)
 
