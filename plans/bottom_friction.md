@@ -10,11 +10,12 @@ numbers and draft code in `tmp_bottom_friction/` (untracked), runs in
 ## Start here (state 2026-11-13)
 
 - **Not wired into 010.** The ε = 2 mm/s production rerun runs on the
-  current 010, and its pending refills papermill `010_FucusDispersal.ipynb`
-  when they start: nothing under `notebooks/` or `scripts/` changes until
-  the refill jobs have started.
-- **Decisions (authors, 2026-11-13):** friction in the 010 kernel, per RK4
-  stage, on the interpolated velocity; ε added after the friction. Own
+  current 010: nothing under `notebooks/` or `scripts/` changes until the
+  rerun's 024 stages are through.
+- **Decisions (authors, 2026-11-13):** implementation route approved:
+  friction in the 010 kernel, on the interpolated UV at every RK4 stage
+  (§Design; no field-level scaling, load hook or preprocessed fields); ε
+  added after the friction. Own
   regime `bottom_ub49` beside `bottom` (which stays). One `U_b` = 0.049 m/s,
   no ± members. `velocity_scale` / `bottom_vs0p8` dropped entirely (not a
   yardstick either; bottom-flow uncertainty is discussed separately in the
@@ -177,7 +178,7 @@ tmp_wall_velocity bottom run, 21,800 drifters, 2019-10-18, production
   cells along the whole coast, not by how far drifters travel; drift
   distance and overlap are the metrics that see friction.
 
-## Wiring (after the ε = 2 refills have started)
+## Wiring (after the ε = 2 rerun's 024 stages)
 
 - `notebooks/010_FucusDispersal.py`: as `tmp_bottom_friction/010_wiring.diff`
   — `break_off_speed_mm_s` parameter, `output_regime` suffix `_ub<mm/s>`,
@@ -193,9 +194,8 @@ tmp_wall_velocity bottom run, 21,800 drifters, 2019-10-18, production
   in `024_BuildHexAggregates.py`, `005_BuildWallFields.py`,
   `scripts/005_BuildWallFields_job.sh`; `docs/job_scripts.md`,
   `docs/visualisations.md` (034 row and §), `docs/wall_velocity.md` (ε vs
-  `velocity_scale`, vs0p8 walls); AGENTS.md pipeline bullet for 034. The
-  running 2019 `bottom_vs0p8` 010 job (24918541) and its 024 counts job
-  (24918602) of the ε = 2 rerun produce data nobody reads any more.
+  `velocity_scale`, vs0p8 walls); AGENTS.md pipeline bullet for 034. (The
+  ε = 2 `bottom_vs0p8` jobs were cancelled; no vs0p8 data from that rerun.)
 - `docs/bottom_friction.md` (new), this plan → `plans/done/`.
 - Downstream: `bottom_ub49` is one more regime for 024/024b/024c/024d–g and
   the 025–036 consumers; regime discovery is by directory, check the
