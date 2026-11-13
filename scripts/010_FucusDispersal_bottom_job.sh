@@ -30,16 +30,24 @@ module load singularity/3.11.5
 # a missing tail, and a prefix count cannot express one.
 # Submit via `scripts/submit_010.sh <regime> <year> [n_releases]`, which sizes
 # `--ntasks` from whichever of the two selects the work.
-# `VELOCITY_SCALE` (env, default 1.0) is 010's `velocity_scale`: a uniform
-# factor on the bottom-cell U and V. Off 1.0 the run writes under its own
-# regime, `bottom_vs<scale>` with "." as "p" (0.8 -> Trajectories/bottom_vs0p8/),
-# while still reading the bottom 2D fields.
+# The optional third arg is 010's `break_off_speed_mm_s`, the bed-friction
+# break-off speed U_b (default 0 = no friction). Off 0 the run writes under its
+# own regime, `bottom_ub<U_b>` (49 -> Trajectories/bottom_ub49/), while still
+# reading the bottom 2D fields and walls. Not passed by hand: the per-regime
+# wrapper scripts/010_FucusDispersal_bottom_ub49_job.sh pins it, so the regime
+# name in the script name is the one the run writes (docs/bottom_friction.md).
 # OUTPUT_ROOT and SIMULATION_DAYS (env) override the output root and the run
 # length, for test runs; a test root needs 2d_fields/ and wall_fields/ (links
 # to the real ones do).
 year="${1:-2019}"
 n_releases="${2:-73}"
-velocity_scale="${VELOCITY_SCALE:-1.0}"
+break_off_speed_mm_s="${3:-0}"
+# The output regime, as 010 derives it (for the executed-notebook name only).
+if [ "${break_off_speed_mm_s}" = 0 ]; then
+    output_regime=bottom
+else
+    output_regime=bottom_ub${break_off_speed_mm_s//./p}
+fi
 
 repo_root=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
 output_root=${OUTPUT_ROOT:-/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs}
@@ -88,11 +96,11 @@ run_experiment() {
             ". /opt/conda/etc/profile.d/conda.sh && conda activate base \
             && papermill --cwd notebooks/ \
                 notebooks/010_FucusDispersal.ipynb \
-                notebooks_executed/TrajectoryCalc/Fucus_${start_stem}_${regime}_vs${velocity_scale}.ipynb \
+                notebooks_executed/TrajectoryCalc/Fucus_${start_stem}_${output_regime}.ipynb \
                 -p start_time ${start_time} \
                 -p end_time ${end_time} \
                 -p regime ${regime} \
-                -p velocity_scale ${velocity_scale} \
+                -p break_off_speed_mm_s ${break_off_speed_mm_s} \
                 -p RNG_seed ${rng_seed} \
                 -p calc_dt_mins ${calc_dt_mins} \
                 -p output_dt_mins ${output_dt_mins} \
@@ -113,7 +121,7 @@ run_experiment() {
     return ${rc}
 }
 export -f run_experiment
-export repo_root output_root container calc_dt_mins output_dt_mins particles_per_cell wall_velocity_mm_s velocity_scale
+export repo_root output_root container calc_dt_mins output_dt_mins particles_per_cell wall_velocity_mm_s break_off_speed_mm_s output_regime
 
 # Either the first `n_releases` of the schedule, or exactly the indices in
 # RELEASE_NS. submit_010.sh sizes --ntasks from the same selection, so the
@@ -124,13 +132,12 @@ else
     release_ns=$(seq 0 $((n_releases - 1)))
 fi
 
-echo "year=${year} releases=[${release_ns}] velocity_scale=${velocity_scale} simulation_days=${simulation_days} wall_velocity_mm_s=${wall_velocity_mm_s} output_root=${output_root} SLURM_NTASKS=${SLURM_NTASKS}"
+echo "year=${year} releases=[${release_ns}] break_off_speed_mm_s=${break_off_speed_mm_s} output_regime=${output_regime} simulation_days=${simulation_days} wall_velocity_mm_s=${wall_velocity_mm_s} output_root=${output_root} SLURM_NTASKS=${SLURM_NTASKS}"
 
 # Releases at doy = 1 + 5n over the selected n; a full year is 73 of
 # them (doys 1..361, leap-year-agnostic). Each start_time runs the bottom 2D
-# fields under 010's wall-velocity RK4 with the bottom walls; a bottom
-# slowdown is the uniform VELOCITY_SCALE above (on U and V, not on the wall
-# velocity), not a kernel.
+# fields under 010's wall-velocity RK4 with the bottom walls, with bed
+# friction at break_off_speed_mm_s (on U and V, not on the wall velocity).
 for n in ${release_ns}; do
     doy=$((1 + 5 * n))
     # Derive both times from year+doy; never feed an ISO datetime back into
