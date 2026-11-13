@@ -68,28 +68,49 @@ run_experiment() {
     local rng_seed="$4"
     local start_stem="${start_time//[-:]/}"
 
-    srun -n1 -N1 --exact --no-kill \
-        --cpus-per-task="${SLURM_CPUS_PER_TASK}" \
-        --mem-per-cpu="${SLURM_MEM_PER_CPU}M" \
-        singularity run -B /sfs -B /gxfs_work -B $PWD:/work --pwd /work \
-        ${container} bash -c \
-        ". /opt/conda/etc/profile.d/conda.sh && conda activate base \
-        && papermill --cwd notebooks/ \
-            notebooks/010_FucusDispersal.ipynb \
-            notebooks_executed/TrajectoryCalc/Fucus_${start_stem}_${regime}_vs${velocity_scale}.ipynb \
-            -p start_time ${start_time} \
-            -p end_time ${end_time} \
-            -p regime ${regime} \
-            -p velocity_scale ${velocity_scale} \
-            -p RNG_seed ${rng_seed} \
-            -p calc_dt_mins ${calc_dt_mins} \
-            -p output_dt_mins ${output_dt_mins} \
-            -p particles_per_cell ${particles_per_cell} \
-            -p wall_velocity_mm_s ${wall_velocity_mm_s} \
-            -p reject_land_steps True \
-            -p data_root ${repo_root}/data \
-            -p output_root ${output_root} \
-            -k python"
+    # Kernel start race: jupyter_client reserves the kernel's ZMQ ports by
+    # binding port 0 and closing it, so a kernel starting on the same node in
+    # that window can take one ("ZMQError: Address already in use", "Kernel died
+    # before replying to kernel_info"). 9 of 1,526 releases died this way on
+    # 2026-11-13 when all tasks of a node started in the same second. A random
+    # start offset makes the race rare; the retry covers the rest. Only failures
+    # in the first 5 min are retried: a late failure (OOM, a numerical error)
+    # would fail again hours later.
+    sleep $(( RANDOM % 30 ))
+    local attempt t0 rc=1
+    for attempt in 1 2 3; do
+        t0=${SECONDS}
+        srun -n1 -N1 --exact --no-kill \
+            --cpus-per-task="${SLURM_CPUS_PER_TASK}" \
+            --mem-per-cpu="${SLURM_MEM_PER_CPU}M" \
+            singularity run -B /sfs -B /gxfs_work -B $PWD:/work --pwd /work \
+            ${container} bash -c \
+            ". /opt/conda/etc/profile.d/conda.sh && conda activate base \
+            && papermill --cwd notebooks/ \
+                notebooks/010_FucusDispersal.ipynb \
+                notebooks_executed/TrajectoryCalc/Fucus_${start_stem}_${regime}_vs${velocity_scale}.ipynb \
+                -p start_time ${start_time} \
+                -p end_time ${end_time} \
+                -p regime ${regime} \
+                -p velocity_scale ${velocity_scale} \
+                -p RNG_seed ${rng_seed} \
+                -p calc_dt_mins ${calc_dt_mins} \
+                -p output_dt_mins ${output_dt_mins} \
+                -p particles_per_cell ${particles_per_cell} \
+                -p wall_velocity_mm_s ${wall_velocity_mm_s} \
+                -p reject_land_steps True \
+                -p data_root ${repo_root}/data \
+                -p output_root ${output_root} \
+                -k python" && return 0
+        rc=$?
+        if (( SECONDS - t0 > 300 )); then
+            echo "FAIL ${start_stem} ${regime} rc=${rc} after $(( SECONDS - t0 )) s, not retried" >&2
+            return ${rc}
+        fi
+        echo "attempt ${attempt} failed at start (rc=${rc}) ${start_stem} ${regime}" >&2
+        sleep $(( RANDOM % 20 + 5 ))
+    done
+    return ${rc}
 }
 export -f run_experiment
 export repo_root output_root container calc_dt_mins output_dt_mins particles_per_cell wall_velocity_mm_s velocity_scale

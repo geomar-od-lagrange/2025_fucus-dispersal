@@ -170,8 +170,12 @@ RELEASE_NS=0,7,12,18,24,31,37,43,49,55,61,67 VELOCITY_SCALE=0.8 \
 practice — a node dying under the job, and a jupyter kernel losing the race for
 an ephemeral port when 73 of them start at once on a handful of nodes
 (`zmq.error.ZMQError: Address already in use`, then `Kernel died before replying
-to kernel_info`). Both are transient and per-step, not per-release-date, so the
-fix is to rerun exactly the lost indices.
+to kernel_info`). Both are transient and per-step, not per-release-date.
+`run_experiment` covers the kernel race itself: a random 0–29 s start offset
+makes it rare, and a release whose papermill exits within its first 5 min is
+retried up to 3 times. A later failure (OOM, a numerical error) is not retried,
+since it would fail again hours in. What remains — dead nodes, late failures —
+is refilled by rerunning exactly the lost indices.
 
 A hole sits in the middle of the schedule, so `n_releases` — a prefix count —
 cannot select it. `RELEASE_NS` takes the indices instead, and `--ntasks` follows
