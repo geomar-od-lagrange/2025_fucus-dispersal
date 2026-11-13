@@ -30,6 +30,14 @@ there. Findings below (2026-10-27/28, all from the 2019 sample, scratch in
   before the post-rerun figure pass — PNGs it renders now, and the R3 push
   to `paper/`, show pre-fix numbers). R3 adds a 029 stranded-curve export
   read by 035: run 026 and 029 before 035.
+- **Decisions (authors, 2026-11-13):** ε = 2 mm/s, v3 walls (all steps of
+  the forcing period + thin-wall rule) + reject-step kernel. No ε
+  sensitivity in the paper. Go for step 3 and launch the full rerun this
+  weekend (NESH base has ~2,400 idle cores spread over mix nodes; use many
+  small-task jobs). Disk: keep ≥ 1 T headroom under the 29 T soft quota
+  (i.e. ≤ 28 T used); delete `tmp_*` outputs, and delete old ε = 0
+  trajectories before the rerun only where needed to stay under that,
+  otherwise after the new ones exist.
 - **Held until after the fix:** dilution colour top (1e-1 vs 1e-2), the ¼-hex
   dilution area floor, the zero-water hex remap (G6) — see
   [figure_review_r2.md](figure_review_r2.md).
