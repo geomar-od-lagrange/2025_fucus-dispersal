@@ -41,6 +41,19 @@ there. Findings below (2026-10-27/28, all from the 2019 sample, scratch in
 - **Step 3 (wiring into the pipeline), in progress 2026-11-13:** design in
   §Fix → "Step 3: production integration". Regimes: surface_stokes, bottom,
   bottom_vs0p8 (plain `surface` is retired).
+- **Rerun launched 2026-11-13 18:55** (ε = 2 mm/s, 15G per task for both
+  regimes): 010 surface_stokes 2016–2025 = 24918521–30, bottom 2016–2025 =
+  24918531–40, bottom_vs0p8 2019 = 24918541 (log
+  `<outputs>/logs/010/launch_20261113.log`). Old ε = 0 trajectories deleted;
+  old `BeachingForcing/` and 024 stores moved to `*_eps0` (024a key kept).
+  Chain stage A (024/024b/024c per regime-year) queued, chain log
+  `<outputs>/logs/chain/chain_20261113T185626.log`; 024d (B) needs zarrs on
+  disk, so `resume-chain-eps2` (24918604, afterany on all surface_stokes 010
+  jobs) reruns the identical chain command to queue B–E. bottom_vs0p8: 024
+  counts 24918602 only (024b/c names collided; 034 needs counts only). By
+  hand after: holes check (missing releases → `RELEASE_NS=… submit_010.sh`),
+  034, 036, 033 after 024e, T4 checks (see step 3 report), figure/paper
+  refresh.
 - **Held until after the fix:** dilution colour top (1e-1 vs 1e-2), the ¼-hex
   dilution area floor, the zero-water hex remap (G6) — see
   [figure_review_r2.md](figure_review_r2.md).
