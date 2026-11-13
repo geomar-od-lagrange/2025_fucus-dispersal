@@ -9,17 +9,22 @@ numbers and draft code in `tmp_bottom_friction/` (untracked), runs in
 
 ## Start here (state 2026-11-13)
 
-- **Not wired into 010.** The ε = 2 mm/s production rerun is running on
-  the current 010; nothing under `notebooks/` or `scripts/` changes until
-  it and its refills are done.
-- Design chosen (below): friction in the 010 kernel, per RK4 stage, on the
-  interpolated velocity; ε added after the friction (authors, fixed).
-- Prototype done: JIT kernel, runner, U_b = 0 identity (bit for bit), 3-d
-  smoke, dt check, 180-d effect runs (results in §Prototype results).
-- Next: authors answer §Open questions → wire into 010 (draft:
-  `tmp_bottom_friction/010_wiring.diff`) + `docs/bottom_friction.md` →
-  review agent → 010 sweep for the friction regime(s) → 024 chain → 034-type
-  comparison.
+- **Not wired into 010.** The ε = 2 mm/s production rerun runs on the
+  current 010, and its pending refills papermill `010_FucusDispersal.ipynb`
+  when they start: nothing under `notebooks/` or `scripts/` changes until
+  the refill jobs have started.
+- **Decisions (authors, 2026-11-13):** friction in the 010 kernel, per RK4
+  stage, on the interpolated velocity; ε added after the friction. Own
+  regime `bottom_ub49` beside `bottom` (which stays). One `U_b` = 0.049 m/s,
+  no ± members. `velocity_scale` / `bottom_vs0p8` dropped entirely (not a
+  yardstick either; bottom-flow uncertainty is discussed separately in the
+  paper). Full 2016–2025 sweep, after the ε = 2 rerun.
+- Prototype done: JIT kernel, runner, U_b = 0 identity (bit for bit), JIT
+  = Scipy, 3-d smoke, dt check, 180-d effect vs `bottom` and its
+  half-vs-half floor (§Prototype results).
+- Next: §Wiring (draft: `tmp_bottom_friction/010_wiring.diff`) +
+  `docs/bottom_friction.md` → review agent → test 5 → 2016–2025 sweep of
+  `bottom_ub49` → 024 chain → comparison figure/numbers.
 
 ## Design: friction in the 010 kernel
 
@@ -44,12 +49,10 @@ then the RK4 sum, `Land` reject and land-seed skip unchanged.
 - **Units.** `fieldset.UV` returns deg/s; `|U|` is rebuilt in m/s with
   Parcels' converter factors (`1000·1.852·60`, × cos lat for U) at the
   stage latitude. One sample per stage, no `applyConversion=False` resample.
-- **Parameters.** `U_b` is a fieldset constant (`add_constant`), so the
-  U_b members (0.044 / 0.049 / 0.054) cost CPU only. 010 parameter
-  `break_off_speed_mm_s` (0 = off); output regime `<regime>_ub<mm/s>`
-  (`bottom_ub49`), composable with `_vs<scale>`.
-- **velocity_scale** stays a field scaling factor, applied before the
-  friction (it scales the flow the drifter feels).
+- **Parameters.** `U_b` is a fieldset constant (`add_constant`). 010
+  parameter `break_off_speed_mm_s` (0 = off); output regime
+  `<regime>_ub<mm/s>` = `bottom_ub49`; `regime` still picks the 2D fields
+  and walls (`bottom`).
 - **U_b = 0 is the current kernel bit for bit** (`f = 1 − 0/s = 1.0`
   exactly; `f = 0` only where `u = v = 0`), so one kernel serves all
   regimes and the identity is testable.
@@ -60,14 +63,14 @@ then the RK4 sum, `Land` reject and land-seed skip unchanged.
 
 ### Alternatives (rejected)
 
-- Field scaling factor (`set_scaling_factor`): linear only; expresses
-  `bottom_vs0p8`, cannot express a shift + dead zone.
+- Field scaling factor (`set_scaling_factor`): linear only (`u = αU`);
+  cannot express a shift + dead zone.
 - Hook on chunk loading (`computeTimeChunk` / `rescale_and_set_minmax`):
   no public hook in Parcels 3.0.6 → subclass or monkey-patch (AGENTS.md);
   plus the face-value problems below.
-- Preprocessed bottom c_files with `f(|U_face|)·U_face`: +2.0 TB per U_b
-  member (bottom c_files total 2.0 TB; three members 6 TB against ≤ 28 T
-  of 29 T). A C-grid face carries one component, so `|U|` at a face needs
+- Preprocessed bottom c_files with `f(|U_face|)·U_face`: +2.0 TB (the
+  bottom c_files total 2.0 TB; quota ≤ 28 T of 29 T), and again for any
+  other U_b. A C-grid face carries one component, so `|U|` at a face needs
   a 4-face stencil for the tangential part (a modelling choice of its
   own). The dead zone zeroes every sub-threshold face, creating zero-flux
   faces in open water — the exact mechanism that pinned drifters at the
@@ -98,8 +101,9 @@ then the RK4 sum, `Land` reject and land-seed skip unchanged.
 - `U` in the lab model is the flow felt by the object near the bed; the
   forcing is the deepest model layer's mean velocity (layer thickness
   varies; no log-layer correction).
-- `U_b` ± 0.005 m/s (lab fit, χ² = 1.0 at 2 dof); one flume, one specimen
-  class.
+- `U_b` = 0.049 ± 0.005 m/s (lab fit, χ² = 1.0 at 2 dof; one flume); the
+  run uses the central value only (± 5 mm/s moves the numbers below by
+  ~4 points).
 - No hysteresis (one μ for static and sliding contact).
 - Kink at `|U| = U_b` (continuous `u`, discontinuous derivative): RK4
   drops to low order on steps that cross it; checked with dt 2.5 vs 5 min
@@ -114,7 +118,25 @@ each month, 24 steps, wet T-cells (face-averaged speed). Lagrangian: the
 `|U|` every 6 h over 180 d. "rest" = share of samples with `|U| ≤ U_b`;
 "path kept" = Σ max(|U| − U_b, 0) / Σ |U|.
 
-RESULTS_Q4
+| sample | n | median \|U\| | rest at U_b 44 / 49 / 54 mm/s | path kept at 44 / 49 / 54 |
+|---|---|---|---|---|
+| Eulerian, fine wet cells | 35.3 M | 0.103 m/s | 21 / 24 / 27 % | 71 / 69 / 66 % |
+| Eulerian, coarse wet cells outside fine | 9.7 M | 0.074 m/s | 35 / 38 / 40 % | 70 / 67 / 65 % |
+| Lagrangian, drifters 0–180 d | 10.3 M | 0.035 m/s | 60 / 65 / 69 % | 35 / 31 / 27 % |
+| … 0–30 / 30–90 / 90–180 d | | 0.037 / 0.038 / 0.032 | 64 / 61 / 68 % (49) | 31 / 33 / 29 % (49) |
+
+Per drifter, share of time at rest (U_b 49 mm/s), 10 / 50 / 90 %
+quantiles: 47 / 63 / 88 %.
+
+- The drifters sit in much slower bottom water than the grid average
+  (released on the coast, collect in slow places): the median bottom speed
+  they see is *below* U_b. Friction stops them ~2/3 of the time and keeps
+  ~1/3 of their along-flow path length. The U_b ± 5 mm/s range moves
+  "rest" and "path kept" by ± 4 points.
+- Bias of the estimate: positions from the no-friction run; with friction
+  drifters stay nearer their release (smoke: median 3-d distance 4.3 →
+  0.7 km). Not a small effect: see §Prototype results for how it compares
+  with the sampling floor.
 
 ## Prototype results
 
@@ -123,18 +145,49 @@ tmp_wall_velocity bottom run, 21,800 drifters, 2019-10-18, production
 `wall_fields/walls_*_bottom.nc`, ε = 2 mm/s, reject on), `s_launch.sh`
 (base partition, 1 cpu / 15G per job), `c_compare.py`.
 
-RESULTS_PROTO
+- **Identity** (`c_compare_smoke.log`): friction kernel at U_b = 0 vs
+  010's `AdvectionRK4Wall` verbatim, 3 d, 21,800 drifters: lon, lat, nrej
+  identical bit for bit.
+- **JIT = Python** (`c_compare_mode.log`): friction kernel at 49 mm/s,
+  JIT vs Scipy, 109 drifters × 2 d: max separation 0.3 mm.
+- **Smoke** (3 d, 14,253 water seeds): median distance from release
+  4.33 km (no friction) → 0.72 km (U_b 49); hours with < 1 m displacement
+  0 → 43 %; 6 % of drifters never move > 1 m in any hour; rejected land
+  steps 307 → 12.
+- **dt** (`c_compare_dt.log`; dt 2.5 vs 5 min, position separation after
+  10 d): no friction median 7 m / p90 199 m / 5.1 % > 1 km; friction
+  1 m / 15 m / 0.8 %. The kink adds no visible dt sensitivity; dt 5 min
+  stays.
+- **Cost**: execute 70–73 s vs 66 s (3 d, 1 cpu), JIT.
+- **Effect** (180 d, `c_compare_effect.log`; 30 km EPSG:3035 squares,
+  overlap = Σ min(p, q) of the 0–H d occupancy, floor = `bottom` half vs
+  half):
 
-## Open questions (authors)
+RESULTS_EFFECT
 
-1. Does friction replace `bottom` (the paper's bottom regime becomes
-   `bottom_ub49`) or run beside it as a sensitivity member?
-2. U_b members: only 0.049, or 0.044 / 0.054 too (each a full bottom
-   sweep, ~same CPU and disk as `bottom`)?
-3. Keep `bottom_vs0p8` as the second bottom-uncertainty member, and does
-   friction combine with `velocity_scale` (scale, then friction) in any
-   member?
-4. Full 2016–2025 sweep or one year (2019, as `bottom_vs0p8`)?
+## Wiring (after the ε = 2 refills have started)
+
+- `notebooks/010_FucusDispersal.py`: as `tmp_bottom_friction/010_wiring.diff`
+  — `break_off_speed_mm_s` parameter, `output_regime` suffix `_ub<mm/s>`,
+  `add_constant("U_b", …)`, kernel `AdvectionRK4WallFriction` (all
+  regimes; U_b = 0 is the current kernel bit for bit), `import math`;
+  `velocity_scale` parameter and the "Velocity scale" cell removed. Sync
+  `.md` / `.ipynb` (jupytext skill).
+- `scripts/010_FucusDispersal_bottom_job.sh`, `scripts/submit_010.sh`:
+  `VELOCITY_SCALE` → `BREAK_OFF_SPEED_MM_S` (env, default 0; 49 →
+  `Trajectories/bottom_ub49/`), executed-notebook name.
+- `bottom_vs0p8` follow-through: `notebooks/034_BottomSlowdown.*` (built on
+  it: retire, or repoint to `bottom` vs `bottom_ub49` — authors), comments
+  in `024_BuildHexAggregates.py`, `005_BuildWallFields.py`,
+  `scripts/005_BuildWallFields_job.sh`; `docs/job_scripts.md`,
+  `docs/visualisations.md` (034 row and §), `docs/wall_velocity.md` (ε vs
+  `velocity_scale`, vs0p8 walls); AGENTS.md pipeline bullet for 034. The
+  running 2019 `bottom_vs0p8` 010 job (24918541) and its 024 counts job
+  (24918602) of the ε = 2 rerun produce data nobody reads any more.
+- `docs/bottom_friction.md` (new), this plan → `plans/done/`.
+- Downstream: `bottom_ub49` is one more regime for 024/024b/024c/024d–g and
+  the 025–036 consumers; regime discovery is by directory, check the
+  notebooks that list regimes explicitly.
 
 ## Test plan
 
@@ -143,11 +196,12 @@ RESULTS_PROTO
 2. Smoke U_b = 0.049, 3 d (done).
 3. dt 2.5 vs 5 min, 10 d, with and without friction (done).
 4. Effect size, 180 d, one release: median distance from release; area
-   holding 90 % of particle-time; overlap of 0–H d occupancy vs `bottom`,
-   against `bottom_vs0p8` vs `bottom` and the `bottom` half-vs-half floor
-   (done, prototype numbers above; 30 km squares, not the 024a hexes).
+   holding 90 % of particle-time; overlap of 0–H d occupancy with `bottom`
+   against the `bottom` half-vs-half floor (done, prototype numbers above;
+   30 km squares, not the 024a hexes).
 5. After wiring: 010 via papermill at `break_off_speed_mm_s = 0` on one
    release = the current production zarr bit for bit; at 49 = the
    prototype zarr bit for bit.
-6. Paper numbers: 034-type comparison (`bottom`, `bottom_ub49`,
-   `bottom_vs0p8`) from the 024 counts store.
+6. Paper numbers: the same two headline metrics (area holding 90 % of
+   particle-time per horizon, occupancy overlap vs the half-vs-half floor)
+   for `bottom` vs `bottom_ub49` from the 024 counts store, all years.
