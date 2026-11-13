@@ -51,7 +51,7 @@ there. Findings below (2026-10-27/28, all from the 2019 sample, scratch in
   disk, so `resume-chain-eps2` (24918604, afterany on all surface_stokes 010
   jobs) reruns the identical chain command to queue B–E. bottom_vs0p8: 024
   counts 24918602 only (024b/c names collided; 034 needs counts only). By
-  hand after: (refills 2026-11-13 20:10: 9 releases died at kernel start,
+  hand after: (resume job replaced 2026-11-13 21:50 by 24918817, now with explicit REGIME_YEARS so it doesn't depend on scontrol still knowing the 010 jobs; refills 2026-11-13 20:10: 9 releases died at kernel start,
   ZMQ port collision on srp nodes → 24918676–83; the matching 024/024b jobs
   and resume-chain now also wait on them via `scontrol update`) holes check (missing releases → `RELEASE_NS=… submit_010.sh`),
   034, 036, 033 after 024e, T4 checks (see step 3 report), figure/paper
