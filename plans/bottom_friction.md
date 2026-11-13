@@ -58,7 +58,7 @@ then the RK4 sum, `Land` reject and land-seed skip unchanged.
   regimes and the identity is testable.
 - **JIT.** `math.sqrt`, `math.cos`, `math.pi` and an `if` are plain C;
   compiles in the production container.
-- **Cost.** +5–10 % 010 runtime (3-d smoke: 70–73 s vs 66 s execute,
+- **Cost.** ≤ 10 % 010 runtime (3-d smoke 70–73 s vs 66 s; 180 d 3798 s for both,
   21,800 drifters); no new data.
 
 ### Alternatives (rejected)
@@ -157,24 +157,22 @@ tmp_wall_velocity bottom run, 21,800 drifters, 2019-10-18, production
   10 d): no friction median 7 m / p90 199 m / 5.1 % > 1 km; friction
   1 m / 15 m / 0.8 %. The kink adds no visible dt sensitivity; dt 5 min
   stays.
-- **Cost**: execute 70–73 s vs 66 s (3 d, 1 cpu), JIT.
-- **Effect** (water seeds, 14,253; 30 km EPSG:3035 squares; overlap =
-  Σ min(p, q) of the 0–H d occupancy; floor = `bottom` half vs half, rng
-  20261103). Interim, first 60 d of the 180-d runs
-  (`c_compare_effect_60d.log`; the 180-d evaluation, job 24918758, writes
-  `c_compare_effect.log` when `run_wall` / `run_ub49` finish):
+- **Cost (3 d)**: execute 70–73 s vs 66 s (1 cpu, JIT; job-to-job noise).
+- **Effect** (`c_compare_effect.log`; 180-d runs `run_wall` / `run_ub49`,
+  14,253 water seeds; 30 km EPSG:3035 squares; overlap = Σ min(p, q) of
+  the 0–H d occupancy; floor = `bottom` half vs half, rng 20261103):
 
-  | | `bottom` | `bottom_ub49` |
-  |---|---|---|
-  | median distance from release, d30 | 24.8 km | 8.4 km |
-  | area holding 90 % of particle-time, 0–30 / 0–60 d | 177,300 / 198,000 km² | 166,500 / 172,800 km² |
-  | overlap with `bottom`, 0–30 / 0–60 d | floor 0.925 / 0.936 | 0.849 / 0.793 |
+  | H (d) | 30 | 60 | 90 | 180 |
+  |---|---|---|---|---|
+  | median distance from release at H, `bottom` / `bottom_ub49` (km) | 24.8 / 8.4 | 42.6 / 16.3 | 51.1 / 24.1 | 68.3 / 32.9 |
+  | area holding 90 % of particle-time 0–H, `bottom` / `bottom_ub49` (10³ km²) | 177 / 167 | 198 / 173 | 205 / 177 | 201 / 178 |
+  | overlap `bottom_ub49` vs `bottom`, 0–H | 0.849 | 0.793 | 0.751 | 0.719 |
+  | floor, `bottom` half vs half, 0–H | 0.925 | 0.936 | 0.940 | 0.946 |
 
-  Friction shrinks the drift distance by ~2/3 and takes the occupancy
-  overlap 2–3× further from 1 than the sampling floor. The area-90 metric
-  barely moves (−6 / −13 %): it is set by the spread of the ~500 release
-  cells along the whole coast, not by how far drifters travel; drift
-  distance and overlap are the metrics that see friction.
+  The area-90 metric moves little (−6 to −14 %): the spread of the ~500
+  release cells along the coast sets it. Drift distance and overlap are
+  the metrics that see the friction.
+- **Cost (180 d)**: execute 3798 s for both kernels (1 cpu each).
 
 ## Wiring (done; as built in docs/bottom_friction.md)
 
