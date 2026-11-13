@@ -23,18 +23,24 @@
 # means 85 allocations queueing independently behind the same dependency, for
 # units that are minutes long.
 #
-# The matrix:
+# The matrix, at the default regimes (surface_stokes, bottom, bottom_ub49):
 #
 #   025, 026, 026a, 026b  (surface_stokes production member,
-#         bottom unweighted)                              x 5 seasons   40
-#   027  x {surface_stokes, bottom}                       x 5 seasons   10
+#         bottom and bottom_ub49 unweighted)              x 5 seasons   60
+#   027  x {surface_stokes, bottom, bottom_ub49}          x 5 seasons   15
 #   028  (surface_stokes unweighted, surface_stokes production member,
-#         bottom unweighted)                              x 5 seasons   15
+#         bottom and bottom_ub49 unweighted)              x 5 seasons   20
 #   029, 030  surface_stokes, production member           x 5 seasons   10
 #   031  surface_stokes, every 024e member on disk        x 5 seasons    5
-#   035  both regimes in one figure (026's, 029's CSVs)   x 5 seasons    5
+#   034  bottom vs bottom_ub49 in one figure              x 5 seasons    5
+#   035  surface_stokes and bottom in one figure
+#        (026's, 029's CSVs)                              x 5 seasons    5
 #                                                                     ----
-#                                                                       85
+#                                                                      120
+#
+# Every stage honours $REGIMES: a regime-specific stage runs only for the
+# regimes listed, 029/030/031/035 only when surface_stokes is, 034 only when
+# bottom_ub49 is (it reads the bottom counts as its reference).
 #
 # 035 draws the 026 area exports of both regimes and the 029 stranding curve
 # of surface_stokes, so the 035 units run as a
@@ -44,8 +50,8 @@
 # `surface` (no Stokes) is not produced further (plans/analysis_wrapup.md §0),
 # and only surface_stokes has 024d sidecars, hence the beaching/survival stages
 # and the weighted 025/026/026a/026b/028 are Stokes-only; the heatmap family
-# shows surface_stokes survival-weighted (024f) and bottom unweighted (024
-# counts), both over the same max_age_days window.
+# shows surface_stokes survival-weighted (024f) and the bottom regimes
+# unweighted (024 counts), all over the same max_age_days window.
 #
 # Nothing here names a release year: every consumer pools whatever release
 # years the HexAggregates store holds, so the figures span the years that
@@ -90,8 +96,8 @@ hex_radius=${HEX_RADIUS:-6000}
 # The rate-model member the study reports (plans/analysis_wrapup.md §0); the
 # other members only appear in the 031 sweep.
 production_member=${PRODUCTION_MEMBER:-step_wc0p1_ts3_tcinf_tf1_tw0}
-stages=${STAGES:-025 026 026a 026b 027 028 029 030 031 035}
-regimes=${REGIMES:-surface_stokes bottom}
+stages=${STAGES:-025 026 026a 026b 027 028 029 030 031 034 035}
+regimes=${REGIMES:-surface_stokes bottom bottom_ub49}
 seasons=${SEASONS:-ALL DJF MAM JJA SON}
 logdir=${output_root}/logs/025-031
 mkdir -p "${logdir}"
@@ -149,6 +155,8 @@ run_one() {
         031)  job=scripts/031_BeachingSweep_job.sh
               args=("${regime}" "${hex_radius}" "$(beaching_members_csv)" "" \
                     "${production_member}" "${season}") ;;
+        034)  job=scripts/034_BottomFriction_job.sh
+              args=("${season}" "${hex_radius}") ;;
         035)  job=scripts/035_AreaTimeSeries_job.sh
               args=("${season}" "${hex_radius}" "${member}") ;;
         *)    echo "FAIL ${stage} ${regime} ${season} ${member:-unweighted} (unknown stage)"
@@ -198,6 +206,8 @@ export -f run_one
 # replaces it wholesale.
 list_work() {
     local stage regime season member
+    # Whether $1 is one of the listed regimes.
+    has_regime() { [[ " ${regimes} " == *" $1 "* ]]; }
     if [ -n "${WORK_LIST:-}" ]; then
         grep -v "^[[:blank:]]*\(#\|$\)" "${WORK_LIST}"
         return
@@ -221,24 +231,37 @@ list_work() {
                     done
                 done ;;
             028)
-                for season in ${seasons}; do
-                    # surface_stokes twice: the unweighted 024c matrix and the
-                    # survival-weighted 024g one, on one population.
-                    echo "028 surface_stokes ${season} -"
-                    echo "028 surface_stokes ${season} ${production_member}"
-                    echo "028 bottom ${season} -"
+                for regime in ${regimes}; do
+                    for season in ${seasons}; do
+                        echo "028 ${regime} ${season} -"
+                        # surface_stokes twice: the unweighted 024c matrix and
+                        # the survival-weighted 024g one, on one population.
+                        if [ "${regime}" = surface_stokes ]; then
+                            echo "028 ${regime} ${season} ${production_member}"
+                        fi
+                    done
                 done ;;
             029|030)
+                has_regime surface_stokes || continue
                 for season in ${seasons}; do
                     echo "${stage} surface_stokes ${season} ${production_member}"
                 done ;;
             031)
+                has_regime surface_stokes || continue
                 for season in ${seasons}; do
                     echo "031 surface_stokes ${season} -"
+                done ;;
+            034)
+                # bottom_ub49 against bottom in one figure (both fixed in the
+                # job script); bottom's counts are read, not rebuilt.
+                has_regime bottom_ub49 || continue
+                for season in ${seasons}; do
+                    echo "034 bottom_ub49 ${season} -"
                 done ;;
             035)
                 # Both regimes in one figure: surface_stokes at the production
                 # member's 026 tag, bottom unweighted (fixed in the job script).
+                has_regime surface_stokes || continue
                 for season in ${seasons}; do
                     echo "035 both ${season} ${production_member}"
                 done ;;

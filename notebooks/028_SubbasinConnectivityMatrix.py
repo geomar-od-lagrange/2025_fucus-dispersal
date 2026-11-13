@@ -153,6 +153,7 @@ REGIME_LABELS = {
     "surface": "surface",
     "surface_stokes": "surface + Stokes drift",
     "bottom": "bottom",
+    "bottom_ub49": "bottom, bed friction",
 }
 SEASON_LABELS = {"ALL": "all seasons"}
 title_context = ", ".join([

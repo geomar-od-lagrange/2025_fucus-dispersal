@@ -15,15 +15,17 @@
 # ---
 
 # %% [markdown]
-# # Bottom slowdown: spread at 0.8× bottom velocity
+# # Bottom friction: spread with and without bed friction
 #
-# How much does the bottom-regime dispersal footprint shrink if the bottom-cell
-# current is assumed 20 % slower? Compares the 1× `bottom` regime against the
-# `bottom_vs0p8` variant (010 with `velocity_scale = 0.8` on the bottom
-# current, same kernel and wall velocity, no drag model) on the **same release doys of one year** —
-# the variant is only run for one release per month, so the 1× side is
-# restricted to those doys too. Reads the 024 counts partitions and the 024a
-# key; parquet only, no Dask.
+# How much does bed friction shrink the bottom-regime dispersal footprint?
+# Compares the frictionless `bottom` regime against `bottom_ub49`, the same
+# 010 runs with the lab bed-friction model (drift `max(|U| − U_b, 0)` along
+# the bottom current, at rest below the break-off speed U_b = 49 mm/s;
+# docs/bottom_friction.md), pooled over one release season of the
+# `release_years`, as the other consumers pool. Only the releases present in
+# **both** regimes enter (per year, the common release doys), so the two
+# sides always describe the same release set. Reads the 024 counts
+# partitions and the 024a key; parquet only, no Dask.
 #
 # **Footprint metric** (the R1 area of plans/done/horizons_and_weighting.md D6):
 # for each cumulative elapsed-time horizon `T` (every `age_bin` whose window
@@ -32,10 +34,12 @@
 # share of particle-time; the area holding a share `q` is the water area
 # summed up to the crossing hex, the crossing hex taken fractionally (a 6 km
 # hex is 93.5 km², so whole hexes would quantise small-`T` areas).
-# `length_km = sqrt(area_km2)` is the side of a square of that area.
+# `length_km = sqrt(area_km2)` is the side of a square of that area. Pooled
+# over the release years and per release year, for the interannual range.
 
 # %%
 import itertools
+import re
 from pathlib import Path
 
 import geopandas as gpd
@@ -60,23 +64,28 @@ data_root = "../data"
 output_root = "../output"
 # Hex radius of the store (built by 024a/024). Must match the files on disk.
 hex_radius = 6000
-# Release year compared; both regimes' counts partitions for it must exist.
-year = 2019
-# Release doys compared, restricted on both sides. Default: the first
-# doy = 1 + 5n of every month, the set the 0.8x variant was run for.
-release_doys_csv = "1,36,61,91,121,156,186,216,246,276,306,336"
-# Reference (1x) and variant regime names, as in Trajectories/<regime>/.
+# Reference (frictionless) and bed-friction regime names, as in
+# Trajectories/<regime>/.
 regime_ref = "bottom"
-regime_var = "bottom_vs0p8"
-# Cumulative elapsed-time horizons, in days; multiples of age_bin_days.
-time_horizons_days_csv = "30,60,90,180"
+regime_var = "bottom_ub49"
+# Release season: DJF, MAM, JJA, SON or ALL (every month).
+season = "ALL"
+# Release years pooled: "first-last" (inclusive) or one year ("2019").
+# Partitions of other years stay on disk unopened (2025 is partial).
+release_years = "2016-2024"
 # Age-bin granularity of the counts store (must match 024).
 age_bin_days = 10
+# Reduction window (days): only ages in [0, max_age_days) are read, as in
+# 026. A multiple of age_bin_days.
+max_age_days = 180
+# Cumulative elapsed-time horizons, in days; multiples of age_bin_days and
+# ≤ max_age_days.
+time_horizons_days_csv = "30,60,90,180"
 # Shares of particle-time whose holding area is reported. 0.9 only: the 0.5
 # area is set by particles stalling in a few coastal hexes
 # (docs/visualisations.md).
 quantiles_csv = "0.9"
-# Horizon of the map pair; a multiple of age_bin_days.
+# Horizon of the map pair; a multiple of age_bin_days, ≤ max_age_days.
 map_horizon_days = 90
 # Isobath to overlay on the maps, in metres of BSH H0 (floor position, see
 # docs/h0_semantics.md). Fucus vesiculosus no longer grows below ~3 m.
@@ -101,25 +110,46 @@ extent_lat_max = 66.0
 
 # %% [markdown]
 # # Parse parameters
+#
+# `SEASON_MONTHS` lives here rather than in the parameters cell because
+# papermill only injects primitives; `season` selects one entry.
 
 # %%
+SEASON_MONTHS = {
+    "DJF": [12, 1, 2],
+    "MAM": [3, 4, 5],
+    "JJA": [6, 7, 8],
+    "SON": [9, 10, 11],
+    "ALL": list(range(1, 13)),
+}
+if season not in SEASON_MONTHS:
+    raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
+season_months = SEASON_MONTHS[season]
+first_year, _, last_year = release_years.partition("-")
+analysis_years = range(int(first_year), int(last_year or first_year) + 1)
+assert len(analysis_years), f"release_years {release_years!r} is an empty range"
+
 output_root = Path(output_root)
 data_root = Path(data_root)
 store_root = output_root / "HexAggregates"
-release_doys = sorted(int(x) for x in release_doys_csv.split(",") if x)
 time_horizons_days = [int(x) for x in time_horizons_days_csv.split(",") if x]
 quantiles = [float(x) for x in quantiles_csv.split(",") if x]
 regimes = [regime_ref, regime_var]
 # Plain-language figure titles; the run keys stay in filenames and prints.
 REGIME_LABELS = {
     "bottom": "bottom",
-    "bottom_vs0p8": "bottom, velocity × 0.8",
+    "bottom_ub49": "bottom, bed friction",
 }
+assert max_age_days % age_bin_days == 0, (
+    f"max_age_days {max_age_days} d is not a multiple of age_bin_days {age_bin_days} d"
+)
 for h in [*time_horizons_days, map_horizon_days]:
     assert h % age_bin_days == 0, (
         f"horizon {h} d is not a multiple of age_bin_days {age_bin_days} d; "
         f"it would cut a bin in half"
     )
+    assert 0 < h <= max_age_days, f"horizon {h} d outside (0, {max_age_days}] d"
+n_age_bins = max_age_days // age_bin_days
 
 # Print-ready output: every saved figure is one full text-width (180 mm)
 # figure at 300 dpi, so it lands in the manuscript at its final size
@@ -159,56 +189,123 @@ figure_dir.mkdir(parents=True, exist_ok=True)
 export_dir = output_root / "Exports" / "034"
 export_dir.mkdir(parents=True, exist_ok=True)
 
-print(f"year {year}, {len(release_doys)} release doys: {release_doys}")
-print(f"reference {regime_ref!r} vs variant {regime_var!r}")
+print(f"reference {regime_ref!r} vs bed friction {regime_var!r}")
+print(f"season {season} (months {season_months}), release years "
+      f"{analysis_years[0]}–{analysis_years[-1]}, window [0, {max_age_days}) d")
 
 # %% [markdown]
-# # Read key + counts
+# # Common release set
 #
-# One partition per regime,
-# ``HexAgg_counts_r<radius>m_<regime>_<year>.parquet``, read with the release
-# doys pushed into the parquet filter and reduced at once to per-`(age_bin,
-# target_hex)` sums. Every requested doy must be present in both partitions —
-# the comparison is only fair on the same release set, so a missing doy
-# raises rather than shrinking one side.
-#
-# The `-1` sentinel in either hex column marks land-seeded particles and obs
-# that left the BSH domain; those rows carry no geometry and are dropped from
-# numerator and denominator alike.
+# One partition per regime and release year,
+# ``HexAgg_counts_r<radius>m_<regime>_<year>.parquet``. The comparison is
+# only fair on the same releases, so it runs on the years both regimes have
+# and, within a year, on the in-season release doys both partitions hold; a
+# release one side lacks (a lost 010 run) is dropped from both and reported.
+# The regex pins four year digits right after the regime, so `bottom` does
+# not also take the `bottom_ub49` partitions.
 
 # %%
 key = gpd.read_parquet(store_root / f"HexAgg_key_r{hex_radius}m.parquet")
 
+
+def counts_partitions(regime):
+    """{release_year: path} of the regime's counts partitions in `release_years`."""
+    part_re = re.compile(rf"HexAgg_counts_r{hex_radius}m_{regime}_(\d{{4}})\.parquet$")
+    out = {}
+    for f in sorted(store_root.glob(f"HexAgg_counts_r{hex_radius}m_{regime}_*.parquet")):
+        m = part_re.search(f.name)
+        if m is not None and int(m[1]) in analysis_years:
+            out[int(m[1])] = f
+    return out
+
+
+def season_doys(year):
+    """The release doys of `year` in the season (leap-correct)."""
+    days = pd.date_range(f"{year}-01-01", f"{year}-12-31")
+    return set(days[days.month.isin(season_months)].dayofyear.tolist())
+
+
 # dict.fromkeys de-duplicates while keeping order: regime_var == regime_ref
-# (a dry run of this notebook before the variant exists) reads one partition.
+# (a dry run of this notebook before the variant exists) reads one regime.
+partitions = {regime: counts_partitions(regime) for regime in dict.fromkeys(regimes)}
+for regime, parts in partitions.items():
+    print(f"{regime}: counts partitions for {sorted(parts)}")
+common_years = sorted(set.intersection(*(set(p) for p in partitions.values())))
+if not common_years:
+    raise FileNotFoundError(
+        f"no release year in {release_years} with counts partitions of both "
+        f"{regimes} at {store_root} — run 024"
+    )
+
+common_doys = {}
+for year in common_years:
+    doys = {
+        regime: set(
+            pd.read_parquet(
+                parts[year], columns=["release_doy"],
+                filters=[("release_doy", "in", season_doys(year))],
+            )["release_doy"].unique().tolist()
+        )
+        for regime, parts in partitions.items()
+    }
+    common_doys[year] = set.intersection(*doys.values())
+    for regime, d in doys.items():
+        if d - common_doys[year]:
+            print(f"  {year}: {regime} releases {sorted(d - common_doys[year])} "
+                  f"absent from the other regime, dropped")
+    print(f"{year}: {len(common_doys[year])} common {season} releases")
+years = [y for y in common_years if common_doys[y]]
+if not years:
+    raise ValueError(f"no common {season} releases in {common_years}")
+
+# %% [markdown]
+# # Read counts
+#
+# Each partition is read with the common doys and the age window pushed into
+# the parquet filter and reduced at once to per-`(age_bin, target_hex)`
+# sums, kept per release year for the interannual range.
+#
+# The `-1` sentinel in either hex column marks land-seeded particles and obs
+# that left the BSH domain; those rows carry no geometry and are dropped from
+# numerator and denominator alike. Released particle-time per age bin: every
+# released water-seeded drifter contributes one sample per output step to
+# age bin 0 (`release_hex ≥ 0`, sentinel targets included), the same
+# denominator as 026.
+
+# %%
 counts = {}
-# Released particle-time per age bin: every released water-seeded drifter
-# contributes one sample per output step to age bin 0 (`release_hex ≥ 0`,
-# sentinel targets included), the same denominator as 026.
 released_per_bin = {}
-for regime in dict.fromkeys(regimes):
-    path = store_root / f"HexAgg_counts_r{hex_radius}m_{regime}_{year}.parquet"
-    df = pd.read_parquet(
-        path,
-        columns=["release_hex", "release_doy", "target_hex", "age_bin", "n_obs"],
-        filters=[("release_doy", "in", release_doys)],
-    )
-    missing = sorted(set(release_doys) - set(df["release_doy"].unique()))
-    if missing:
-        raise ValueError(f"{path.name}: release doys {missing} absent")
-    valid = (df["release_hex"] >= 0) & (df["target_hex"] >= 0)
-    released_per_bin[regime] = float(
-        df.loc[(df["age_bin"] == 0) & (df["release_hex"] >= 0), "n_obs"].sum()
-    )
-    counts[regime] = (
-        df[valid].groupby(["age_bin", "target_hex"], as_index=False)["n_obs"].sum()
-    )
+for regime, parts in partitions.items():
+    reduced = []
+    released = {}
+    for year in years:
+        df = pd.read_parquet(
+            parts[year],
+            columns=["release_hex", "target_hex", "age_bin", "n_obs"],
+            filters=[
+                ("release_doy", "in", common_doys[year]),
+                ("age_bin", "<", n_age_bins),
+            ],
+        )
+        valid = (df["release_hex"] >= 0) & (df["target_hex"] >= 0)
+        released[year] = float(
+            df.loc[(df["age_bin"] == 0) & (df["release_hex"] >= 0), "n_obs"].sum()
+        )
+        reduced.append(
+            df[valid].groupby(["age_bin", "target_hex"], as_index=False)["n_obs"].sum()
+            .assign(release_year=year)
+        )
+        print(
+            f"{parts[year].name}: {len(df):,} rows, sentinel (-1) share of n_obs "
+            f"{100 * df.loc[~valid, 'n_obs'].sum() / df['n_obs'].sum():.2f} %"
+        )
+        del df, valid
+    counts[regime] = pd.concat(reduced, ignore_index=True)
+    released_per_bin[regime] = pd.Series(released)
     print(
-        f"{path.name}: {len(df):,} rows, sentinel (-1) share of n_obs "
-        f"{100 * df.loc[~valid, 'n_obs'].sum() / df['n_obs'].sum():.2f} %, "
-        f"max age_bin {int(df['age_bin'].max())}"
+        f"{regime}: {released_per_bin[regime].sum() / (age_bin_days * 24):,.0f} "
+        f"water-seeded drifters released over {years}"
     )
-    del df
 
 # %% [markdown]
 # # Area holding a share of particle-time
@@ -217,7 +314,8 @@ for regime in dict.fromkeys(regimes):
 # Zero-water hexes (all land in the BSH coastline, yet a sub-grid trajectory
 # position fell inside) carry particle-time but no area, so they rank first:
 # any share they hold costs nothing, which is the only ordering under which
-# the density ranking is still "smallest area first".
+# the density ranking is still "smallest area first". `scope` is "pooled"
+# (every year) or one release year.
 
 # %%
 def area_to_share(n_obs, water_area_m2, q):
@@ -239,69 +337,90 @@ def area_to_share(n_obs, water_area_m2, q):
 water_area = key.set_index("hex_id")["water_area_m2"]
 rows = []
 for regime, c in counts.items():
-    for h in time_horizons_days:
-        per_hex = c[c["age_bin"] * age_bin_days < h].groupby("target_hex")["n_obs"].sum()
-        area = water_area.reindex(per_hex.index).to_numpy(dtype=float)
-        assert np.isfinite(area).all(), "target hexes missing from the key"
-        for q in quantiles:
-            area_km2 = area_to_share(per_hex.to_numpy(dtype=float), area, q) / 1e6
-            rows.append(
-                {"regime": regime, "horizon_days": h, "q": q,
-                 "area_km2": area_km2, "length_km": np.sqrt(area_km2)}
-            )
+    for scope in ["pooled", *years]:
+        cs = c if scope == "pooled" else c[c["release_year"] == scope]
+        for h in time_horizons_days:
+            per_hex = cs[cs["age_bin"] * age_bin_days < h].groupby("target_hex")["n_obs"].sum()
+            area = water_area.reindex(per_hex.index).to_numpy(dtype=float)
+            assert np.isfinite(area).all(), "target hexes missing from the key"
+            for q in quantiles:
+                area_km2 = area_to_share(per_hex.to_numpy(dtype=float), area, q) / 1e6
+                rows.append(
+                    {"regime": regime, "scope": str(scope), "horizon_days": h, "q": q,
+                     "area_km2": area_km2, "length_km": np.sqrt(area_km2)}
+                )
 areas = pd.DataFrame(rows)
-ref = areas.loc[areas["regime"] == regime_ref, ["horizon_days", "q", "area_km2", "length_km"]]
-areas = areas.merge(ref, on=["horizon_days", "q"], suffixes=("", "_ref"))
+ref = areas.loc[
+    areas["regime"] == regime_ref, ["scope", "horizon_days", "q", "area_km2", "length_km"]
+]
+areas = areas.merge(ref, on=["scope", "horizon_days", "q"], suffixes=("", "_ref"))
 areas["area_ratio_to_ref"] = areas["area_km2"] / areas.pop("area_km2_ref")
 areas["length_ratio_to_ref"] = areas["length_km"] / areas.pop("length_km_ref")
 
-csv_path = export_dir / f"034_areas_{year}.csv"
+csv_path = export_dir / f"034_areas_{season}_r{hex_radius}m.csv"
 areas.to_csv(csv_path, index=False, float_format="%.6g")
 print(f"wrote {csv_path}")
+pooled = areas[areas["scope"] == "pooled"]
 print(
-    areas.pivot_table(
+    pooled.pivot_table(
         index=["horizon_days", "q"], columns="regime",
         values=["area_km2", "length_km"],
     ).round(1).to_string()
 )
 print()
+var_ratio = areas[areas["regime"] == regime_var]
+ratio_range = (
+    var_ratio[var_ratio["scope"] != "pooled"]
+    .groupby(["q", "horizon_days"])["length_ratio_to_ref"].agg(["min", "max"])
+)
+print("length ratio, pooled with per-release-year min–max:")
 print(
-    areas[areas["regime"] == regime_var]
-    .set_index(["horizon_days", "q"])[["area_ratio_to_ref", "length_ratio_to_ref"]]
-    .round(3).to_string()
+    var_ratio[var_ratio["scope"] == "pooled"]
+    .set_index(["q", "horizon_days"])[["area_ratio_to_ref", "length_ratio_to_ref"]]
+    .join(ratio_range).round(3).to_string()
 )
 
 # %% [markdown]
 # # Footprint length ratio vs. horizon
 #
-# One panel per share `q`: the variant's footprint length over the
-# reference's, `length_km(regime_var) / length_km(regime_ref)`, against the
-# horizon. The ratio is the quantity the comparison asks for; two absolute
-# lines a few per cent apart hide it in the gap between them. `length_km`
-# rather than area because it reads as a distance (the area ratio is its
-# square, in the CSV). One release set on each side, so there is one ratio per
-# horizon and no per-release spread.
+# One panel per share `q`: the bed-friction footprint length over the
+# frictionless one, `length_km(regime_var) / length_km(regime_ref)`, against
+# the horizon, pooled (line) with the per-release-year min–max (band). The
+# ratio is the quantity the comparison asks for; two absolute lines hide it in
+# the gap between them. `length_km` rather than area because it reads as a
+# distance (the area ratio is its square, in the CSV).
 
 # %%
 length_ratio = (
-    areas[areas["regime"] == regime_var]
-    .set_index(["q", "horizon_days"])["length_ratio_to_ref"].to_xarray()
+    var_ratio.set_index(["scope", "q", "horizon_days"])["length_ratio_to_ref"].to_xarray()
 )
 length_ratio.attrs = {"long_name": "footprint length ratio"}
 length_ratio["horizon_days"].attrs = {"long_name": "elapsed time T", "units": "d"}
+per_year = length_ratio.sel(scope=[str(y) for y in years])
 
 fig, axes = plt.subplots(1, len(quantiles), squeeze=False, layout="constrained")
 # Print-ready width; one line needs no map aspect, so 0.45 of the page width
 # per panel row reads as a normal wide chart.
 fig.set_size_inches(FIGURE_WIDTH_IN, 0.45 * FIGURE_WIDTH_IN)
+band_color = plt.rcParams["axes.prop_cycle"].by_key()["color"][0]
 for ax, q in zip(axes.flat, quantiles):
-    length_ratio.sel(q=q).plot.line(x="horizon_days", ax=ax)
-    # Ratio 1 = no slowdown effect. Drawn in the axes-frame colour so it reads
+    # The band takes the line's colour (the cycle's first) so line and band
+    # read as one object; alpha keeps the line visible through it (as 035).
+    ax.fill_between(
+        length_ratio["horizon_days"], per_year.sel(q=q).min("scope"),
+        per_year.sel(q=q).max("scope"), color=band_color, alpha=0.3,
+    )
+    length_ratio.sel(q=q, scope="pooled").plot.line(x="horizon_days", ax=ax)
+    # Ratio 1 = no friction effect. Drawn in the axes-frame colour so it reads
     # as a reference, not as a second data series in the cycle's first colour.
     ax.axhline(1.0, color=plt.rcParams["axes.edgecolor"], zorder=0)
-    ax.set_title(f"{REGIME_LABELS.get(regime_var, regime_var)} / {REGIME_LABELS.get(regime_ref, regime_ref)}, area holding {100 * q:g} % of particle-time")
+    ax.set_title(
+        f"{REGIME_LABELS.get(regime_var, regime_var)} / "
+        f"{REGIME_LABELS.get(regime_ref, regime_ref)}, "
+        f"area holding {100 * q:g} % of particle-time"
+    )
     ax.set_xticks(time_horizons_days)
-fig_path = figure_dir / f"BottomSlowdown_length_{year}_r{hex_radius}m.png"
+fig_path = figure_dir / f"BottomFriction_length_{season}_r{hex_radius}m.png"
 fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
 plt.show()
@@ -442,17 +561,21 @@ def hex_map(gdf, column, ax, norm, cmap, title):
     ax.set_title(title)
 
 
+# Released particle-time over [0, map_horizon_days), every release year pooled.
+released_map = {
+    regime: released_per_bin[regime].sum() * map_horizon_days / age_bin_days
+    for regime in counts
+}
 gdfs = {
     regime: to_hex_gdf(
-        c[c["age_bin"] * age_bin_days < map_horizon_days], key,
-        released_per_bin[regime] * map_horizon_days // age_bin_days,
+        c[c["age_bin"] * age_bin_days < map_horizon_days], key, released_map[regime],
     )
     for regime, c in counts.items()
 }
 for regime, g in gdfs.items():
     print(
         f"{regime}: remaining / released particle-time "
-        f"{g['n_obs'].sum() / (released_per_bin[regime] * map_horizon_days // age_bin_days):.4f}"
+        f"{g['n_obs'].sum() / released_map[regime]:.4f}"
     )
 both = pd.concat(gdfs.values())
 for regime, g in gdfs.items():
@@ -504,7 +627,7 @@ for column, (norm, cmap, extend, colorbar_kwargs) in VIEWS.items():
           f"{(cell.height - drawn.height) * fig.get_size_inches()[1] * 25.4:.1f} mm")
     fig_path = (
         figure_dir
-        / f"BottomSlowdown_map_{year}_T{map_horizon_days}d_r{hex_radius}m_{column}.png"
+        / f"BottomFriction_map_{season}_T{map_horizon_days}d_r{hex_radius}m_{column}.png"
     )
     fig.savefig(fig_path, dpi=FIGURE_DPI)
     print(f"wrote {fig_path}")

@@ -16,10 +16,14 @@
 #   B  024d beaching sidecars, one job over every surface_stokes zarr on disk,
 #      afterany on the surface_stokes 010 jobs only. Beaching is Stokes-only:
 #      024d and the 024efg reducers pin regime=surface_stokes internally.
+#      Skipped when no 010 job is surface_stokes (a bottom / bottom_ub49
+#      sweep on its own).
 #   C  024e/024f/024g reducers (scripts/submit_024efg.sh), afterok on B --
 #      a reducer over a half-written sidecar set is not worth having.
-#   D  the parquet-only consumers 025..031, one multi-task job
-#      (scripts/025-031_ConsumersAll_job.sh), afterok on every A job and on C.
+#      Skipped with B.
+#   D  the parquet-only consumers 025..035, one multi-task job
+#      (scripts/025-031_ConsumersAll_job.sh) restricted to the chain's
+#      regimes ($REGIMES), afterok on every A job and on C.
 #      afterok is deliberate and strict: a figure pooling a store that failed
 #      to build is a wrong figure, not a partial one. The cost is that one
 #      failed A job leaves D pending on an unsatisfiable dependency --
@@ -137,7 +141,8 @@ sed 's/^/  /' <<< "${pairs}"
 echo
 
 stokes_dep=$(awk '$1=="surface_stokes" {print $3}' <<< "${pairs}" | tr ':' '\n' | sort -u | paste -sd:)
-[ -n "${stokes_dep}" ] || { echo "no surface_stokes 010 job: stage B/C/D would have no sidecars" >&2; exit 1; }
+# Stage D runs the consumers of these regimes only.
+chain_regimes=$(awk '{print $1}' <<< "${pairs}" | sort -u | paste -sd' ')
 
 # The static hex key is not part of this chain -- it is built once per radius.
 [ -f "${output_root}/HexAggregates/HexAgg_key_r${hex_radius}m.parquet" ] || {
@@ -200,9 +205,12 @@ while [ -z "${ADOPT_A:-}" ] && read -r regime year dep; do
 done <<< "${pairs}"
 
 # --- stage B: beaching sidecars (surface_stokes only) ---------------------
+b_id=""
 if [ -n "${ADOPT_B:-}" ]; then
     b_id=${ADOPT_B}
     graph+="B|${b_id}|adopted|024d beaching sidecars (\$ADOPT_B)|as queued"$'\n'
+elif [ -z "${stokes_dep}" ]; then
+    graph+="B|-|-|024d SKIPPED (no surface_stokes 010 job)|-"$'\n'
 else
     read -r b_id b_how <<< "$(scripts/submit_024d.sh --parsable \
         --job-name="${tag}-024d" \
@@ -212,9 +220,12 @@ else
 fi
 
 # --- stage C: the 024e/024f/024g reducers ---------------------------------
+c_id=""
 if [ -n "${ADOPT_C:-}" ]; then
     c_id=${ADOPT_C}
     graph+="C|${c_id}|adopted|024efg reducers (\$ADOPT_C)|as queued"$'\n'
+elif [ -z "${b_id}" ]; then
+    graph+="C|-|-|024efg SKIPPED (no stage B)|-"$'\n'
 else
     read -r c_id c_how <<< "$(scripts/submit_024efg.sh --parsable \
         --job-name="${tag}-024efg" --dependency=afterok:"${b_id}" \
@@ -225,16 +236,19 @@ fi
 
 # --- stage D: the parquet-only consumers ----------------------------------
 # The work list is static (the 031 member set is resolved inside the job, at
-# run time), so it can be counted now to size the allocation.
+# run time), so it can be counted now to size the allocation. REGIMES reaches
+# the job through --export (name only: the value is space-separated).
+export REGIMES="${chain_regimes}"
 nunits=$(LIST_ONLY=1 bash "${consumers_job}" | wc -l)
 ntasks=$(( nunits < max_consumer_tasks ? nunits : max_consumer_tasks ))
-d_dep=$(printf '%s\n' "${a_ids[@]}" "${c_id}" | paste -sd:)
+d_dep=$(printf '%s\n' "${a_ids[@]}" ${c_id} | paste -sd:)
 read -r d_id d_how <<< "$(robust_sbatch --ntasks="${ntasks}" \
+        --export=ALL,REGIMES \
         ${exclude:+--exclude="${exclude}"} \
         --job-name="${tag}-consumers" \
         --dependency=afterok:"${d_dep}" --kill-on-invalid-dep=yes \
         "${consumers_job}")"
-graph+="D|${d_id}|${d_how}|025-031 consumers, ${nunits} units, ${ntasks} tasks|afterok:${d_dep}"$'\n'
+graph+="D|${d_id}|${d_how}|025-035 consumers (${REGIMES}), ${nunits} units, ${ntasks} tasks|afterok:${d_dep}"$'\n'
 
 # --- stage E: the headline regeneration -----------------------------------
 # ==== HOOK ====  Owned by the headline agent. Wired the moment the script
