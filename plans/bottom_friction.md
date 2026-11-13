@@ -251,3 +251,14 @@ Draft:
 6. Paper numbers: the same two headline metrics (area holding 90 % of
    particle-time per horizon, occupancy overlap vs the half-vs-half floor)
    for `bottom` vs `bottom_ub49` from the 024 counts store, all years.
+
+## Production launch (2026-11-13 21:53)
+
+bottom_ub49 2016–2025, paired seeds (smoke 24918819 took seed 179226558 from
+the matching bottom zarr): 010 jobs 24918822–31, each afterany on that year's
+ε=2 bottom 010 job (+ bottom refills 2017/2018/2021). Chain (tag from the id
+set): A 024/024b/024c 24918832–61, B/C skipped, D consumers 24918862 (35
+units incl. 034), E headline 24918863. Logs: `<outputs>/logs/010/launch_ub49_20261113.log`,
+`<outputs>/logs/chain/chain_20261113T215321.log`. After: holes check, then
+framing once full results exist.
+
