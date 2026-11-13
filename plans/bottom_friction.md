@@ -240,7 +240,7 @@ Draft:
    024/024b/024c (bottom and bottom_ub49), 027/028 (bottom_ub49) and 034
    (0–10 d bin) on that root all run clean (`logs/D_24918793.out`). Zarr
    size, 3 d: 53.0 MB friction vs 68.9 MB frictionless (0.77); prototype
-   180-d runs mid-way: 0.72.
+   180-d runs 467 vs 644 MB (0.73) → ~2.1 GB per release, ~1.45 TB for 686.
 6. Paper numbers: the same two headline metrics (area holding 90 % of
    particle-time per horizon, occupancy overlap vs the half-vs-half floor)
    for `bottom` vs `bottom_ub49` from the 024 counts store, all years.
