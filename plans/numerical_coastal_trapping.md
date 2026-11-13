@@ -428,6 +428,31 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
     real set = `land_seed == 0` = numpy land-set lookup
     (`f_check_024d.log`); before the skip 6 land seeds within ~ε·dt of a
     wet face stepped out of land.
+- Launch recipe (step 4; assumes `<outputs>/Trajectories/`,
+  `BeachingForcing/` and the derived HexAggregates stores are moved aside,
+  the 024a key `HexAgg_key_r6000m.*` stays; walls in `<outputs>/wall_fields/`):
+
+  ```bash
+  cd /gxfs_work/geomar/smomw122/2025_fucus-dispersal
+  ids=()
+  for r in surface_stokes bottom; do
+      for y in $(seq 2016 2024); do
+          ids+=($(scripts/submit_010.sh $r $y | tail -1 | cut -d' ' -f1))
+      done
+      ids+=($(scripts/submit_010.sh $r 2025 29 | tail -1 | cut -d' ' -f1))
+  done
+  vs=$(RELEASE_NS=0,7,12,18,24,31,37,43,49,55,61,67 VELOCITY_SCALE=0.8 \
+       scripts/submit_010.sh bottom 2019 | tail -1 | cut -d' ' -f1)
+  # 024/024b/024c per (regime, year) -> 024d -> 024e/f/g -> 025-031 + 035
+  # (035 in the second wave, after 026 and 029) -> 032 headline
+  scripts/submit_downstream_chain.sh "${ids[@]}"
+  # bottom_vs0p8 is not discoverable by the chain (its job script is bottom's)
+  ALLOW_MISSING=1 scripts/submit_aggregates.sh bottom_vs0p8 2019 6000 \
+      --dependency=afterany:${vs}
+  # then by hand once their inputs exist: 034 (bottom + bottom_vs0p8 2019
+  # counts), sbatch scripts/036_SeedingMap_job.sh 6000 (surface_stokes 2019
+  # zarrs), 033 unchanged (no trajectory input)
+  ```
 - Cost of the full rerun: 010 ~1–1.5 d wall clock (24 regime-years,
   ~15–20 k core-hours), downstream chain ~3 h. Quota (`workquota`
   2026-11-03): 25.1 T of 29 T soft; a full trajectory set is ~3–3.4 T
