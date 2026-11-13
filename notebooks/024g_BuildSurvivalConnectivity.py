@@ -45,7 +45,7 @@
 # Partitioned per `(regime, year, month, member)`; `028` pools.
 #
 # **Population caveat.** The sidecar holds water-seeded ("real") drifters
-# only — 024d drops the zero-first-step-displacement particles. `024`/`024c`
+# only — 024d drops 010's `land_seed` particles. `024`/`024c`
 # instead keep land-seeded particles as `-1` sentinel rows. So a survconn
 # partition and the matching 024c partition do **not** describe the same
 # particle set; `n_obs` here is the unweighted count over the real drifters

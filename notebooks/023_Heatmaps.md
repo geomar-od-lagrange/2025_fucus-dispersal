@@ -143,8 +143,9 @@ zarr_files = sorted(trajectory_path.glob("**/*.zarr"))
 print(f"{len(zarr_files)} trajectory files for {regime}")
 ds = xr.concat([xr.open_zarr(z) for z in zarr_files], dim="trajectory")
 # Cheap release-edge view: push the obs slice into each per-file read so the
-# full (trajectory, obs) chunks never linger as dask task results. Two steps
-# suffice — obs=0 for the release position, obs=1 for the land test. A
+# full (trajectory, obs) chunks never linger as dask task results. One step
+# suffices — obs=0 for the release position (the land test is 010's
+# per-trajectory land_seed). A
 # post-concat ds.isel(obs=0) instead reads and retains every full obs-chunk,
 # exhausting worker memory at the 60M+-trajectory scale. subbasin and
 # release_quarter stay dask-backed and chunk-aligned with ds.lon/ds.lat, so
@@ -152,19 +153,16 @@ ds = xr.concat([xr.open_zarr(z) for z in zarr_files], dim="trajectory")
 edge = xr.concat(
     [
         xr.open_zarr(z)[["lon", "lat", "time"]]
-        .isel(obs=slice(0, 2))
-        .chunk(obs=2)
+        .isel(obs=slice(0, 1))
+        .chunk(obs=1)
         for z in zarr_files
     ],
     dim="trajectory",
 )
 lon0 = edge.lon.isel(obs=0, drop=True)
 lat0 = edge.lat.isel(obs=0, drop=True)
-# First-step displacement of zero ⇒ trajectory was seeded on land.
-on_land = (
-    (edge.lon.diff("obs").isel(obs=0, drop=True) == 0)
-    & (edge.lat.diff("obs").isel(obs=0, drop=True) == 0)
-)
+# Released in a land cell (010's land_seed).
+on_land = ds.land_seed == 1
 ds = ds.where(~on_land)
 ds = ds.assign(
     release_quarter=edge.time.isel(obs=0, drop=True).where(~on_land).dt.quarter,

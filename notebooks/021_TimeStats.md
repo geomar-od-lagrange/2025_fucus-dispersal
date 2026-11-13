@@ -75,12 +75,9 @@ land_seeded_masks = {}
 for regime in regimes:
     zarr_files = sorted((trajectory_root / regime).glob("**/*.zarr"))
     ds_raw = xr.concat([xr.open_zarr(z) for z in zarr_files], dim="trajectory")
-    # Trajectories whose first step has zero displacement were seeded on
-    # land and never advected; mask them across all obs.
-    land_seeded = (
-        (ds_raw.lon.diff("obs").isel(obs=0, drop=True) == 0)
-        & (ds_raw.lat.diff("obs").isel(obs=0, drop=True) == 0)
-    )
+    # Trajectories released in a land cell (010's land_seed); mask them
+    # across all obs.
+    land_seeded = ds_raw.land_seed == 1
     ds_masked = ds_raw.where(~land_seeded)
     regime_datasets[regime] = ds_masked
     land_seeded_masks[regime] = land_seeded

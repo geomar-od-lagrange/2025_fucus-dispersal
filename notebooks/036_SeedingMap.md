@@ -26,15 +26,16 @@ two panels on one figure:
    plus shoreward snap, the `024a` key's `helcom_subbasin`), the borders
    between the subbasin polygons drawn.
 2. **Land-seeded share per cell** — the share of the cell's seeded particles
-   that start on BSH land and never move (the sentinel `release_hex = -1`
-   rows of the `024` counts store), from the trajectory zarrs.
+   released in a land cell (010's `land_seed`; the sentinel
+   `release_hex = -1` rows of the `024` counts store), from the trajectory
+   zarrs.
 
 The land-seeded share panel is also saved on its own, one map at the full
 page width.
 
 Plus a computed table of release cells (and their land-seeded share) per
-subbasin. Reads the data twin, the `024a` key and the first two time steps
-of one regime-year of trajectory zarrs; no Dask cluster.
+subbasin. Reads the data twin, the `024a` key and `land_seed` of one
+regime-year of trajectory zarrs; no Dask cluster.
 
 ```python
 import itertools
@@ -66,8 +67,9 @@ data_root = "../data"
 hex_radius = 6000
 
 # Trajectory zarrs the land-seeded share is counted from: every release of
-# one regime and release year. The BSH land mask is the same for every regime
-# and release, so one regime-year (73 releases × particles_per_cell per cell)
+# one regime and release year. The land set (005) differs between regimes
+# only in a few fine-grid cells and is fixed over the forcing period, so one
+# regime-year (73 releases × particles_per_cell per cell)
 # is the sample; more years only shrink the sampling noise of a fixed share.
 land_regime = "surface_stokes"
 land_release_year = 2019
@@ -164,10 +166,10 @@ print(f"subbasin borders: {len(basin_borders)} shared edges between "
 
 `010` seeds `particles_per_cell` particles uniformly inside each cell,
 **cell-major**: trajectory `i` belongs to cell `i // particles_per_cell` in
-the release-cell file's row order. A particle seeded on BSH land never
-moves, and the pipeline's land-seeded test is exactly that — zero lon and lat
-displacement over the first output step (`024`'s `release_hex = -1`). Read
-from the first two time steps only, so a regime-year of zarrs costs seconds.
+the release-cell file's row order. A particle is land-seeded when its
+release position lies in a land cell of the regime's 005 land set; `010`
+records that per trajectory as `land_seed` (`024`'s `release_hex = -1`).
+One value per trajectory, so a regime-year of zarrs costs seconds.
 
 ```python
 zarrs = sorted(zarr_dir.glob("*.zarr"))
@@ -176,14 +178,13 @@ if not zarrs:
 n_land = np.zeros(len(cells))
 n_seeded = np.zeros(len(cells))
 for path in zarrs:
-    ds = xr.open_zarr(path)[["lon", "lat"]].isel(obs=slice(0, 2)).compute()
-    assert ds.sizes["trajectory"] == particles_per_cell * len(cells), (
-        f"{path.name}: {ds.sizes['trajectory']} trajectories, expected "
+    land_seed = xr.open_zarr(path).land_seed.compute()
+    assert land_seed.sizes["trajectory"] == particles_per_cell * len(cells), (
+        f"{path.name}: {land_seed.sizes['trajectory']} trajectories, expected "
         f"{particles_per_cell} × {len(cells)} cells"
     )
-    on_land = ((ds.lon.diff("obs") == 0) & (ds.lat.diff("obs") == 0)).isel(obs=0)
-    cell = (ds.trajectory // particles_per_cell).to_numpy()
-    n_land += np.bincount(cell, weights=on_land.to_numpy(), minlength=len(cells))
+    cell = (land_seed.trajectory // particles_per_cell).to_numpy()
+    n_land += np.bincount(cell, weights=land_seed.to_numpy(), minlength=len(cells))
     n_seeded += np.bincount(cell, minlength=len(cells))
 cells["land_share_pct"] = 100 * n_land / n_seeded
 print(f"{len(zarrs)} zarrs of {land_regime} {land_release_year}: "

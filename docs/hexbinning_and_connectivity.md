@@ -45,7 +45,7 @@ dedupe `(trajectory_id, target_hex)` at query time against the raw
 zarrs. Subbasin is **not** a grouping dim — recover via the key file.
 
 `-1` is `hextraj.INVALID_HEX_ID`, surfaced when lon/lat is NaN — i.e.
-land-seeded trajectories (zero first-step displacement) and any
+land-seeded trajectories (010's `land_seed`, masked to NaN) and any
 out-of-domain positions. Preserved on disk so the land-seeded fraction
 is queryable (`counts[counts.release_hex == -1].n_obs.sum()`); filter
 with `release_hex >= 0` / `target_hex >= 0` at query time when only
@@ -138,8 +138,7 @@ output_root/HexAggregates/
 
 `n_obs` is emitted alongside `w_obs` — not read back from 024c — because the
 two stores describe **different populations**: the sidecar holds water-seeded
-("real") drifters only (024d drops the zero-first-step-displacement
-particles), while 024/024c keep land-seeded particles as `-1` sentinel rows.
+("real") drifters only (024d drops 010's `land_seed` particles), while 024/024c keep land-seeded particles as `-1` sentinel rows.
 Carrying both weights over the same rows is what makes 028's weighted vs.
 unweighted comparison self-consistent. Build gates: `w_obs <= n_obs`
 everywhere, the `n_obs` total equals every `(trajectory, obs)` sample in the

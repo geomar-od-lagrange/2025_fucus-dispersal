@@ -208,22 +208,19 @@ for regime in regimes:
         batch = zarr_files[start:start + batch_files]
         ds = xr.concat([xr.open_zarr(z) for z in batch], dim="trajectory")
         # Per-batch release edge (same obs pushdown as the metadata read):
-        # obs=0 release position, obs=1 land test.
+        # obs=0 release position; land test from 010's land_seed.
         edge = xr.concat(
             [
                 xr.open_zarr(z)[["lon", "lat", "time"]]
-                .isel(obs=slice(0, 2))
-                .chunk(obs=2)
+                .isel(obs=slice(0, 1))
+                .chunk(obs=1)
                 for z in batch
             ],
             dim="trajectory",
         )
         lon0 = edge.lon.isel(obs=0, drop=True)
         lat0 = edge.lat.isel(obs=0, drop=True)
-        keep = ~(
-            (edge.lon.diff("obs").isel(obs=0, drop=True) == 0)
-            & (edge.lat.diff("obs").isel(obs=0, drop=True) == 0)
-        )
+        keep = ds.land_seed == 0
         ds = ds.assign_coords(
             release_lon=lon0.where(keep), release_lat=lat0.where(keep)
         )

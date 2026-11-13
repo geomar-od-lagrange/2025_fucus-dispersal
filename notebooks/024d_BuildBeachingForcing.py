@@ -64,8 +64,8 @@
 #   `band_max_m` of land (elsewhere it is exactly 0 and no rate model can
 #   use it).
 #
-# **Land-seeded particles are dropped** (zero first-step displacement),
-# exactly as `024`/`024b` do, and the sidecar's `trajectory` coordinate
+# **Land-seeded particles are dropped** (010's `land_seed`: released in a land
+# cell of the 005 land set), exactly as `024`/`024b` do, and the sidecar's `trajectory` coordinate
 # records which source trajectories survived. The key file from
 # `024a_BuildHexKey.md` is a hard prerequisite — its sidecar carries the
 # `HexProj` used to label hexes.
@@ -637,13 +637,11 @@ def build_one_zarr(path, release_time, rast, stokes):
     lon = ds.lon.isel(obs=slice(0, n_obs_source)).values.astype("float32")
     lat = ds.lat.isel(obs=slice(0, n_obs_source)).values.astype("float32")
 
-    # Land-seeded = zero first-step displacement (as 024/024b). They sit
-    # motionless on BSH land at distance 0, read as in-band every hour, and
-    # dominate both the Stokes cost and the extrapolation diagnostics.
-    real = (
-        np.isfinite(lon[:, 0])
-        & ~((lon[:, 1] - lon[:, 0] == 0) & (lat[:, 1] - lat[:, 0] == 0))
-    )
+    # Land-seeded = released in a land cell of the 005 land set (010's
+    # `land_seed`, as 024/024b). They sit on BSH land at distance 0, read as
+    # in-band every hour, and dominate both the Stokes cost and the
+    # extrapolation diagnostics.
+    real = np.isfinite(lon[:, 0]) & (ds.land_seed.values == 0)
     traj_index = np.flatnonzero(real).astype("int32")
     n_real = traj_index.size
     lon = lon[real]

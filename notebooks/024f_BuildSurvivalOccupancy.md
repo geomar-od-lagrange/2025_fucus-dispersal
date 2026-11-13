@@ -64,8 +64,8 @@ prerequisite (its hex-id set defines the dense bincount index, its
 `helcom_subbasin` the origin axis).
 
 **Land-seeded particles are excluded.** The sidecar holds water-seeded
-("real") drifters only — 024d drops the zero-first-step-displacement
-particles, exactly as `024`/`024b` do — so the occupancy sums here run over
+("real") drifters only — 024d drops 010's `land_seed` particles, exactly as
+`024`/`024b` do — so the occupancy sums here run over
 real drifters alone, as they did when this notebook read the zarrs itself.
 
 ```python

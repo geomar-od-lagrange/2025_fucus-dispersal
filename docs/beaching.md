@@ -62,8 +62,8 @@ Blosc-zstd-bitshuffle — 2–3× larger than raw Zstd on every array here.
 
 `band_max_m = 5000` is the widest band the coarse grid resolves (81 % of
 particle-hours, 73 % within 2 km); beyond it `w_on` is exactly 0 and `dist`
-reads 255. **Land-seeded particles are dropped** (zero first-step displacement),
-as `024`/`024b`. `w_on` comes from the WAM field geodesically extrapolated to
+reads 255. **Land-seeded particles are dropped** (010's `land_seed`: release
+position in a land cell of the 005 land set), as `024`/`024b`. `w_on` comes from the WAM field geodesically extrapolated to
 full BSH coverage, without which 78.7 % of in-band samples would read zero
 forcing ([wam_extrapolation.md](wam_extrapolation.md)).
 

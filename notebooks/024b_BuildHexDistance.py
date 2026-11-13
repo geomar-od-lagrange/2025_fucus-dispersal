@@ -169,17 +169,13 @@ def zarr_to_distance_frame(path, release_doy):
     final displacement (equirectangular 111 km/deg metric, see
     docs/distance_calculation.md).
 
-    Two NaN paths, both handled: land-seeded particles (zero first-step
-    displacement) are masked to NaN throughout, so their release_lon → -1
+    Two NaN paths, both handled: land-seeded particles (010's `land_seed`)
+    are masked to NaN throughout, so their release_lon → -1
     hex and NaN distance, and they are dropped downstream; domain-exited
     particles (NaN tail mid-run) carry their last in-domain distance
     forward via ffill, which is the intended last-valid-position value."""
     ds = xr.open_zarr(path)
-    on_land = (
-        (ds.lon.diff("obs").isel(obs=0, drop=True) == 0)
-        & (ds.lat.diff("obs").isel(obs=0, drop=True) == 0)
-    )
-    ds = ds[["lon", "lat"]].where(~on_land)
+    ds = ds[["lon", "lat"]].where(ds.land_seed == 0)
 
     # NaN for land-seeded trajectories (masked above); release_hex_id maps
     # NaN → -1, so those rows drop out at the release_hex >= 0 filter.

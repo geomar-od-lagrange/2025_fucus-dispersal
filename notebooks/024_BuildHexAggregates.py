@@ -144,14 +144,10 @@ print(f"{len(parsed)} zarrs, release_doys "
 # %%
 def zarr_to_lazy_frame(path, release_doy):
     """Lazy (release_hex, target_hex, age_bin, release_doy) frame for one zarr.
-    Land-seeded particles (zero first-step displacement) NaN out lon/lat and
-    surface as INVALID_HEX_ID (-1); kept as a sentinel in both hex columns."""
+    Land-seeded particles (010's `land_seed`) NaN out lon/lat and surface as
+    INVALID_HEX_ID (-1); kept as a sentinel in both hex columns."""
     ds = xr.open_zarr(path)
-    seeded_on_land = (
-        (ds.lon.diff("obs").isel(obs=0, drop=True) == 0)
-        & (ds.lat.diff("obs").isel(obs=0, drop=True) == 0)
-    )
-    ds = ds[["lon", "lat"]].where(~seeded_on_land)
+    ds = ds[["lon", "lat"]].where(ds.land_seed == 0)
 
     ddf = hex_connectivity_dask(ds, hp, traj_dim="trajectory").rename(
         columns={"from_id": "release_hex", "to_id": "target_hex"}

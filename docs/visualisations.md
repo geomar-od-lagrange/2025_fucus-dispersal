@@ -191,9 +191,8 @@ from numerator and denominator. Each notebook prints the excluded share
 024f holds water-seeded drifters only, so a survocc read drops just the
 `target_hex = -1` rows). Origin `-1` releases stay in the basin-wide maps
 and are left out of the per-origin panels.
-The land-seeded mask itself is the same `(diff lon at obs=0 == 0) & (diff
-lat at obs=0 == 0)` test in every viz; rationale and edge cases in
-[distance_calculation.md](distance_calculation.md).
+The land-seeded mask itself is 010's per-trajectory `land_seed` in every
+viz ([wall_velocity.md](wall_velocity.md)).
 
 **3 m isobath overlay (025/026 family).** Fucus no longer grows below
 ~3 m, so every map panel carries the `H0 = 3 m` contour as the viable-band
@@ -1054,18 +1053,17 @@ right-hand panel on its own at the full page width.
 | panel | value | source |
 |---|---|---|
 | left | HELCOM level-2 subbasin of the cell | 024a key `helcom_subbasin` of the hex at the cell's representative point (029's mapping) |
-| right | land-seeded share of the cell's particles (%) | first two time steps of every trajectory zarr of `land_regime` / `land_release_year` (default `surface_stokes` 2019, 73 releases) |
+| right | land-seeded share of the cell's particles (%) | `land_seed` of every trajectory zarr of `land_regime` / `land_release_year` (default `surface_stokes` 2019, 73 releases) |
 
 - **Land share from the zarrs.** 010 seeds cell-major, so trajectory `i`
-  belongs to cell `i // particles_per_cell`; a particle is land-seeded under
-  the pipeline's test (zero lon and lat displacement over the first step,
-  024's `release_hex = -1`). The 024 counts store holds the land-seeded total
-  but no cell id, so the zarrs are the only per-cell source; reading two
-  time steps of 73 zarrs takes seconds. One regime-year (7 300 particles per
-  cell) suffices: the BSH land mask is the same for every regime and release,
-  and the first three 2019 releases of all three regimes agree within
-  0.4 points (34.7–35.1 %). Pooled
-  34.9 %, matching the sentinel share of raw `n_obs`.
+  belongs to cell `i // particles_per_cell`; a particle is land-seeded when
+  010 flags it (`land_seed`: release position in a land cell of the 005 land
+  set, 024's `release_hex = -1`). The 024 counts store holds the land-seeded
+  total but no cell id, so the zarrs are the only per-cell source; reading
+  `land_seed` of 73 zarrs takes seconds. One regime-year (7 300 particles per
+  cell) suffices: the land set is fixed over the forcing period and differs
+  between regimes only in a few fine-grid cells, so releases differ only by
+  the sampled positions.
 - **Subbasin borders, not outlines.** The HELCOM polygons trace every island
   of the coast they were digitised against, which in the Åland and Stockholm
   archipelagos smears over the cells being shown; 036 draws only the edges
