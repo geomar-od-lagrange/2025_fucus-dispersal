@@ -2,11 +2,16 @@
 #SBATCH --job-name=010_FucusBottom
 #SBATCH --ntasks=73
 #SBATCH --cpus-per-task=1
-# Sized from measured peaks, not guessed: the largest MaxRSS over every
-# completed bottom run is 11.42 GiB (sacct across jobs 21986734, 22024769-74,
-# 22026149-57), so this is peak x ~1.7. At 60G a 73-task job needed 30 nodes
-# and spent its life pending; at 20G it fits on a handful.
-#SBATCH --mem-per-cpu=20G
+# Sized from measured peaks, not guessed. The peak is the in-memory output
+# store at the final write, so it scales with how well the trajectories
+# compress: pinned (motionless) drifters compress well. Without the wall
+# velocity the largest MaxRSS was 11.52 GiB for bottom (job 23836392) and
+# 7.00 GiB for surface_stokes (job 23836402, 82 % pinned); with the wall
+# velocity surface_stokes pins no longer and is sized like bottom. 16G is
+# ~1.4x the old bottom peak (bottom pinned 7 % of particle-hours, so its
+# output compresses a little worse with the wall velocity too), and fits ~1,900 one-core tasks on the scattered free
+# cores of base where 20G fits ~1,100.
+#SBATCH --mem-per-cpu=16G
 #SBATCH --time=36:00:00
 #SBATCH --partition=base
 # One dead node must not cancel every other release's step; the failed
