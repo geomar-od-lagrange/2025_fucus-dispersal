@@ -67,7 +67,7 @@ from dask.distributed import Client
 data_root = "../data"
 output_root = "../output"
 
-# 2D-field set to build the walls for ("surface_stokes" or "bottom"). 010 reads the walls of its `regime`, so `bottom_vs0p8` uses
+# 2D-field set to build the walls for ("surface_stokes" or "bottom"). 010 reads the walls of its `regime`, so `bottom_ub49` uses
 # the bottom walls.
 regime = "surface_stokes"
 

@@ -16,7 +16,7 @@
 # every 2d_fields c_file of the regime (003) and is needed by 010.
 #
 #   sbatch scripts/005_BuildWallFields_job.sh surface_stokes
-#   sbatch scripts/005_BuildWallFields_job.sh bottom      # also used by bottom_vs0p8
+#   sbatch scripts/005_BuildWallFields_job.sh bottom      # also used by bottom_ub49
 #
 # OUTPUT_ROOT (env) overrides the output root, for tests on a root whose
 # 2d_fields/ holds a subset of the c_files.

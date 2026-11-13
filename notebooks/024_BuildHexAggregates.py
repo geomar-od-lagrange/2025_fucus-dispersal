@@ -45,7 +45,7 @@ from hextraj.hex_analysis import hex_connectivity_dask
 
 # %%
 # Pattern: Fucus_BSH_YYYYMMDDTHHMMSS_{regime}_dt{N}min_seed{S}. The regime
-# is any word (`surface_stokes`, `bottom_vs0p8`, ...): the `_dt<N>min_seed<S>`
+# is any word (`surface_stokes`, `bottom_ub49`, ...): the `_dt<N>min_seed<S>`
 # tail anchors where it ends, and the caller checks it against `regime`.
 _ZARR_STEM_RE = re.compile(r"^Fucus_BSH_(\d{8}T\d{6})_(\w+)_dt\d+min_seed\d+$")
 
