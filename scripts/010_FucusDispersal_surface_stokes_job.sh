@@ -99,7 +99,7 @@ else
     release_ns=$(seq 0 $((n_releases - 1)))
 fi
 
-echo "year=${year} releases=[${release_ns}] SLURM_NTASKS=${SLURM_NTASKS}"
+echo "year=${year} releases=[${release_ns}] simulation_days=${simulation_days} wall_velocity_mm_s=${wall_velocity_mm_s} output_root=${output_root} SLURM_NTASKS=${SLURM_NTASKS}"
 
 # Releases at doy = 1 + 5n over the selected n; a full year is 73 of
 # them (doys 1..361, leap-year-agnostic). One papermill per start_time. The surface_stokes

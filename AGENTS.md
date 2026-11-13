@@ -112,7 +112,7 @@ filename.
   prep, Stokes download, 2D-field extraction, BSH coastline
   extraction, wall-velocity and land fields per nest × regime for 010
   (`005`, after 003)), with `scripts/00x_*_job.sh` SLURM wrappers.
-- `scripts/010_FucusDispersal_{surface,bottom,surface_stokes}_job.sh` +
+- `scripts/010_FucusDispersal_{surface_stokes,bottom}_job.sh` +
   `notebooks/010_FucusDispersal.md` — Parcels runs, papermill-swept
   across (year, doy, regime), RK4 with a wall velocity ε = 2 mm/s off
   land and a land-step reject (docs/wall_velocity.md). Writes trajectory

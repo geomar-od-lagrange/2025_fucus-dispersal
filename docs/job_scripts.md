@@ -100,7 +100,7 @@ itself missing.
 
 ## The Parcels runs (010)
 
-`scripts/010_FucusDispersal_{surface,bottom,surface_stokes}_job.sh` fan out one
+`scripts/010_FucusDispersal_{surface_stokes,bottom}_job.sh` fan out one
 single-process papermill run per release (`xargs -P ${SLURM_NTASKS}` over `srun
 --ntasks=1 --exact` steps), each writing one trajectory zarr under
 `output_root/Trajectories/<regime>/<year>/`. Two positional args:

@@ -70,6 +70,7 @@ exclude=$(sed 's/#.*//' scripts/node-blacklist.txt | tr -d '[:blank:]' \
 mkdir -p /gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs/logs/010
 
 echo "regime=${regime} velocity_scale=${VELOCITY_SCALE:-1.0} year=${year} ${selection} ntasks=${ntasks}" \
+     "output_root=${OUTPUT_ROOT:-<default>} simulation_days=${SIMULATION_DAYS:-<default>}" \
      "excluding: ${exclude:-<none>}"
 
 # RELEASE_NS and VELOCITY_SCALE reach the job script through the environment

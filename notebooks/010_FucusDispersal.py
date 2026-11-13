@@ -52,10 +52,9 @@ start_time = "2019-01-01T00:15:00"
 # allow_time_extrapolation is True.
 end_time = "2019-01-11"
 
-# Release regime / kernel forcing variant: "surface", "bottom", or
-# "surface_stokes". Selects which 2D-field set under
-# output_root/2d_fields/ the fieldset reads from.
-regime = "surface"
+# Forcing regime, "surface_stokes" or "bottom": selects the 2D-field set
+# under output_root/2d_fields/ and the wall fields the fieldset reads.
+regime = "surface_stokes"
 
 # Uniform factor on the U and V the kernel samples, at every nest level.
 # 1.0 is the model current as given. Anything else is a sensitivity variant
@@ -195,6 +194,15 @@ def get_timestamp_from_file(fname):
 timestamps_fine = [get_timestamp_from_file(f) for f in current_files_fine]
 timestamps_coarse = [get_timestamp_from_file(f) for f in current_files_coarse]
 
+# %%
+# The kernel's last field sample is Land, and a NestedField sample sets the
+# particle state from its own result, so a time-extrapolation error raised
+# by the RK4 stages would be overwritten. Check the time span up front.
+last_forcing_time = min(timestamps_fine[-1][-1], timestamps_coarse[-1][-1])
+assert allow_time_extrapolation or np.datetime64(end_time) <= last_forcing_time, (
+    f"end_time {end_time} beyond the last forcing step {last_forcing_time}"
+)
+
 
 # %% [markdown]
 # # Fieldset
@@ -316,36 +324,42 @@ nested_fieldset.add_constant("reject_land_steps", int(reject_land_steps))
 # land cell; then the particle keeps its position and `nrej` counts the
 # rejection. With ε = 0 the wall terms are exact zeros and, without the
 # reject, every position is the plain RK4 one bit for bit.
+#
+# Land seeds are not advected at all: they start in a cell that never
+# carries flow, where plain RK4 returns exactly zero, so skipping them
+# changes no position at ε = 0 and saves their 9 field samples per step
+# (~35 % of the particles).
 
 # %%
 def AdvectionRK4Wall(particle, fieldset, time):
-    (u1, v1) = fieldset.UV[particle]
-    (uw1, vw1) = fieldset.UVwall[particle]
-    u1 = u1 + uw1
-    v1 = v1 + vw1
-    lon1, lat1 = (particle.lon + u1 * 0.5 * particle.dt, particle.lat + v1 * 0.5 * particle.dt)
-    (u2, v2) = fieldset.UV[time + 0.5 * particle.dt, particle.depth, lat1, lon1, particle]
-    (uw2, vw2) = fieldset.UVwall[time + 0.5 * particle.dt, particle.depth, lat1, lon1, particle]
-    u2 = u2 + uw2
-    v2 = v2 + vw2
-    lon2, lat2 = (particle.lon + u2 * 0.5 * particle.dt, particle.lat + v2 * 0.5 * particle.dt)
-    (u3, v3) = fieldset.UV[time + 0.5 * particle.dt, particle.depth, lat2, lon2, particle]
-    (uw3, vw3) = fieldset.UVwall[time + 0.5 * particle.dt, particle.depth, lat2, lon2, particle]
-    u3 = u3 + uw3
-    v3 = v3 + vw3
-    lon3, lat3 = (particle.lon + u3 * particle.dt, particle.lat + v3 * particle.dt)
-    (u4, v4) = fieldset.UV[time + particle.dt, particle.depth, lat3, lon3, particle]
-    (uw4, vw4) = fieldset.UVwall[time + particle.dt, particle.depth, lat3, lon3, particle]
-    u4 = u4 + uw4
-    v4 = v4 + vw4
-    dlon = (u1 + 2 * u2 + 2 * u3 + u4) / 6.0 * particle.dt
-    dlat = (v1 + 2 * v2 + 2 * v3 + v4) / 6.0 * particle.dt
-    land = fieldset.Land[time + particle.dt, particle.depth, particle.lat + dlat, particle.lon + dlon, particle]
-    if land > 0.5 and fieldset.reject_land_steps == 1:
-        particle.nrej += 1
-    else:
-        particle_dlon += dlon  # noqa
-        particle_dlat += dlat  # noqa
+    if particle.land_seed == 0:
+        (u1, v1) = fieldset.UV[particle]
+        (uw1, vw1) = fieldset.UVwall[particle]
+        u1 = u1 + uw1
+        v1 = v1 + vw1
+        lon1, lat1 = (particle.lon + u1 * 0.5 * particle.dt, particle.lat + v1 * 0.5 * particle.dt)
+        (u2, v2) = fieldset.UV[time + 0.5 * particle.dt, particle.depth, lat1, lon1, particle]
+        (uw2, vw2) = fieldset.UVwall[time + 0.5 * particle.dt, particle.depth, lat1, lon1, particle]
+        u2 = u2 + uw2
+        v2 = v2 + vw2
+        lon2, lat2 = (particle.lon + u2 * 0.5 * particle.dt, particle.lat + v2 * 0.5 * particle.dt)
+        (u3, v3) = fieldset.UV[time + 0.5 * particle.dt, particle.depth, lat2, lon2, particle]
+        (uw3, vw3) = fieldset.UVwall[time + 0.5 * particle.dt, particle.depth, lat2, lon2, particle]
+        u3 = u3 + uw3
+        v3 = v3 + vw3
+        lon3, lat3 = (particle.lon + u3 * particle.dt, particle.lat + v3 * particle.dt)
+        (u4, v4) = fieldset.UV[time + particle.dt, particle.depth, lat3, lon3, particle]
+        (uw4, vw4) = fieldset.UVwall[time + particle.dt, particle.depth, lat3, lon3, particle]
+        u4 = u4 + uw4
+        v4 = v4 + vw4
+        dlon = (u1 + 2 * u2 + 2 * u3 + u4) / 6.0 * particle.dt
+        dlat = (v1 + 2 * v2 + 2 * v3 + v4) / 6.0 * particle.dt
+        land = fieldset.Land[time + particle.dt, particle.depth, particle.lat + dlat, particle.lon + dlon, particle]
+        if land > 0.5 and fieldset.reject_land_steps == 1:
+            particle.nrej += 1
+        else:
+            particle_dlon += dlon  # noqa
+            particle_dlat += dlat  # noqa
 
 
 # %% [markdown]
@@ -484,9 +498,9 @@ print(f"Written to {output_path} ({ds.sizes['obs']} obs)")
 ds = xr.open_zarr(memory_store)
 n_valid = int(ds.lon.isel(obs=0).notnull().sum().values)
 print(f"{n_valid} / {ds.sizes['trajectory']} trajectories valid at t=0")
-nrej_end = ds.nrej.max("obs").compute()
+nrej_end = ds.nrej.where(ds.land_seed == 0).max("obs").compute()
 print(
-    f"land seeds: {int(ds.land_seed.sum())} | rejected steps: "
+    f"land seeds: {int(ds.land_seed.sum())} | rejected steps of water seeds: "
     f"{int(nrej_end.sum())} in {int((nrej_end > 0).sum())} trajectories"
 )
 ds
