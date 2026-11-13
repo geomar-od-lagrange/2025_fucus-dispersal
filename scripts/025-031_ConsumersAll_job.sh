@@ -39,8 +39,9 @@
 #                                                                      120
 #
 # Every stage honours $REGIMES: a regime-specific stage runs only for the
-# regimes listed, 029/030/031/035 only when surface_stokes is, 034 only when
-# bottom_ub49 is (it reads the bottom counts as its reference).
+# regimes listed, 029/030/031 only when surface_stokes is, 035 when
+# surface_stokes or bottom is (it draws both), 034 when bottom_ub49 is, or
+# bottom is and bottom_ub49 counts exist (it draws both).
 #
 # 035 draws the 026 area exports of both regimes and the 029 stranding curve
 # of surface_stokes, so the 035 units run as a
@@ -253,15 +254,18 @@ list_work() {
                 done ;;
             034)
                 # bottom_ub49 against bottom in one figure (both fixed in the
-                # job script); bottom's counts are read, not rebuilt.
-                has_regime bottom_ub49 || continue
+                # job script): redrawn when either side changes, but a
+                # bottom-only run before any bottom_ub49 counts exist skips it.
+                has_regime bottom_ub49 || { has_regime bottom && compgen -G \
+                    "${output_root}/HexAggregates/HexAgg_counts_r${hex_radius}m_bottom_ub49_[0-9][0-9][0-9][0-9].parquet" \
+                    > /dev/null; } || continue
                 for season in ${seasons}; do
                     echo "034 bottom_ub49 ${season} -"
                 done ;;
             035)
                 # Both regimes in one figure: surface_stokes at the production
                 # member's 026 tag, bottom unweighted (fixed in the job script).
-                has_regime surface_stokes || continue
+                has_regime surface_stokes || has_regime bottom || continue
                 for season in ${seasons}; do
                     echo "035 both ${season} ${production_member}"
                 done ;;

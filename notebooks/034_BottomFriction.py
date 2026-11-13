@@ -212,10 +212,17 @@ def counts_partitions(regime):
     """{release_year: path} of the regime's counts partitions in `release_years`."""
     part_re = re.compile(rf"HexAgg_counts_r{hex_radius}m_{regime}_(\d{{4}})\.parquet$")
     out = {}
+    years_not_read = []
     for f in sorted(store_root.glob(f"HexAgg_counts_r{hex_radius}m_{regime}_*.parquet")):
         m = part_re.search(f.name)
-        if m is not None and int(m[1]) in analysis_years:
+        if m is None:
+            continue
+        if int(m[1]) in analysis_years:
             out[int(m[1])] = f
+        else:
+            years_not_read.append(int(m[1]))
+    if years_not_read:
+        print(f"{regime}: on disk but outside release_years, not read: {years_not_read}")
     return out
 
 

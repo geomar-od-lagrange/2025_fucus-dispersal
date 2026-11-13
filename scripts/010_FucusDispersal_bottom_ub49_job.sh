@@ -14,9 +14,11 @@
 # break-off speed U_b = 49 mm/s (docs/bottom_friction.md), written under
 # Trajectories/bottom_ub49/. Same arguments and environment as
 # scripts/010_FucusDispersal_bottom_job.sh, which does the work; this script
-# only pins U_b. One script per output regime keeps submit_010.sh's
+# only pins U_b. One script per output regime means submit_010.sh's
 # regime -> script lookup, its job names and submit_downstream_chain.sh's
-# regime discovery (from the script name) unchanged.
+# regime discovery all key on the script name, with no regime-name parsing,
+# while the run logic stays in the bottom script. The #SBATCH sizing above is
+# a copy of the bottom script's and does not follow it.
 #
 #   scripts/submit_010.sh bottom_ub49 2019
 #   scripts/submit_010.sh bottom_ub49 2025 29

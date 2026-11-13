@@ -105,14 +105,14 @@ itself missing.
 `scripts/010_FucusDispersal_{surface_stokes,bottom,bottom_ub49}_job.sh` fan out one
 single-process papermill run per release (`xargs -P ${SLURM_NTASKS}` over `srun
 --ntasks=1 --exact` steps), each writing one trajectory zarr under
-`output_root/Trajectories/<regime>/<year>/`. Two positional args:
+`output_root/Trajectories/<regime>/<year>/`. Arguments:
 
 | arg | default | meaning |
 |---|---|---|
 | `$1` | `2019` | release year |
 | `$2` | `73` | number of releases to run, taken from the front of the schedule |
-| `RELEASE_NS` (env) | unset | run exactly these release indices instead of a prefix |
 | `$3` (bottom only) | `0` | 010's `break_off_speed_mm_s`, bed friction; pinned to 49 by the `bottom_ub49` script |
+| `RELEASE_NS` (env) | unset | run exactly these release indices instead of a prefix |
 
 Releases sit at `doy = 1 + 5n`, `n ∈ [0, n_releases-1]` — 73 per full year, doys
 1…361, the same regardless of leap year. Each run integrates `simulation_days=220`
@@ -492,8 +492,9 @@ The units run as one flat `xargs` pool with no ordering among them, except
 second wave that starts once every other unit has finished.
 `LIST_ONLY=1 bash scripts/025-031_ConsumersAll_job.sh` prints the 120 units;
 `STAGES` / `REGIMES` / `SEASONS` restrict the matrix (default regimes
-`surface_stokes bottom bottom_ub49`; 029/030/031/035 need `surface_stokes`
-among them, 034 `bottom_ub49`). The 031 member list is
+`surface_stokes bottom bottom_ub49`; 029/030/031 need `surface_stokes`
+among them, 035 `surface_stokes` or `bottom`, 034 `bottom_ub49`, or `bottom`
+once `bottom_ub49` counts exist). The 031 member list is
 read off `HexAggregates/` inside the job, not at submit time — the reducers
 write those stores minutes earlier in the chain below, so any hardcoded list
 would be stale by construction.

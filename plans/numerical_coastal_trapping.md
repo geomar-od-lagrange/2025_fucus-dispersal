@@ -415,9 +415,8 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
     RK4 with `UV + UVwall` at every stage (ε = the wall fields' scaling
     factor) and the Land reject guarded by the `reject_land_steps` fieldset
     constant. ε = 0 with `reject_land_steps = False` is the old kernel, bit
-    for bit. Walls read by `regime` (bottom_vs0p8 uses the bottom walls);
-    ε is not multiplied by `velocity_scale` (a numerical device, not
-    physics; 034 then compares the physical slowdown alone).
+    for bit. Walls read by `regime`. (History: the `velocity_scale` /
+    `bottom_vs0p8` variant this paragraph once covered is removed.)
   - 010 writes `nrej` (cumulative rejected steps) and `land_seed`
     (`to_write="once"`, Land at the release position, sampled through the
     Parcels NestedField so nest choice and cell search are the kernel's).
@@ -471,6 +470,8 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
       done
       ids+=($(scripts/submit_010.sh $r 2025 29 | tail -1 | cut -d' ' -f1))
   done
+  # (history: the bottom_vs0p8 lines below are void -- VELOCITY_SCALE and
+  # bottom_vs0p8 no longer exist; see plans/bottom_friction.md)
   vs=$(RELEASE_NS=0,7,12,18,24,31,37,43,49,55,61,67 VELOCITY_SCALE=0.8 \
        scripts/submit_010.sh bottom 2019 | tail -1 | cut -d' ' -f1)
   # 024/024b/024c per (regime, year) -> 024d -> 024e/f/g -> 025-031 + 035

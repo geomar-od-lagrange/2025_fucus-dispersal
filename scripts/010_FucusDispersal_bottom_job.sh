@@ -41,7 +41,8 @@ module load singularity/3.11.5
 # to the real ones do).
 year="${1:-2019}"
 n_releases="${2:-73}"
-break_off_speed_mm_s="${3:-0}"
+# %g as 010 formats it, so 49.0 and 49 both name `bottom_ub49`.
+break_off_speed_mm_s=$(LC_NUMERIC=C printf '%g' "${3:-0}")
 # The output regime, as 010 derives it (for the executed-notebook name only).
 if [ "${break_off_speed_mm_s}" = 0 ]; then
     output_regime=bottom

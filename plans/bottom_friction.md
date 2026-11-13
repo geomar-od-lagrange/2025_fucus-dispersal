@@ -7,11 +7,11 @@ sliding on the bed moves along the local flow `U` at
 numbers and draft code in `tmp_bottom_friction/` (untracked), runs in
 `<outputs>/tmp_bottom_friction/`.
 
-## Start here (state 2026-11-13)
+## Start here (state 2026-11-13, late)
 
-- **Not wired into 010.** The ε = 2 mm/s production rerun runs on the
-  current 010: nothing under `notebooks/` or `scripts/` changes until the
-  rerun's 024 stages are through.
+- **Wired** (branch `worktree-agent-addfa4b95e8442caa`, not merged: the main
+  checkout serves the ε = 2 rerun's refills). Docs:
+  [bottom_friction.md](../docs/bottom_friction.md); §Wiring below is done.
 - **Decisions (authors, 2026-11-13):** implementation route approved:
   friction in the 010 kernel, on the interpolated UV at every RK4 stage
   (§Design; no field-level scaling, load hook or preprocessed fields); ε
@@ -20,12 +20,11 @@ numbers and draft code in `tmp_bottom_friction/` (untracked), runs in
   no ± members. `velocity_scale` / `bottom_vs0p8` dropped entirely (not a
   yardstick either; bottom-flow uncertainty is discussed separately in the
   paper). Full 2016–2025 sweep, after the ε = 2 rerun.
-- Prototype done: JIT kernel, runner, U_b = 0 identity (bit for bit), JIT
-  = Scipy, 3-d smoke, dt check, 180-d effect vs `bottom` and its
-  half-vs-half floor (§Prototype results).
-- Next: §Wiring (draft: `tmp_bottom_friction/010_wiring.diff`) +
-  `docs/bottom_friction.md` → review agent → test 5 → 2016–2025 sweep of
-  `bottom_ub49` → 024 chain → comparison figure/numbers.
+- Prototype done (§Prototype results); test 5 done (§Test plan).
+- Next: merge after the rerun's refills → `submit_010.sh bottom_ub49` for
+  2016–2025 → `submit_downstream_chain.sh` on those ids (024/024b/024c,
+  025–028 + 034 for `bottom_ub49`) → paper numbers (test 6) → this plan to
+  `plans/done/`.
 
 ## Design: friction in the 010 kernel
 
@@ -177,7 +176,19 @@ tmp_wall_velocity bottom run, 21,800 drifters, 2019-10-18, production
   cells along the whole coast, not by how far drifters travel; drift
   distance and overlap are the metrics that see friction.
 
-## Wiring (after the ε = 2 rerun's 024 stages)
+## Wiring (done; as built in docs/bottom_friction.md)
+
+As built, deviating from the draft below: U_b reaches the bottom job script
+as a third positional arg pinned by `scripts/010_FucusDispersal_bottom_ub49_job.sh`
+(not a `BREAK_OFF_SPEED_MM_S` env var), so `submit_010.sh bottom_ub49` and the
+chain's regime discovery work by script name; 034 is `034_BottomFriction`,
+pooled over a season of `release_years` on the releases both regimes hold;
+024b's stem regex takes any regime word; the consumer matrix runs
+`bottom_ub49` (025–028 unweighted + 034) by default, and the chain skips
+024d/024efg without a `surface_stokes` job and runs only its own regimes'
+consumers.
+
+Draft:
 
 - `notebooks/010_FucusDispersal.py`: as `tmp_bottom_friction/010_wiring.diff`
   — `break_off_speed_mm_s` parameter, `output_regime` suffix `_ub<mm/s>`,
@@ -220,9 +231,18 @@ tmp_wall_velocity bottom run, 21,800 drifters, 2019-10-18, production
    holding 90 % of particle-time; overlap of 0–H d occupancy with `bottom`
    against the `bottom` half-vs-half floor (done, prototype numbers above;
    30 km squares, not the 024a hexes).
-5. After wiring: 010 via papermill at `break_off_speed_mm_s = 0` on one
-   release = the current production zarr bit for bit; at 49 = the
-   prototype zarr bit for bit.
+5. After wiring (done; `<outputs>/tmp_friction_integration/`,
+   `compare_AB.log`): 010 via papermill, 2019-10-18 release (seed 32036115,
+   87,200 drifters, 3 d): `break_off_speed_mm_s = 0` vs the pre-friction 010
+   notebook, lon/lat/nrej/time/land_seed identical bit for bit (6.28 M
+   values); at 49 vs the prototype `smoke_ub49` and the first 72 h of
+   `run_ub49` (21,800 mapped trajectories), lon/lat/nrej/land_seed identical.
+   End to end: `submit_010.sh bottom_ub49 2019` (RELEASE_NS=58,
+   SIMULATION_DAYS=5, tmp OUTPUT_ROOT) → `Trajectories/bottom_ub49/2019/`;
+   024/024b/024c (bottom and bottom_ub49), 027/028 (bottom_ub49) and 034
+   (0–10 d bin) on that root all run clean (`logs/D_24918793.out`). Zarr
+   size, 3 d: 53.0 MB friction vs 68.9 MB frictionless (0.77); prototype
+   180-d runs mid-way: 0.72.
 6. Paper numbers: the same two headline metrics (area holding 90 % of
    particle-time per horizon, occupancy overlap vs the half-vs-half floor)
    for `bottom` vs `bottom_ub49` from the 024 counts store, all years.

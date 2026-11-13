@@ -1,5 +1,6 @@
 > Superseded: `velocity_scale` / `bottom_vs0p8` are removed and 034 now compares
-> `bottom` with the bed-friction regime `bottom_ub49` ([bottom_friction.md](../bottom_friction.md)).
+> `bottom` with the bed-friction regime `bottom_ub49` ([bottom_friction.md](../../docs/bottom_friction.md)).
+> The sections linked below no longer exist.
 > Implemented: see [docs/visualisations.md](../../docs/visualisations.md) §034 and
 > [docs/job_scripts.md](../../docs/job_scripts.md) (velocity-scaled variant regimes).
 > Result (2019, 12 releases): 0.8x bottom velocity shrinks the 90 % footprint
