@@ -136,8 +136,7 @@ quantiles: 47 / 63 / 88 %.
   "rest" and "path kept" by ± 4 points.
 - Bias of the estimate: positions from the no-friction run; with friction
   drifters stay nearer their release (smoke: median 3-d distance 4.3 →
-  0.7 km). Not a small effect: see §Prototype results for how it compares
-  with the sampling floor.
+  0.7 km). Size against the sampling floor: §Prototype results.
 
 ## Prototype results
 
@@ -189,17 +188,27 @@ tmp_wall_velocity bottom run, 21,800 drifters, 2019-10-18, production
 - `scripts/010_FucusDispersal_bottom_job.sh`, `scripts/submit_010.sh`:
   `VELOCITY_SCALE` → `BREAK_OFF_SPEED_MM_S` (env, default 0; 49 →
   `Trajectories/bottom_ub49/`), executed-notebook name.
-- `bottom_vs0p8` follow-through: `notebooks/034_BottomSlowdown.*` (built on
-  it: retire, or repoint to `bottom` vs `bottom_ub49` — authors), comments
-  in `024_BuildHexAggregates.py`, `005_BuildWallFields.py`,
+- `notebooks/034_BottomSlowdown.*` repurposed (authors) as the `bottom` vs
+  `bottom_ub49` comparison: `regime_var = "bottom_ub49"`, labels and
+  markdown (friction, not a uniform slowdown); `release_doys_csv` default
+  (now "the set the 0.8× variant was run for") → the doys / years
+  `bottom_ub49` is run for (full 2016–2025 sweep: all, or the `year`
+  parameter's full set), so its `year` / doy parameters change meaning;
+  probably a rename (`034_BottomFriction`); AGENTS.md 034 bullet,
+  `docs/visualisations.md` (034 row and §), its job/exec names.
+- `bottom_vs0p8` follow-through: comments in `024_BuildHexAggregates.py`, `005_BuildWallFields.py`,
   `scripts/005_BuildWallFields_job.sh`; `docs/job_scripts.md`,
-  `docs/visualisations.md` (034 row and §), `docs/wall_velocity.md` (ε vs
-  `velocity_scale`, vs0p8 walls); AGENTS.md pipeline bullet for 034. (The
-  ε = 2 `bottom_vs0p8` jobs were cancelled; no vs0p8 data from that rerun.)
+  `docs/wall_velocity.md` (ε vs `velocity_scale`, vs0p8 walls). (The ε = 2
+  `bottom_vs0p8` jobs were cancelled; no vs0p8 data from that rerun.)
 - `docs/bottom_friction.md` (new), this plan → `plans/done/`.
 - Downstream: `bottom_ub49` is one more regime for 024/024b/024c/024d–g and
   the 025–036 consumers; regime discovery is by directory, check the
   notebooks that list regimes explicitly.
+
+## Open
+
+- Paper framing of the friction effect: deferred (authors) until the full
+  2016–2025 `bottom_ub49` results exist.
 
 ## Test plan
 
