@@ -419,6 +419,15 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
     flagged 173 (ss) / 205 (bottom) water seeds at rest in step 1. Job
     memory set to 16G per task for both regimes (pinning no longer makes
     surface_stokes output compress better than bottom).
+  - Review fixes (2026-11-13 night): land seeds skipped in the kernel (ε = 0
+    bit identity re-checked, `b_compare_prod_skip.log`), forcing-span
+    assert, `surface` job retired; memory 12G surface_stokes / 15G bottom
+    (fit: peak ≈ 1.8 GiB + 3.5 × zarr GB; ε = 2 grows the 180-d prototype
+    zarr 1.40× ss / 1.05× bottom). Job-script e2e (surface_stokes 2019
+    release 58, 10 d) + 024d: no land entries, no pinned drifters, 024d
+    real set = `land_seed == 0` = numpy land-set lookup
+    (`f_check_024d.log`); before the skip 6 land seeds within ~ε·dt of a
+    wet face stepped out of land.
 - Cost of the full rerun: 010 ~1–1.5 d wall clock (24 regime-years,
   ~15–20 k core-hours), downstream chain ~3 h. Quota (`workquota`
   2026-11-03): 25.1 T of 29 T soft; a full trajectory set is ~3–3.4 T
