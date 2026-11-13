@@ -412,7 +412,13 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
     005 on the prototype run window reproduces the prototype v3 files bit
     for bit; the full set opens 68 (ss) / 79 (bottom) fine cells the
     window set called land (`tmp_wall_integration/e_wallset_diff.log`).
-    Validation runs (`tmp_wall_integration/`) in flight.
+    Validation (`tmp_wall_integration/`, logs there): ε = 0 without reject
+    reproduces production bit for bit (release 2019-10-18, all 87,200
+    trajectories × 72 h, surface_stokes and bottom; `b_compare_prod_*.log`).
+    `land_seed` ⊂ the old zero-first-step set; the old test additionally
+    flagged 173 (ss) / 205 (bottom) water seeds at rest in step 1. Job
+    memory set to 16G per task for both regimes (pinning no longer makes
+    surface_stokes output compress better than bottom).
 - Cost of the full rerun: 010 ~1–1.5 d wall clock (24 regime-years,
   ~15–20 k core-hours), downstream chain ~3 h. Quota (`workquota`
   2026-11-03): 25.1 T of 29 T soft; a full trajectory set is ~3–3.4 T
