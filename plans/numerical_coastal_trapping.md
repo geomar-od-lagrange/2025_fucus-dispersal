@@ -38,6 +38,9 @@ there. Findings below (2026-10-27/28, all from the 2019 sample, scratch in
   (i.e. ≤ 28 T used); delete `tmp_*` outputs, and delete old ε = 0
   trajectories before the rerun only where needed to stay under that,
   otherwise after the new ones exist.
+- **Step 3 (wiring into the pipeline), in progress 2026-11-13:** design in
+  §Fix → "Step 3: production integration". Regimes: surface_stokes, bottom,
+  bottom_vs0p8 (plain `surface` is retired).
 - **Held until after the fix:** dilution colour top (1e-1 vs 1e-2), the ¼-hex
   dilution area floor, the zero-water hex remap (G6) — see
   [figure_review_r2.md](figure_review_r2.md).
@@ -377,6 +380,29 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
   - 010 integration note: 024d's real-drifter test (zero first-step
     displacement) fails for land seeds once ε acts on them without reject;
     flag land seeds from the land set at release instead.
+- Step 3: production integration (design, 2026-11-13):
+  - New input stage `notebooks/005_BuildWallFields.py` +
+    `scripts/005_BuildWallFields_job.sh`, one run per regime (Dask over every
+    c_file of the regime, fine ∩ coarse stems as 010 loads them, all 24
+    steps per file): `<output_root>/wall_fields/walls_<nest>_<regime>.nc`
+    with `uvel`/`vvel` (unit ±1 on signed wall faces, v3 rules incl. thin
+    walls) and `land` (1 on non-wet T-cells). Ported from
+    `tmp_wall_velocity/a_wall_field.py --version v3`.
+  - 010: parameters `wall_velocity_mm_s = 2.0`, `reject_land_steps = True`,
+    `wall_fields = "wall_fields"` (relative to `output_root`). One kernel:
+    RK4 with `UV + UVwall` at every stage (ε = the wall fields' scaling
+    factor) and the Land reject guarded by the `reject_land_steps` fieldset
+    constant. ε = 0 with `reject_land_steps = False` is the old kernel, bit
+    for bit. Walls read by `regime` (bottom_vs0p8 uses the bottom walls);
+    ε is not multiplied by `velocity_scale` (a numerical device, not
+    physics; 034 then compares the physical slowdown alone).
+  - 010 writes `nrej` (cumulative rejected steps) and `land_seed`
+    (`to_write="once"`, Land at the release position, sampled through the
+    Parcels NestedField so nest choice and cell search are the kernel's).
+    Every consumer of the zero-first-step land test (021, 022, 023, 024,
+    024b, 024d, 036) reads `land_seed` instead: once ε acts on land seeds
+    the old test misclassifies them, and with v3 walls a seed in a cell
+    that is dry at release is a water seed.
 - Cost of the full rerun: 010 ~1–1.5 d wall clock (24 regime-years,
   ~15–20 k core-hours), downstream chain ~3 h. Quota (`workquota`
   2026-11-03): 25.1 T of 29 T soft; a full trajectory set is ~3–3.4 T
