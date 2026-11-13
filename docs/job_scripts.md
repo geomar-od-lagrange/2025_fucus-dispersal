@@ -35,6 +35,8 @@ output_root/Figures/
   029/  <view>_<regime>_r<radius>m_<season>_<member>.png
   030/  {SurvivalHeatmaps,DriftingFractionCurve}_<regime>_r<radius>m_<season>_<member>.png
   031/  BeachingSweep{Stats,Maps}_<regime>_r<radius>m_<season>.png
+  034/  BottomFriction_length_<season>_r<radius>m.png
+        BottomFriction_map_<season>_T<h>d_r<radius>m_<percentage|dilution>.png
   035/  AreaTimeSeries_<season>_r<radius>m.png
   036/  {SeedingMap,LandSeededShare}_r<radius>m.png
 ```
@@ -58,7 +60,7 @@ share per origin subbasin
 
 `scripts/005_BuildWallFields_job.sh <regime>` runs
 `notebooks/005_BuildWallFields` once per regime (`surface_stokes`, `bottom`;
-`bottom_vs0p8` reads the bottom walls) after 003 and before any 010 run: a
+`bottom_ub49` reads the bottom walls) after 003 and before any 010 run: a
 Dask cluster of one-core tasks (the 024 layout) ANDs the zero faces of every
 `c_file` of the regime and writes `output_root/wall_fields/walls_{fine,coarse}_<regime>.nc`
 ([wall_velocity.md](wall_velocity.md)). `OUTPUT_ROOT` (env) points it at a
@@ -100,7 +102,7 @@ itself missing.
 
 ## The Parcels runs (010)
 
-`scripts/010_FucusDispersal_{surface_stokes,bottom}_job.sh` fan out one
+`scripts/010_FucusDispersal_{surface_stokes,bottom,bottom_ub49}_job.sh` fan out one
 single-process papermill run per release (`xargs -P ${SLURM_NTASKS}` over `srun
 --ntasks=1 --exact` steps), each writing one trajectory zarr under
 `output_root/Trajectories/<regime>/<year>/`. Two positional args:
@@ -110,7 +112,7 @@ single-process papermill run per release (`xargs -P ${SLURM_NTASKS}` over `srun
 | `$1` | `2019` | release year |
 | `$2` | `73` | number of releases to run, taken from the front of the schedule |
 | `RELEASE_NS` (env) | unset | run exactly these release indices instead of a prefix |
-| `VELOCITY_SCALE` (env, bottom only) | `1.0` | 010's `velocity_scale`: uniform factor on U and V |
+| `$3` (bottom only) | `0` | 010's `break_off_speed_mm_s`, bed friction; pinned to 49 by the `bottom_ub49` script |
 
 Releases sit at `doy = 1 + 5n`, `n ∈ [0, n_releases-1]` — 73 per full year, doys
 1…361, the same regardless of leap year. Each run integrates `simulation_days=220`
@@ -127,6 +129,7 @@ scripts/submit_010.sh <regime> <year> [n_releases] [extra sbatch args...]
 
 scripts/submit_010.sh bottom 2022              # full year, --ntasks=73
 scripts/submit_010.sh surface_stokes 2025 29   # partial year, --ntasks=29
+scripts/submit_010.sh bottom_ub49 2019          # bottom + bed friction
 RELEASE_NS=1,19 scripts/submit_010.sh surface_stokes 2022   # 2 holes, --ntasks=2
 ```
 
@@ -142,26 +145,17 @@ twice. The job name is the idempotency key and names the work —
 `010-<regime>-<year>`, or `010-<regime>-<year>-n<i>_<j>` for a refill — so
 rerunning the same command after a failed submit adopts instead of duplicating.
 
-### Velocity-scaled variant regimes
+### Bed-friction regime (`bottom_ub49`)
 
-`VELOCITY_SCALE` runs the bottom 2D fields with Parcels'
-`Field.set_scaling_factor` on U and V of both nest levels; the kernel and the
-wall velocity ε (bottom walls) stay as in the 1× run
-([wall_velocity.md](wall_velocity.md)). Off 1.0 the run writes under its own regime,
-`<regime>_vs<scale>` with `.` spelled `p` — `0.8` → `bottom_vs0p8`, in the
-directory name and the zarr stem — so every downstream stage keys on it like
-any other regime. A uniform factor in a time-varying flow is not a slowed
-replay of the 1× trajectories, so a variant needs its own runs. The scale goes
-into the job name (`010-bottom-vs0.8-<year>…`), so a scaled run neither adopts
-nor blocks the 1× one; `submit_010.sh` refuses `VELOCITY_SCALE` for a job
-script that does not read it. At 1.0 the trajectories are bitwise identical to
-a run without the factor (multiplying by one is exact).
-
-```bash
-# 2019, one release per month (doys 1, 36, …, 336), at 0.8x
-RELEASE_NS=0,7,12,18,24,31,37,43,49,55,61,67 VELOCITY_SCALE=0.8 \
-    scripts/submit_010.sh bottom 2019
-```
+`scripts/010_FucusDispersal_bottom_ub49_job.sh` pins U_b = 49 mm/s and runs
+the bottom job script with it as third argument: the bottom 2D fields and
+walls, 010's `break_off_speed_mm_s = 49`, output under
+`Trajectories/bottom_ub49/` (zarr stem `…_bottom_ub49_dt60min_seed<N>`).
+One script per output regime keeps `submit_010.sh`'s regime → script lookup,
+the job name (`010-bottom_ub49-<year>…`, so it neither adopts nor blocks a
+`bottom` run) and the chain's regime discovery from the script name as for
+any regime ([bottom_friction.md](bottom_friction.md)). At U_b = 0 the
+trajectories are bitwise those of the frictionless kernel.
 
 ### Refilling lost releases
 
@@ -459,6 +453,7 @@ away.
 | `028_SubbasinConnectivityMatrix_job.sh` | `[regime] [hex_radius] [season] [member]` — empty `member` reads the unweighted 024c store, a tag reads 024g plus the same member's 024e store (stranded column) |
 | `029_BeachingMaps_job.sh`, `030_SurvivalHeatmaps_job.sh` | `[regime] [hex_radius] [member] [season]` |
 | `031_BeachingSweep_job.sh` | `[regime] [hex_radius] [members_csv] [labels_csv] [baseline_member] [season]` |
+| `034_BottomFriction_job.sh` | `[season] [hex_radius]` — `bottom` vs `bottom_ub49` from the 024 counts store, the releases both hold |
 | `035_AreaTimeSeries_job.sh` | `[season] [hex_radius] [member]` — draws `surface_stokes` at 026 tag `member` (default the production member) and `bottom` unweighted, from 026's area CSVs |
 | `036_SeedingMap_job.sh` | `[hex_radius]` — no season or member; also reads `land_seed` of one regime-year of trajectory zarrs (notebook defaults `surface_stokes` 2019). Not in the consumer driver: the release set does not change between runs |
 
@@ -484,18 +479,21 @@ papermill contract and this driver only decides which combinations run:
 
 | stages | coverage | units |
 |---|---|---|
-| 025, 026, 026a, 026b | surface_stokes production member + bottom unweighted, × 5 seasons | 40 |
-| 027 | {surface_stokes, bottom} × 5 seasons | 10 |
-| 028 | surface_stokes unweighted + production member, bottom unweighted, × 5 seasons | 15 |
+| 025, 026, 026a, 026b | surface_stokes production member + bottom, bottom_ub49 unweighted, × 5 seasons | 60 |
+| 027 | {surface_stokes, bottom, bottom_ub49} × 5 seasons | 15 |
+| 028 | surface_stokes unweighted + production member, bottom, bottom_ub49 unweighted, × 5 seasons | 20 |
 | 029, 030 | surface_stokes, production member, × 5 seasons | 10 |
 | 031 | surface_stokes × 5 seasons, `members_csv` = every 024e member on disk | 5 |
-| 035 | both regimes in one figure × 5 seasons, second wave | 5 |
+| 034 | bottom vs bottom_ub49 in one figure × 5 seasons | 5 |
+| 035 | surface_stokes and bottom in one figure × 5 seasons, second wave | 5 |
 
 The units run as one flat `xargs` pool with no ordering among them, except
 035: it reads the 026 area CSVs of both regimes, so the 035 units form a
 second wave that starts once every other unit has finished.
-`LIST_ONLY=1 bash scripts/025-031_ConsumersAll_job.sh` prints the 85 units;
-`STAGES` / `REGIMES` / `SEASONS` restrict the matrix. The 031 member list is
+`LIST_ONLY=1 bash scripts/025-031_ConsumersAll_job.sh` prints the 120 units;
+`STAGES` / `REGIMES` / `SEASONS` restrict the matrix (default regimes
+`surface_stokes bottom bottom_ub49`; 029/030/031/035 need `surface_stokes`
+among them, 034 `bottom_ub49`). The 031 member list is
 read off `HexAggregates/` inside the job, not at submit time — the reducers
 write those stores minutes earlier in the chain below, so any hardcoded list
 would be stale by construction.
@@ -508,7 +506,7 @@ measured process-tree peak RSS over ten release years (`surface_stokes`,
 `ALL`, unweighted) is 16.2 GiB for 026, 15.5 for 026b and 12.2 for 025; a
 single season or a 024f member read stays under 3.2 GiB; 027 and 028 are
 0.2 and <0.1 GiB (`sacct`, four years). The shape is generous for the heatmap
-family and stays until 029/030/031 are measured at 180 d. One job at that shape beats ~85
+family and stays until 029/030/031 are measured at 180 d. One job at that shape beats ~120
 one-task allocations queueing independently behind the same dependency for
 work that is minutes long; the price is that the cheap two thirds of the
 matrix book memory they do not need.
@@ -528,9 +526,14 @@ and left alone.
 A  024 + 024b + 024c per (regime, year)   afterany on that pair's 010 job
 B  024d sidecars, surface_stokes          afterany on the surface_stokes 010 jobs
 C  024e/024f/024g reducers                afterok on B
-D  025-031 consumers, 85 units            afterok on every A job and on C
+D  025-035 consumers, the chain's regimes afterok on every A job and on C
 E  headline regeneration                  afterok on D
 ```
+
+B and C are skipped when no 010 job is `surface_stokes` (a `bottom_ub49`
+sweep on its own); D then waits on A alone. D runs the consumer matrix for
+the chain's regimes only (`REGIMES`, exported to the job), so a chain over
+`bottom_ub49` redraws 025–028 for it and 034, not the whole study.
 
 `afterany` where the stage discovers its own work on disk (a release year
 whose 010 run died contributes the zarrs it wrote, and the notebooks pool what

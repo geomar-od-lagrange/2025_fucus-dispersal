@@ -59,7 +59,8 @@ there. Findings below (2026-10-27/28, all from the 2019 sample, scratch in
 - **Decisions 2026-11-13 late:** `bottom_vs0p8` (velocity × 0.8, 034) dropped
   entirely — its rerun 24918541 and 024 job 24918602 cancelled; remove 034,
   `velocity_scale` plumbing and docs in a cleanup pass after the chain's
-  024* jobs have run. Bottom friction (plans/bottom_friction.md) becomes its
+  024* jobs have run (done with the bottom-friction wiring; 034 kept,
+  repurposed as bottom vs `bottom_ub49`). Bottom friction (plans/bottom_friction.md) becomes its
   own regime alongside `bottom`, U_b = 0.049 m/s only, full 2016–2025, after
   this rerun is in.
 - **Held until after the fix:** dilution colour top (1e-1 vs 1e-2), the ¼-hex

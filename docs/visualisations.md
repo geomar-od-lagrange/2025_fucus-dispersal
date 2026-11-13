@@ -26,7 +26,7 @@ listed here should be dropped.
 | 031 | Beaching sweep | Per-run (regime + radius + season) | Five statistics across members with interannual bars · where-stranded maps across members |
 | 032 | None — selects, numbers and downscales other notebooks' PNGs | Selection (primary + comparison regime) | Tables A–G · one curated reading order over 025–031 |
 | 033 | Hex shoreline-type map + stranding-vs-substrate panels | Per-run (regime + radius + season + member pair) | Flat fraction per hex (reference map: subbasin codes, key, release sites) · coastline length per hex · stranded weight vs. flat fraction for the production and the substrate-inert member |
-| 034 | Bottom-slowdown comparison | Two regimes (`bottom` vs `bottom_vs0p8`) + one year + radius | Area / √area holding 90 % of particle-time at 30/60/90/180 d · √area ratio 0.8× / 1× vs. horizon · side-by-side map pair at 90 d |
+| 034 | Bed-friction comparison | Two regimes (`bottom` vs `bottom_ub49`) + season + radius | Area / √area holding 90 % of particle-time at 30/60/90/180 d, `release_years` pooled and per year · √area ratio friction / no friction vs. horizon with interannual band · side-by-side map pair at 90 d |
 | 035 | Stranding + area time series | Overlaid (one line per regime, each at its 026 weighting tag) + season | Three stacked panels vs. age / horizon, every age-bin edge: stranded % (029's CSV) · area · √area holding 90 % of particle-time (026's CSVs); pooled line + per-year min–max band |
 | 036 | Seeding map | Regime-free (one radius) | The 872 release cells by HELCOM subbasin · land-seeded share per cell |
 
@@ -45,7 +45,7 @@ consumer takes one `season` parameter and pools the release years of its
 and export filename.
 
 **Release years 2016–2024.** Every consumer that finds partitions by
-filename (025–033) takes `release_years = "2016-2024"`, an inclusive
+filename (025–034) takes `release_years = "2016-2024"`, an inclusive
 `"first-last"` range or a single year (`"2019"`), parsed in a code cell and
 applied to the filenames before any partition is opened; it prints the range
 and the years on disk it left out. Pooled values and per-year bands therefore
@@ -54,8 +54,7 @@ in the stores and is not read: its missing seasons would pull every
 per-year band down, and a full 2025 needs 2026 forcing. The driver and job
 scripts pass no year argument, so the notebook default is the study's year
 set. 026b keeps a separate `mapped_years_csv` for which years get panels,
-since each origin is normalised over all of `release_years`; 034 compares one
-fixed `year`; 035 reads 026's and 029's CSVs, whose per-year rows already end at the
+since each origin is normalised over all of `release_years`; 035 reads 026's and 029's CSVs, whose per-year rows already end at the
 range. 032 lists every year on disk in its coverage table and pools only
 `release_years` in tables A–C (D–G read the consumers' exports).
 
@@ -959,43 +958,44 @@ Export: `Exports/033/033_<regime>_<season>_<member>.geojson`, columns `hex_id,
 flat_fraction, coast_len_m, stranded_weight` plus the 024a hex geometry
 (EPSG:4326), matching the 025–029 export convention.
 
-## Notebook 034 — Bottom slowdown (special case)
+## Notebook 034 — Bottom friction (special case)
 
-The one sensitivity illustration for bottom drift: the `bottom` regime against
-`bottom_vs0p8`, the same 010 runs with U and V scaled by 0.8
-([job_scripts.md](job_scripts.md), velocity-scaled variant regimes). Figure titles use
-plain labels ("bottom", "bottom, velocity × 0.8") via `REGIME_LABELS`. The
-variant exists for one release year and one release per month, so **both
-sides are cut to those release doys** (`release_doys_csv`); a doy missing from
-either counts partition raises rather than shrinking one side. Parquet only.
+[`034_BottomFriction`](../notebooks/034_BottomFriction.py) compares the
+frictionless `bottom` regime with `bottom_ub49`, the same 010 runs with bed
+friction at U_b = 49 mm/s ([bottom_friction.md](bottom_friction.md)). Figure
+titles use plain labels ("bottom", "bottom, bed friction") via
+`REGIME_LABELS`. One season of `release_years` pooled, as the other
+consumers, but **only the releases both regimes hold**: per year the common
+in-season release doys (a release lost on one side is dropped from both and
+printed). Parquet only (024 counts + 024a key), ages `[0, max_age_days)`.
 
 - **Footprint table and CSV** — the area holding `q` (default 0.9 only, as
   in 026: the 0.5 area is dominated by particles stalling in a few coastal
-  hexes) of the
-  particle-time accumulated by `T` (cumulative `[0, T)`, as in 026): hexes
-  ranked by `n_obs / water_area_m2` descending, zero-water hexes first at zero
-  area, the crossing hex taken fractionally; `length_km = √area_km2`.
-  `Exports/034/034_areas_<year>.csv` carries `regime, horizon_days, q,
-  area_km2, length_km` and the variant-over-reference area and length ratios.
-  Implemented notebook-locally rather than read from 026's areas export,
-  because 026 pools a whole season over every year, not a doy subset.
-- **Length ratio vs. horizon** — one panel per `q`, one line: the variant's
-  `length_km` over the reference's. The ratio is the answer; two absolute
-  lines ~3 % apart hide it in their gap. One release set per side, so one
-  ratio per horizon and no spread. Ratio 1 (no effect) is an `axhline` in
+  hexes) of the particle-time accumulated by `T` (cumulative `[0, T)`, as in
+  026): hexes ranked by `n_obs / water_area_m2` descending, zero-water hexes
+  first at zero area, the crossing hex taken fractionally; `length_km =
+  √area_km2`. `Exports/034/034_areas_<season>_r<radius>m.csv` carries
+  `regime, scope, horizon_days, q, area_km2, length_km` and the
+  friction-over-reference area and length ratios, `scope` = `pooled` or a
+  release year. Computed notebook-locally rather than read from 026's area
+  CSVs, because the release set is the two regimes' intersection.
+- **Length ratio vs. horizon** — one panel per `q`: the pooled ratio
+  `length_km(bottom_ub49) / length_km(bottom)` as a line, the per-year ratio's
+  min–max as a band in the line's colour at `alpha=0.3` (an override, as in
+  035, so the line shows through). Ratio 1 (no effect) is an `axhline` in
   `rcParams["axes.edgecolor"]` — a colour override, so the reference does not
   take the data line's cycle colour; read off the rcParams, not hardcoded.
-- **Map pair** at `map_horizon_days` — 026's percentage and dilution rendering,
-  one figure per view, the two regimes **side by side** (reference left) at the
-  full 180 mm width under **one shared norm** and one horizontal colourbar below
-  the pair (`aspect=40`, `pad=0.01`), so the same colour is the same value in
-  both; dilution is released-normalised on the shared scale, the paper's
-  slowdown figure. The height is a tall seed with the maps' vertical slack
-  measured and cut once. The length-ratio figure stays an output but is not in
-  the paper set (its ratios are in the CSV). Shared extent (the validation
-  cell prints the particle-time it cuts off, 0 % for 2019).
+  The ratio is the answer; two absolute lines hide it in their gap.
+- **Map pair** at `map_horizon_days` — 026's percentage and dilution
+  rendering, one figure per view, the two regimes **side by side** (reference
+  left) at the full 180 mm width under **one shared norm** and one horizontal
+  colourbar below the pair (`aspect=40`, `pad=0.01`), so the same colour is
+  the same value in both; dilution is released-normalised on the shared scale.
+  The height is a tall seed with the maps' vertical slack measured and cut
+  once. The validation cell prints the particle-time the extent cuts off.
 
-Figures at 180 mm × 300 dpi as above.
+`output_root/Figures/034/BottomFriction_{length_<season>,map_<season>_T<h>d}_r<radius>m[_<column>].png`,
+180 mm × 300 dpi as above.
 
 ## Notebook 035 — Area time series (special case)
 

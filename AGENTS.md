@@ -112,10 +112,12 @@ filename.
   prep, Stokes download, 2D-field extraction, BSH coastline
   extraction, wall-velocity and land fields per nest × regime for 010
   (`005`, after 003)), with `scripts/00x_*_job.sh` SLURM wrappers.
-- `scripts/010_FucusDispersal_{surface_stokes,bottom}_job.sh` +
-  `notebooks/010_FucusDispersal.md` — Parcels runs, papermill-swept
+- `scripts/010_FucusDispersal_{surface_stokes,bottom,bottom_ub49}_job.sh` +
+  `notebooks/010_FucusDispersal.py` — Parcels runs, papermill-swept
   across (year, doy, regime), RK4 with a wall velocity ε = 2 mm/s off
-  land and a land-step reject (docs/wall_velocity.md). Writes trajectory
+  land and a land-step reject (docs/wall_velocity.md); `bottom_ub49` is
+  the bottom run with bed friction at U_b = 49 mm/s
+  (`break_off_speed_mm_s`, docs/bottom_friction.md). Writes trajectory
   zarrs under `output_root/Trajectories/<regime>/<year>/`, with a
   per-trajectory `land_seed` flag that defines the real-drifter set
   downstream.
@@ -157,10 +159,10 @@ filename.
   afloat-by-origin-subbasin table (029) and survival occupancy
   heatmaps (030) for one 024e/024f member, and the rate-model sweep
   across members (031).
-- `notebooks/034_*` — bottom-slowdown illustration: `bottom` against the
-  `bottom_vs0p8` variant (010 at `velocity_scale = 0.8`) on the same
-  release doys of one year, area holding 90 % of particle-time per
-  horizon plus a map pair, from the 024 counts store.
+- `notebooks/034_*` — bed-friction comparison: `bottom` against
+  `bottom_ub49` on the releases both hold, one season of the
+  `release_years` pooled, area holding 90 % of particle-time per horizon
+  (pooled and per year) plus a map pair, from the 024 counts store.
 - `notebooks/035_*` — stranding and area time series: stranded % (029's
   curve CSV), the area holding 90 % of particle-time and its square root
   against age / cumulative horizon, one line per regime with the

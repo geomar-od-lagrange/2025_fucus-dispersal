@@ -27,16 +27,18 @@ any step that would end on land. Diagnosis, prototype and ε sweep:
   with more open faces, second tie → 0. No wet side → 0.
 - Per regime: fine bottom and fine surface_stokes differ (the bottom files
   close some faces the surface files do not); coarse sets agree.
-  `bottom_vs0p8` reads the bottom walls (walls follow `regime`).
+  `bottom_ub49` reads the bottom walls (walls follow `regime`).
 
 The fields share lon/lat with the `c_file`s, so Parcels builds identical
 grids and NestedField picks the same nest for `UV`, `UVwall` and `Land`.
 
 ## Kernel (010)
 
-`AdvectionRK4Wall` is `parcels.AdvectionRK4` with `UV + UVwall` sampled at
-every stage; `UVwall` is a NestedField of C-grid VectorFields built like
-`UV`, and ε (m/s) is the wall fields' scaling factor. In a wall cell the
+`AdvectionRK4WallFriction` is `parcels.AdvectionRK4` with `UV + UVwall`
+sampled at every stage (`f·UV + UVwall` with bed friction, `f = 1` at the
+default `U_b = 0`; [bottom_friction.md](bottom_friction.md)); `UVwall` is
+a NestedField of C-grid VectorFields built like `UV`, and ε (m/s) is the wall
+fields' scaling factor. In a wall cell the
 wall-normal velocity becomes `u = (1 − ξ)·ε + ξ·U_open`, so under onshore
 `U_open` drifters rest at `ξ* = ε / (ε + |U_open|)` instead of 1e-12, stay
 resolvable, and leave when the forcing relaxes.
@@ -63,10 +65,10 @@ zarrs, plan §Fix).
 - Constant in m/s on both nests: the same fractional rest point ξ* on the
   0.9 km fine and 5 km coarse cells. ε ∝ Δ would equalise the relaxation
   time but push the coarse rest point ~6× further off.
-- Not multiplied by `velocity_scale`: ε is a numerical device, not part of
-  the current being scaled, so `bottom` vs `bottom_vs0p8` (034) differ by
-  the physical slowdown alone. The rest point shifts by the 0.8× in
-  `|U_open|` only.
+- Added after the bed friction of `bottom_ub49`, not subject to it: ε is a
+  numerical device, not current the drifter feels. The rest point under
+  sliding onshore flow becomes `ε / (ε + f·|U_open|)`
+  ([bottom_friction.md](bottom_friction.md)).
 - Sensitivity: ε = 0 → ε > 0 is a large systematic shift (no pinning, more
   stranding); within ε = 1–3 mm/s results differ beyond the sampling floor,
   non-monotonically, while a 1e-4 relative change of ε or ≤ 1 m release
