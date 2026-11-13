@@ -56,6 +56,12 @@ there. Findings below (2026-10-27/28, all from the 2019 sample, scratch in
   and resume-chain now also wait on them via `scontrol update`) holes check (missing releases → `RELEASE_NS=… submit_010.sh`),
   034, 036, 033 after 024e, T4 checks (see step 3 report), figure/paper
   refresh.
+- **Decisions 2026-11-13 late:** `bottom_vs0p8` (velocity × 0.8, 034) dropped
+  entirely — its rerun 24918541 and 024 job 24918602 cancelled; remove 034,
+  `velocity_scale` plumbing and docs in a cleanup pass after the chain's
+  024* jobs have run. Bottom friction (plans/bottom_friction.md) becomes its
+  own regime alongside `bottom`, U_b = 0.049 m/s only, full 2016–2025, after
+  this rerun is in.
 - **Held until after the fix:** dilution colour top (1e-1 vs 1e-2), the ¼-hex
   dilution area floor, the zero-water hex remap (G6) — see
   [figure_review_r2.md](figure_review_r2.md).
