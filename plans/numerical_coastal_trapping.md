@@ -73,6 +73,14 @@ there. Findings below (2026-10-27/28, all from the 2019 sample, scratch in
   (expected 73/yr, 29 in 2025), look at the refreshed Figures/, paper numbers
   refresh (the `[STALE eps0]` tags in paper/main.tex), simplify
   submit_downstream_chain.sh (drop scontrol discovery).
+- **010 ε=2 complete 2026-11-14 15:17:** 1,372/1,372 releases on disk (686
+  per regime, 73/yr, 29 in 2025), no holes, no duplicate stems; the 9 kernel-
+  race failures were refilled. Chain: resume job ran (log
+  `<outputs>/logs/chain/chain_20261114T140807.log`), re-queued the already
+  finished 024 stages (harmless overwrite; queued originals adopted), B
+  024d 24921777 → C 024efg 24921778 → D consumers 24921779 (90 units) → E
+  headline 24921780. Next session: check D/E finished OK (sacct, logs), look
+  at Figures/, paper numbers refresh.
 - **Held until after the fix:** dilution colour top (1e-1 vs 1e-2), the ¼-hex
   dilution area floor, the zero-water hex remap (G6) — see
   [figure_review_r2.md](figure_review_r2.md).
