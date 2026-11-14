@@ -63,6 +63,16 @@ there. Findings below (2026-10-27/28, all from the 2019 sample, scratch in
   repurposed as bottom vs `bottom_ub49`). Bottom friction (plans/bottom_friction.md) becomes its
   own regime alongside `bottom`, U_b = 0.049 m/s only, full 2016–2025, after
   this rerun is in.
+- **Handoff 2026-11-14 10:45** (session ends ~17:15): every ε=2 regime-year
+  complete except 5 slow releases on overloaded nodes (ss 2016 ×1 ~11:45, ss
+  2018 ×2 ~15:15, bottom 2023 ×2 on clk493 ~16:30). Don't duplicate them (two
+  zarrs per release would double-count in 024). 54 chain jobs COMPLETED, 0
+  failed. Then automatic: resume-chain-eps2 24918817 → 024d/024efg/D/E;
+  ε=2 consumers (figures) + headline after bottom-2023 024 (~17–19 h). Next
+  session: check `<outputs>/logs/chain/` + sacct for FAILED, holes check
+  (expected 73/yr, 29 in 2025), look at the refreshed Figures/, paper numbers
+  refresh (the `[STALE eps0]` tags in paper/main.tex), simplify
+  submit_downstream_chain.sh (drop scontrol discovery).
 - **Held until after the fix:** dilution colour top (1e-1 vs 1e-2), the ¼-hex
   dilution area floor, the zero-water hex remap (G6) — see
   [figure_review_r2.md](figure_review_r2.md).
