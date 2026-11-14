@@ -81,6 +81,10 @@ there. Findings below (2026-10-27/28, all from the 2019 sample, scratch in
   024d 24921777 → C 024efg 24921778 → D consumers 24921779 (90 units) → E
   headline 24921780. Next session: check D/E finished OK (sacct, logs), look
   at Figures/, paper numbers refresh.
+- **ε=2 chain done 2026-11-14 21:24:** 024d, 024efg, consumers (90/90 OK)
+  and headline COMPLETED; Figures/025–031, 035 refreshed. 033 (5 seasons,
+  24927934–38) and 036 (24927939) submitted by hand. Figures/034 holds a
+  partial-ub49 version until the ub49 chain (consumers 24918862) reruns it.
 - **Held until after the fix:** dilution colour top (1e-1 vs 1e-2), the ¼-hex
   dilution area floor, the zero-water hex remap (G6) — see
   [figure_review_r2.md](figure_review_r2.md).
