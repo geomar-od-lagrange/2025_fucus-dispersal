@@ -52,12 +52,14 @@
 # ("step creation temporarily disabled ... Requested nodes are busy", job
 # 23834727, 1 of 292 steps running), so it is deliberately not repeated here.
 #
-# Usage: scripts/submit_024d.sh
-#   scripts/submit_024d.sh --ntasks=146                            # throttle
-#   YEARS="2020 2021" scripts/submit_024d.sh                       # subset
-#   ONLY_STEMS_FILE=/path/stems.txt scripts/submit_024d.sh --ntasks=8  # retry
+# Usage: scripts/submit_024d.sh <regime> [sbatch args...]
+#   (regime: surface_stokes, bottom or bottom_ub49 -- every regime strands
+#   under the same surface-Stokes criterion, docs/beaching.md)
+#   scripts/submit_024d.sh bottom --ntasks=146                     # throttle
+#   YEARS="2020 2021" scripts/submit_024d.sh bottom                # subset
+#   ONLY_STEMS_FILE=/path/stems.txt scripts/submit_024d.sh bottom --ntasks=8  # retry
 #     (that file holds one "<year> <stem>" line per zarr to rebuild)
-#   LIST_ONLY=1 bash scripts/024d_BuildBeachingForcing_job.sh      # print work
+#   LIST_ONLY=1 bash scripts/024d_BuildBeachingForcing_job.sh bottom  # print work
 # 024a_BuildHexKey_job.sh must have run first for the matching hex_radius.
 
 set -euo pipefail
@@ -65,7 +67,7 @@ set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
-regime=surface_stokes
+regime=${1:?usage: 024d_BuildBeachingForcing_job.sh <regime>}
 hex_radius=6000
 logdir=${output_root}/logs/024d
 mkdir -p "${logdir}/executed"

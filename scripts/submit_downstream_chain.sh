@@ -13,14 +13,12 @@
 #      afterany on that pair's own 010 job -- afterok would strand the whole
 #      chain on one failed release year, and the notebooks discover the
 #      trajectory zarrs that exist rather than demanding a full 73.
-#   B  024d beaching sidecars, one job over every surface_stokes zarr on disk,
-#      afterany on the surface_stokes 010 jobs only. Beaching is Stokes-only:
-#      024d and the 024efg reducers pin regime=surface_stokes internally.
-#      Skipped when no 010 job is surface_stokes (a bottom / bottom_ub49
-#      sweep on its own).
-#   C  024e/024f/024g reducers (scripts/submit_024efg.sh), afterok on B --
-#      a reducer over a half-written sidecar set is not worth having.
-#      Skipped with B.
+#   B  024d beaching sidecars, one job per chain regime over every zarr of
+#      that regime on disk, afterany on that regime's 010 jobs. Every regime
+#      strands under the same surface-Stokes criterion (docs/beaching.md).
+#   C  024e/024f/024g reducers (scripts/submit_024efg.sh), one job per
+#      regime, afterok on that regime's B -- a reducer over a half-written
+#      sidecar set is not worth having.
 #   D  the parquet-only consumers 025..035, one multi-task job
 #      (scripts/025-031_ConsumersAll_job.sh) restricted to the chain's
 #      regimes ($REGIMES), afterok on every A job and on C.
@@ -34,7 +32,7 @@
 # Every submission goes through robust_sbatch (scripts/slurm_submit.sh), so a
 # controller that times out mid-chain is survivable: each stage carries a job
 # name that is unique to it and stable across reruns
-# ("<tag>-<regime>-<year>-024b", "<tag>-024d", ...), where <tag> is a hash of
+# ("<tag>-<regime>-<year>-024b", "<tag>-<regime>-024d", ...), where <tag> is a hash of
 # the 010 id set, and the queue -- not sbatch's exit status -- decides whether
 # a stage still needs submitting. That makes the whole chain idempotent: rerun
 # the identical command after a partial failure and it adopts what is already
@@ -59,13 +57,14 @@
 #   MAX_CONSUMER_TASKS    concurrency cap for stage D (default 12)
 #   HEADLINE_JOB          stage E job script (default scripts/headline_report_job.sh)
 #   CHAIN_TAG             job-name prefix (default: hash of the 010 id set)
-#   ADOPT_A ADOPT_B ADOPT_C
-#                         ids of stages already queued under names this chain
+#   ADOPT_A ADOPT_C       ids of stages already queued under names this chain
 #                         cannot reconstruct -- an earlier chain, or a hand
 #                         submission. Such a stage is not submitted at all and
 #                         the later stages depend on these ids. Check them
 #                         yourself (scontrol show job <id>): they are taken on
 #                         trust.
+#   ADOPT_B               the same for stage B, as "<regime>:<id>" pairs; a
+#                         regime without one gets its 024d submitted
 #   SBATCH_RETRY_DELAYS   submission backoff, see scripts/slurm_submit.sh
 #
 # A dry run prints the whole graph without touching the queue: put a fake
@@ -140,7 +139,6 @@ fi
 sed 's/^/  /' <<< "${pairs}"
 echo
 
-stokes_dep=$(awk '$1=="surface_stokes" {print $3}' <<< "${pairs}" | tr ':' '\n' | sort -u | paste -sd:)
 # Stage D runs the consumers of these regimes only.
 chain_regimes=$(awk '{print $1}' <<< "${pairs}" | sort -u | paste -sd' ')
 
@@ -204,34 +202,45 @@ while [ -z "${ADOPT_A:-}" ] && read -r regime year dep; do
     a_ids+=("${counts}" "${dist}" "${conn}")
 done <<< "${pairs}"
 
-# --- stage B: beaching sidecars (surface_stokes only) ---------------------
-b_id=""
+# --- stage B: beaching sidecars, one 024d job per regime -----------------
+# Every regime strands under the same surface-Stokes criterion
+# (docs/beaching.md), so every chain regime gets its sidecars.
+declare -A b_ids=()
 if [ -n "${ADOPT_B:-}" ]; then
-    b_id=${ADOPT_B}
-    graph+="B|${b_id}|adopted|024d beaching sidecars (\$ADOPT_B)|as queued"$'\n'
-elif [ -z "${stokes_dep}" ]; then
-    graph+="B|-|-|024d SKIPPED (no surface_stokes 010 job)|-"$'\n'
-else
-    read -r b_id b_how <<< "$(scripts/submit_024d.sh --parsable \
-        --job-name="${tag}-024d" \
-        --dependency=afterany:"${stokes_dep}" | tail -n1)"
-    [ -n "${b_id}" ] || { echo "submit_024d.sh returned no job id" >&2; exit 1; }
-    graph+="B|${b_id}|${b_how}|024d beaching sidecars surface_stokes|afterany:${stokes_dep}"$'\n'
+    for p in $(tr ',' ' ' <<< "${ADOPT_B}"); do
+        b_ids[${p%%:*}]=${p#*:}
+        graph+="B|${p#*:}|adopted|024d beaching sidecars ${p%%:*} (\$ADOPT_B)|as queued"$'\n'
+    done
 fi
+for regime in ${chain_regimes}; do
+    [ -z "${b_ids[${regime}]:-}" ] || continue
+    dep=$(awk -v r="${regime}" '$1==r {print $3}' <<< "${pairs}" | tr ':' '\n' | sort -u | paste -sd:)
+    read -r b_id b_how <<< "$(scripts/submit_024d.sh "${regime}" --parsable \
+        --job-name="${tag}-${regime}-024d" \
+        --dependency=afterany:"${dep}" | tail -n1)"
+    [ -n "${b_id}" ] || { echo "submit_024d.sh ${regime} returned no job id" >&2; exit 1; }
+    b_ids[${regime}]=${b_id}
+    graph+="B|${b_id}|${b_how}|024d beaching sidecars ${regime}|afterany:${dep}"$'\n'
+done
 
-# --- stage C: the 024e/024f/024g reducers ---------------------------------
-c_id=""
+# --- stage C: the 024e/024f/024g reducers, one job per regime ---------------
+c_ids=()
 if [ -n "${ADOPT_C:-}" ]; then
-    c_id=${ADOPT_C}
-    graph+="C|${c_id}|adopted|024efg reducers (\$ADOPT_C)|as queued"$'\n'
-elif [ -z "${b_id}" ]; then
-    graph+="C|-|-|024efg SKIPPED (no stage B)|-"$'\n'
+    read -ra c_ids <<< "$(tr ',' ' ' <<< "${ADOPT_C}")"
+    for j in "${c_ids[@]}"; do
+        graph+="C|${j}|adopted|024efg reducers (\$ADOPT_C)|as queued"$'\n'
+    done
 else
-    read -r c_id c_how <<< "$(scripts/submit_024efg.sh --parsable \
-        --job-name="${tag}-024efg" --dependency=afterok:"${b_id}" \
-        --kill-on-invalid-dep=yes | tail -n1)"
-    [ -n "${c_id}" ] || { echo "submit_024efg.sh returned no job id" >&2; exit 1; }
-    graph+="C|${c_id}|${c_how}|024efg reducers, every member|afterok:${b_id}"$'\n'
+    for regime in ${chain_regimes}; do
+        b_id=${b_ids[${regime}]:-}
+        [ -n "${b_id}" ] || { echo "no stage B job for ${regime}" >&2; exit 1; }
+        read -r c_id c_how <<< "$(scripts/submit_024efg.sh "${regime}" --parsable \
+            --job-name="${tag}-${regime}-024efg" --dependency=afterok:"${b_id}" \
+            --kill-on-invalid-dep=yes | tail -n1)"
+        [ -n "${c_id}" ] || { echo "submit_024efg.sh ${regime} returned no job id" >&2; exit 1; }
+        c_ids+=("${c_id}")
+        graph+="C|${c_id}|${c_how}|024efg reducers ${regime}, every member|afterok:${b_id}"$'\n'
+    done
 fi
 
 # --- stage D: the parquet-only consumers ----------------------------------
@@ -241,7 +250,7 @@ fi
 export REGIMES="${chain_regimes}"
 nunits=$(LIST_ONLY=1 bash "${consumers_job}" | wc -l)
 ntasks=$(( nunits < max_consumer_tasks ? nunits : max_consumer_tasks ))
-d_dep=$(printf '%s\n' "${a_ids[@]}" ${c_id} | paste -sd:)
+d_dep=$(printf '%s\n' "${a_ids[@]}" "${c_ids[@]}" | paste -sd:)
 read -r d_id d_how <<< "$(robust_sbatch --ntasks="${ntasks}" \
         --export=ALL,REGIMES \
         ${exclude:+--exclude="${exclude}"} \

@@ -35,11 +35,13 @@
 # scripts/node-blacklist.txt into `sbatch --exclude=` (an #SBATCH directive
 # cannot read a file) and passes extra args through, e.g.
 #
-#   scripts/submit_024efg.sh --dependency=afterok:<024d job id>
-#   YEARS="2020 2021" scripts/submit_024efg.sh       # restrict the year set
-#   MEMBERS="024e 0.1 3 0 0 1.0 0.0 750" scripts/submit_024efg.sh
+#   scripts/submit_024efg.sh <regime> --dependency=afterok:<024d job id>
+#   YEARS="2020 2021" scripts/submit_024efg.sh bottom  # restrict the year set
+#   MEMBERS="024e 0.1 3 0 0 1.0 0.0 750" scripts/submit_024efg.sh bottom
 #                                    # an ad-hoc member table instead of the default
-#   LIST_ONLY=1 bash scripts/024efg_ReduceAll_job.sh # print the cells
+#   LIST_ONLY=1 bash scripts/024efg_ReduceAll_job.sh bottom  # print the cells
+#
+# regime: surface_stokes, bottom or bottom_ub49, one job per regime.
 #
 # The allocation-level exclusion is deliberately NOT repeated as a step-level
 # `srun --exclude`: that made SLURM serialise the steps ("step creation
@@ -54,7 +56,7 @@ set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
-regime=surface_stokes
+regime=${1:?usage: 024efg_ReduceAll_job.sh <regime>}
 hex_radius=6000
 # Reduction window (d) over the sidecar obs axis, one value for all three
 # reducers; must be <= the sidecars' window_days (220).
@@ -75,42 +77,45 @@ unset SLURM_CPU_BIND SLURM_CPU_BIND_LIST SLURM_CPU_BIND_TYPE SLURM_CPU_BIND_VERB
 # is no inf sentinel. The member tag is rebuilt below exactly as the notebooks
 # build it, so an executed notebook and the parquet it wrote match by eye.
 #
-# 024e: the 11 step members produced so far plus 3 shore-type (trap) members
-# at the production point (step, w_c 0.10, tau_strong 3 h, tau_calm inf).
-# Only the step hazard exists; the retired saturating member is not produced.
-# 024f: the 4 survocc members so far plus the same 3 trap members.
-# 024g: the production member plus the same 3 trap members.
-# band_m 750 (the first 500 m raster ring): the production point for 024e and
-# 024f, the band test of plans/bottom_beaching.md Step 0.
+# Every member sits on the production band, band_m 750 (the first 500 m
+# raster ring, docs/beaching.md), for every regime:
+# 024e: the production point (step, w_c 0.10, tau_strong 3 h, tau_calm inf,
+# trap 1.0/0.0), the substrate-inert point and 2 intermediate trap members,
+# and 10 wave-axis members at the inert trap weights.
+# 024f: the production point, the same 3 trap members and 3 wave members.
+# 024g: the production point and the same 3 trap members.
+# Plus, per reducer, the production point at band_m 2000: the one band
+# sensitivity member (tag without `_b`).
 # $MEMBERS in the environment replaces the whole table (same columns).
 DEFAULT_MEMBERS=$(cat <<'TABLE'
-024e 0.05  3  365 0    1.0 1.0  2000
-024e 0.05  3  0   0    1.0 1.0  2000
-024e 0.075 3  365 0    1.0 1.0  2000
-024e 0.075 3  0   0    1.0 1.0  2000
-024e 0.15  3  365 0    1.0 1.0  2000
-024e 0.15  3  0   0    1.0 1.0  2000
-024e 0.1   12 0   0    1.0 1.0  2000
-024e 0.1   1  0   0    1.0 1.0  2000
-024e 0.1   3  365 0    1.0 1.0  2000
-024e 0.1   3  0   0    1.0 1.0  2000
-024e 0.1   3  0   0.02 1.0 1.0  2000
-024e 0.1   3  0   0    1.0 0.0  2000
-024e 0.1   3  0   0    1.0 0.25 2000
-024e 0.1   3  0   0    1.0 0.5  2000
 024e 0.1   3  0   0    1.0 0.0  750
-024f 0.075 3  0   0    1.0 1.0  2000
-024f 0.15  3  0   0    1.0 1.0  2000
-024f 0.1   3  365 0    1.0 1.0  2000
-024f 0.1   3  0   0    1.0 1.0  2000
-024f 0.1   3  0   0    1.0 0.0  2000
-024f 0.1   3  0   0    1.0 0.25 2000
-024f 0.1   3  0   0    1.0 0.5  2000
+024e 0.1   3  0   0    1.0 0.25 750
+024e 0.1   3  0   0    1.0 0.5  750
+024e 0.1   3  0   0    1.0 1.0  750
+024e 0.05  3  365 0    1.0 1.0  750
+024e 0.05  3  0   0    1.0 1.0  750
+024e 0.075 3  365 0    1.0 1.0  750
+024e 0.075 3  0   0    1.0 1.0  750
+024e 0.15  3  365 0    1.0 1.0  750
+024e 0.15  3  0   0    1.0 1.0  750
+024e 0.1   12 0   0    1.0 1.0  750
+024e 0.1   1  0   0    1.0 1.0  750
+024e 0.1   3  365 0    1.0 1.0  750
+024e 0.1   3  0   0.02 1.0 1.0  750
+024e 0.1   3  0   0    1.0 0.0  2000
 024f 0.1   3  0   0    1.0 0.0  750
-024g 0.1   3  0   0    1.0 1.0  2000
+024f 0.1   3  0   0    1.0 0.25 750
+024f 0.1   3  0   0    1.0 0.5  750
+024f 0.1   3  0   0    1.0 1.0  750
+024f 0.075 3  0   0    1.0 1.0  750
+024f 0.15  3  0   0    1.0 1.0  750
+024f 0.1   3  365 0    1.0 1.0  750
+024f 0.1   3  0   0    1.0 0.0  2000
+024g 0.1   3  0   0    1.0 0.0  750
+024g 0.1   3  0   0    1.0 0.25 750
+024g 0.1   3  0   0    1.0 0.5  750
+024g 0.1   3  0   0    1.0 1.0  750
 024g 0.1   3  0   0    1.0 0.0  2000
-024g 0.1   3  0   0    1.0 0.25 2000
-024g 0.1   3  0   0    1.0 0.5  2000
 TABLE
 )
 MEMBERS=${MEMBERS:-${DEFAULT_MEMBERS}}
@@ -227,6 +232,7 @@ list_work() {
     while read -r reducer w_c ts tc delta tf tw band; do
         [ -n "${reducer}" ] || continue
         while read -r year month; do
+            [ -n "${year}" ] || continue
             echo "${reducer} ${w_c} ${ts} ${tc} ${delta} ${tf} ${tw} ${band} ${year} ${month}"
         done <<< "${cells}"
     done <<< "${MEMBERS}"

@@ -32,7 +32,8 @@
 #   TRAP_FLAT, TRAP_WALL  strong-wave rate factor on fully flat /
 #               fully walled shore; the realised factor is
 #               TRAP_WALL + (TRAP_FLAT - TRAP_WALL)*ff/100
-#   BAND_M      near-shore band width, m; a value other than 2000 tags
+#   BAND_M      near-shore band width, m (default 750, production);
+#               a value other than 2000 tags
 #               the member `_b<band>`
 #   MAX_AGE_DAYS  reduction window over the sidecar obs axis (d),
 #               the same for 024e/024f/024g
@@ -77,7 +78,7 @@ W_C="${W_C:-0.1}"
 TAU_STRONG_HOURS="${TAU_STRONG_HOURS:-3.0}"
 TAU_CALM_DAYS="${TAU_CALM_DAYS:-0.0}"
 DELTA="${DELTA:-0.0}"
-BAND_M="${BAND_M:-2000.0}"
+BAND_M="${BAND_M:-750.0}"
 TRAP_FLAT="${TRAP_FLAT:-1.0}"
 TRAP_WALL="${TRAP_WALL:-0.0}"
 MAX_AGE_DAYS="${MAX_AGE_DAYS:-180}"
