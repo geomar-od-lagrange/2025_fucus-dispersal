@@ -1,9 +1,15 @@
 # Coastline grid registration fix and sliver-hex dilution mask
 
-Status: **reviewed; shoreclass sidecar fixed; production rerun queued
-(2026-11-15).** Main-repo commits 9ff8f15 … 4848d9f; data twin 98022cd
-(coastline geojsons) and 247bcb3 (shoreclass table), local, not pushed;
-sidecar `2025_fucus-dispersal_shoreclass` 6d847d0, 2384256, local, not pushed.
+Implemented and rerun (2026-11-15); the current state is documented in
+[hexbinning_and_connectivity.md](../../docs/hexbinning_and_connectivity.md)
+(source data, coastline merge) and
+[visualisations.md](../../docs/visualisations.md) (sliver mask, 90 %-area
+metric, coastline overlay, 033 seam).
+
+Status: **done.** Main-repo commits 9ff8f15 … (this archive); data twin
+98022cd (coastline geojsons) and 247bcb3 (shoreclass table), local, not
+pushed; sidecar `2025_fucus-dispersal_shoreclass` 6d847d0, 2384256, local,
+not pushed.
 
 Rerun job ids: 024a 24930310 → 024d 24930311 → 024efg 24930312 →
 consumers 24930313 (afterok 024a + 024efg); 033 ALL/DJF/MAM/JJA/SON
@@ -164,3 +170,31 @@ Done: 004 → `data/bsh_hbmnoku_static/coastline{,_always_wet}.geojson`.
   counts quoted from the key that change after the rebuild.
 - `docs/h0_semantics.md` / `docs/2d_field_extraction.md`: check the coastline
   references stay true.
+
+## Rerun outcome (2026-11-15)
+
+| job | id | outcome |
+|---|---|---|
+| 024a r6000m | 24930310 | COMPLETED 29 min; identical to the validated scratch key |
+| 024d | 24930311 | 686 OK, 0 FAIL (32 min, 42 nodes) |
+| 024efg | 24930312 | 2825 OK, 0 FAIL (21 min) |
+| 025–035 consumers | 24930313 | 120 OK, 0 FAIL (56 min) |
+| 033 ALL/DJF/MAM/JJA/SON | 24930314–18 | COMPLETED, no errors |
+| 036 | 24930319 | COMPLETED |
+| 032 headline | 24930320 | COMPLETED |
+
+- 024d raster: water cells 4,178,297 → 4,176,989; coastal land cells with a
+  direct `flat_fraction` 52.7 % → 52.3 %; mean `ff` over the 5 km band
+  50.0 % → 50.8 %.
+- Headline (pooled 2016–2024, production member, ALL): stranded within 180 d
+  67.6 → 70.3 % (seasons 64.5–69.9 → 67.2–73.0 %); afloat at 180 d, all
+  origins 32.4 → 29.7 % (seasons 30.1–35.5 → 27.0–32.8 %); inert member
+  97.1 → 98.0 %; survival share of unweighted particle-time at 180 d
+  0.497 → 0.468. Bottom 90 %-area changes < 1 % (water areas only).
+- Former outliers: all masked in the production 026 T90 exports; 0–90 d
+  dilution maximum 0.017 → 1.1e-4 (bottom) and 0.017 → 2.6e-4
+  (surface_stokes, unweighted); blank hexes 12 → 337 and 21 → 563.
+  Figure: `tmp_outlier_hexes/fig/before_after_dilution_T90d.png`.
+- Not refreshed: `docs/beaching.md`'s results tables (54.3 % production,
+  93.0 % inert, sweep table) predate this rerun and the previous one; they
+  need a separate pass from `031`/`032`.

@@ -404,9 +404,9 @@ the bounds. **Mask:** a hex is drawn only if its share of the
 window's weight (`percentage`) is at or above the 5th percentile of the
 per-hex shares, zero-water hexes excluded (slivers kept: the sliver mask is
 for dilution maps only). At
-production (ALL, 2016–2024) that keeps 10,151 of 10,714 surface and 5,218
-of 5,509 bottom hexes, 99.8–99.9 % of the weight (the rest is mostly the
-zero-water hexes). Considered the dilution map's 1st-percentile floor;
+production (ALL, 2016–2024; surface_stokes at the production member) that
+keeps 10,048 of 10,581 surface and 5,212 of 5,487 bottom hexes, 100.000 % of
+the weight to three decimals. Considered the dilution map's 1st-percentile floor;
 rejected, dilution = share / water area lets near-empty hexes with a sliver
 of water through (Elbe and Ems estuary hexes holding 1–213 of 9.2e10
 weight drew as bright isolated dots). The 1st percentile of share still
@@ -625,10 +625,10 @@ resulting hex dilation shrink as resolution rises.
   substrate-inert `contrast_member`, plus a release-cells-against-stranded-
   weight table per HELCOM subbasin. What it shows: *Fucus* sits on coast that
   is **wall-like relative to the domain** (`fucus_area_m2`-weighted mean `ff`
-  0.427 against a domain mean of 0.527; 57 % of release cells on hexes with
+  0.430 against a domain mean of 0.534; 57 % of release cells on hexes with
   `ff < 0.5`), while under the production member the deposit sits on flat
-  coast (`ff` 0.801, 80.6 % of weight on flat hexes) — and the substrate-inert
-  member deposits at `ff` 0.389, i.e. **the flat bias is the rate model's trap
+  coast (`ff` 0.784, 77.0 % of weight on flat hexes) — and the substrate-inert
+  member deposits at `ff` 0.388, i.e. **the flat bias is the rate model's trap
   term, not the drift**, which is exactly why both members are printed. The
   subbasin table shows where the two diverge: Western Gotland Basin, Bothnian
   Sea and Åland Sea hold 33.3 % of the release cells and receive 5.6 % of the
