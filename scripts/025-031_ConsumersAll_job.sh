@@ -159,7 +159,7 @@ run_one() {
               args=("${regime}" "${hex_radius}" "$(beaching_members_csv "${regime}")" "" \
                     "${production_member}" "${season}") ;;
         034)  job=scripts/034_BottomFriction_job.sh
-              args=("${season}" "${hex_radius}") ;;
+              args=("${season}" "${hex_radius}" "${production_member}") ;;
         035)  job=scripts/035_AreaTimeSeries_job.sh
               args=("${season}" "${hex_radius}" "${member}") ;;
         *)    echo "FAIL ${stage} ${regime} ${season} ${member:-unweighted} (unknown stage)"

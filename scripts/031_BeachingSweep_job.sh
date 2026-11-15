@@ -12,9 +12,9 @@ set -euo pipefail
 # no Dask cluster. One (regime, hex_radius, member list, season) per submit;
 # season is one of DJF / MAM / JJA / SON / ALL (release month). E.g.:
 #   sbatch scripts/031_BeachingSweep_job.sh surface_stokes 6000 \
-#       step_wc0p05_ts3_tcinf,step_wc0p1_ts3_tcinf,step_wc0p15_ts3_tcinf
+#       step_wc0p05_ts3_tcinf_b750,step_wc0p1_ts3_tcinf_b750,step_wc0p15_ts3_tcinf_b750
 #   sbatch scripts/031_BeachingSweep_job.sh surface_stokes 6000 \
-#       "step_wc0p05_ts3_tcinf,step_wc0p1_ts3_tcinf" "w_c 0.05,w_c 0.10" step_wc0p1_ts3_tcinf
+#       "step_wc0p05_ts3_tcinf_b750,step_wc0p1_ts3_tcinf_b750" "w_c 0.05,w_c 0.10" step_wc0p1_ts3_tcinf_b750
 # labels_csv (empty = use the member tags) and baseline_member (empty = none)
 # are optional. 024e_BuildBeaching_job.sh must have run for every member at
 # one reduction window; age_bin_days / disp_bin_km fall back to the notebook
@@ -23,7 +23,7 @@ set -euo pipefail
 
 regime="${1:-surface_stokes}"
 hex_radius="${2:-6000}"
-members_csv="${3:-step_wc0p05_ts3_tcinf,step_wc0p1_ts3_tcinf,step_wc0p15_ts3_tcinf}"
+members_csv="${3:-step_wc0p05_ts3_tcinf_b750,step_wc0p1_ts3_tcinf_b750,step_wc0p15_ts3_tcinf_b750}"
 labels_csv="${4:-}"
 baseline_member="${5:-}"
 season="${6:-ALL}"

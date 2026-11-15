@@ -26,8 +26,8 @@ listed here should be dropped.
 | 031 | Beaching sweep | Per-run (regime + radius + season) | Five statistics across members with interannual bars · where-stranded maps across members |
 | 032 | None — selects, numbers and downscales other notebooks' PNGs | Selection (primary + comparison regime) | Tables A–G · one curated reading order over 025–031 |
 | 033 | Hex shoreline-type map + stranding-vs-substrate panels | Per-run (regime + radius + season + member pair) | Flat fraction per hex (reference map: subbasin codes, key, release sites) · coastline length per hex · stranded weight vs. flat fraction for the production and the substrate-inert member |
-| 034 | Bed-friction comparison | Two regimes (`bottom` vs `bottom_ub49`) + season + radius | Area / √area holding 90 % of particle-time at 30/60/90/180 d, `release_years` pooled and per year · √area ratio friction / no friction vs. horizon with interannual band · side-by-side map pair at 90 d |
-| 035 | Stranding + area time series | Overlaid (one line per regime, each at its 026 weighting tag) + season | Three stacked panels vs. age / horizon, every age-bin edge: stranded % (029's CSV) · area · √area holding 90 % of particle-time (026's CSVs); pooled line + per-year min–max band |
+| 034 | Bed-friction comparison | Two regimes (`bottom` vs `bottom_ub49`) + season + radius | Area / √area holding 90 % of particle-time at 30/60/90/180 d, `release_years` pooled and per year · √area ratio friction / no friction vs. horizon with interannual band · side-by-side map pair at 90 d · stranded % table (production 024e member) |
+| 035 | Stranding + area time series | Overlaid (one line per regime, each at its 026 weighting tag) + season | Three stacked panels vs. age / horizon, every age-bin edge: stranded % (029's CSV per regime) · area · √area holding 90 % of particle-time (026's CSVs); pooled line + per-year min–max band |
 | 036 | Seeding map | Regime-free (one radius) | The 872 release cells by HELCOM subbasin · land-seeded share per cell |
 
 ## Cross-cutting choices
@@ -769,7 +769,7 @@ Every number is **recomputed**, never transcribed:
 
 | table | what | read from |
 |---|---|---|
-| A | stranded % within the window per release season and year, production member | `HexAgg_beaching_*` |
+| A | stranded % within the window per release season and year, production member, per regime | `HexAgg_beaching_*` |
 | B | the same pooled value across every rate-model member on disk | `HexAgg_beaching_*` |
 | C | `Σw_obs/Σn_obs` per season and cumulative horizon (`connectivity_horizons_csv`, 30/60/90/180 d), plus the top-target comparison at `top_horizon_days` (60 d) | `HexAgg_survconn_*`, `Exports/028/*.csv` |
 | D | median over source hexes of each displacement quantile | `Exports/027/*.geojson` |
@@ -778,9 +778,10 @@ Every number is **recomputed**, never transcribed:
 | G | afloat % per origin subbasin per horizon, pooled [per-year min–max], plus the basin-wide row per season | `Exports/029/afloat_by_origin_<regime>_<season>_<member>.csv` |
 
 `<weighting>` is the regime's 025/026 tag: the production member where the
-regime has a 024f store (surface_stokes), `unweighted` otherwise (bottom) —
-the rule the consumer driver applies, discovered from the partitions on
-disk. Table F reads its CSV generically — `scope` splits pooled from
+regime has a 024f store (every regime once its 024d sidecars are built),
+`unweighted` otherwise — discovered from the partitions on disk. A regime
+without 024e (024g) partitions at the production member is a gap in tables
+A–B (C), printed, not an error. Table F reads its CSV generically — `scope` splits pooled from
 per-year rows, every float column but `q` is a value, every other column
 but `q` a row key — so a key column the export gains later becomes rows
 without an edit; a requested horizon the CSV lacks is a gap. The window every number refers to comes from the 024e/024g attrs
@@ -811,8 +812,8 @@ notebook and a filename *stem* built from the run's own parameters
 `{member}`, `{tag}`/`{other_tag}` — the regime's 025/026 weighting —
 `{horizon}` = `top_horizon_days`); resolution takes the exact `<stem>.png`
 only. Considered also accepting the first `<stem>_*.png`; rejected, a member
-tag can extend another (`step_wc0p1_ts3_tcinf` →
-`step_wc0p1_ts3_tcinf_tf1_tw0`), so a missing figure would silently resolve
+tag can extend another (`step_wc0p1_ts3_tcinf_tf1_tw0` →
+`step_wc0p1_ts3_tcinf_tf1_tw0_b750`), so a missing figure would silently resolve
 to a different member's. The map entries use the `figure_season` parameter
 and the curve/sweep entries the year-pooled season, so the manifest is one
 reading order rather than twelve hardcoded names. Captions take their
@@ -878,9 +879,9 @@ coastline at all gets no row** — it renders absent rather than as a mid-scale
 
 Two members are reported, one relationship figure each, and every figure and
 printed block names which is which: the
-production `step_wc0p1_ts3_tcinf_tf1_tw0` (`trap_flat = 1`, `trap_wall = 0`, so
+production `step_wc0p1_ts3_tcinf_tf1_tw0_b750` (`trap_flat = 1`, `trap_wall = 0`, so
 the realised factor is `trap = ff/100` and **substrate drives the trapping
-term**) against `contrast_member = step_wc0p1_ts3_tcinf` (`trap_flat =
+term**) against `contrast_member = step_wc0p1_ts3_tcinf_b750` (`trap_flat =
 trap_wall = 1`, **substrate inert**). Read together they separate "stranding is
 on flat coast because the model puts it there" from "stranding is on flat coast
 because that is where the drift goes" — the latter is the only thing the inert
@@ -979,7 +980,15 @@ titles use plain labels ("bottom", "bottom, bed friction") via
 `REGIME_LABELS`. One season of `release_years` pooled, as the other
 consumers, but **only the releases both regimes hold**: per year the common
 in-season release doys (a release lost on one side is dropped from both and
-printed). Parquet only (024 counts + 024a key), ages `[0, max_age_days)`.
+printed). Parquet only (024 counts + 024e production `member` + 024a key),
+ages `[0, max_age_days)`.
+
+- **Stranded share** — `100·Σw[beach_hex ≥ 0 & beach_age_bin < T/age_bin_days] / Σw`
+  (029's definition) per regime at `time_horizons_days`, pooled and per
+  release year, on the `(year, release_doy)` pairs both 024e stores and the
+  counts comparison hold; `Exports/034/034_stranded_<season>_r<radius>m_<member>.csv`
+  (`regime, scope, horizon_days, released_weight, stranded_pct,
+  stranded_pct_minus_ref`). Attrs checked per file as in 029.
 
 - **Footprint table and CSV** — the area holding `q` (default 0.9 only, as
   in 026: the 0.5 area is dominated by particles stalling in a few coastal
@@ -1016,12 +1025,12 @@ axis, 029's stranding curve and 026's area exports
 `Exports/026/026_areas_<regime>_<season>_<tag>.csv` for several regimes —
 "how much has stranded, and how much water holds the cloud, by T". CSV only,
 no parquet; it runs after 026 (every regime it draws) and 029
-(`Exports/029/stranded_curve_<stranded_regime>_<season>_<stranded_member>.csv`).
+(`Exports/029/stranded_curve_<regime>_<season>_<stranded_member>.csv`, one per regime).
 
 | parameter | default | |
 |---|---|---|
-| `regimes_csv`, `tags_csv` | `surface_stokes,bottom`, `<production member>,unweighted` | one 026 weighting tag per regime, position by position (D3) |
-| `stranded_regime`, `stranded_member` | `surface_stokes`, `<production member>` | the 029 run whose stranding curve is panel (a); stranding needs the Stokes forcing |
+| `regimes_csv`, `tags_csv` | `surface_stokes,bottom`, `<production member>,<production member>` | one 026 weighting tag per regime, position by position (D3) |
+| `stranded_member` | `<production member>` | the 029 member whose per-regime stranding curves are panel (a); a regime's missing curve is printed and left out |
 | `season` | `ALL` | one release season per figure |
 | `area_quantile` | 0.9 | must be a `q` the CSV holds, else it raises |
 | `hex_radius` | 6000 | labels the figure only; the CSV names carry no radius |

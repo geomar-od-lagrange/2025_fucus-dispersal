@@ -75,7 +75,7 @@ release_years = "2016-2024"
 # Member tags to compare, comma-separated, in the order they should be drawn.
 # Each must have been built by 024e; missing members are reported and skipped
 # rather than raising.
-members_csv = "step_wc0p05_ts3_tcinf,step_wc0p1_ts3_tcinf,step_wc0p15_ts3_tcinf"
+members_csv = "step_wc0p05_ts3_tcinf_b750,step_wc0p1_ts3_tcinf_b750,step_wc0p15_ts3_tcinf_b750"
 # Display labels, comma-separated, one per tag. Empty = use the tags.
 labels_csv = ""
 # The member treated as the baseline in the narrative summary; "" = none.

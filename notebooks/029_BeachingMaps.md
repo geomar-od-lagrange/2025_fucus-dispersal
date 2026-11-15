@@ -113,7 +113,7 @@ member = "step_wc0p1_ts3_tcinf_tf1_tw0_b750"
 # trap term is degenerate (trap_flat = trap_wall = 1), so substrate does not
 # enter its rate at all and its deposit is where the drift alone puts the
 # material. "" skips the comparison.
-contrast_member = "step_wc0p1_ts3_tcinf"
+contrast_member = "step_wc0p1_ts3_tcinf_b750"
 # Displacement bin width (km) of the store's `disp_bin` axis (must match
 # 024e; asserted against the partitions' attrs).
 disp_bin_km = 10.0

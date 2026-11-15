@@ -119,7 +119,7 @@ near-shore residence coincides with onshore waves **over flat shore** — at the
 production `trap_flat = 1`, `trap_wall = 0` the depletion pattern is a
 wave-exposure field multiplied by the substrate's flat fraction, so material
 routed past exposed rock coast survives where the substrate-inert member
-(`step_wc0p1_ts3_tcinf`) removes it. Absolute rates are parameter-sensitive ([beaching.md](beaching.md)); read the *pattern*.
+(`step_wc0p1_ts3_tcinf_b750`) removes it. Absolute rates are parameter-sensitive ([beaching.md](beaching.md)); read the *pattern*.
 
 ## Cross-references
 

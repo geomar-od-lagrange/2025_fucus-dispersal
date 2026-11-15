@@ -462,7 +462,7 @@ away.
 | `028_SubbasinConnectivityMatrix_job.sh` | `[regime] [hex_radius] [season] [member]` — empty `member` reads the unweighted 024c store, a tag reads 024g plus the same member's 024e store (stranded column) |
 | `029_BeachingMaps_job.sh`, `030_SurvivalHeatmaps_job.sh` | `[regime] [hex_radius] [member] [season]` |
 | `031_BeachingSweep_job.sh` | `[regime] [hex_radius] [members_csv] [labels_csv] [baseline_member] [season]` |
-| `034_BottomFriction_job.sh` | `[season] [hex_radius]` — `bottom` vs `bottom_ub49` from the 024 counts store and the production 024e stores, the releases both hold |
+| `034_BottomFriction_job.sh` | `[season] [hex_radius] [member]` — `bottom` vs `bottom_ub49` from the 024 counts store and the production 024e stores, the releases both hold |
 | `035_AreaTimeSeries_job.sh` | `[season] [hex_radius] [member]` — draws `surface_stokes` and `bottom`, each at 026 tag `member` (default the production member) and with its 029 stranding curve |
 | `036_SeedingMap_job.sh` | `[hex_radius]` — no season or member; also reads `land_seed` of one regime-year of trajectory zarrs (notebook defaults `surface_stokes` 2019). Not in the consumer driver: the release set does not change between runs |
 

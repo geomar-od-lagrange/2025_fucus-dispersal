@@ -54,7 +54,7 @@
 #   setting. `trap_flat = 1`, `trap_wall = 0`, so the realised strong-wave
 #   factor is `trap = ff/100`: **substrate genuinely drives the trapping
 #   term**, and a fully walled hex (`ff = 0`) strands nothing at all.
-# - **`contrast_member`** (default `step_wc0p1_ts3_tcinf`) — the degenerate
+# - **`contrast_member`** (default `step_wc0p1_ts3_tcinf_b750`) — the degenerate
 #   case, `trap_flat = trap_wall = 1`, where **substrate does not enter the
 #   rate at all**. Any relationship its panels show is pure geography: where
 #   the coastline happens to be flat against where the drift and the waves put
@@ -117,7 +117,7 @@ release_years = "2016-2024"
 member = "step_wc0p1_ts3_tcinf_tf1_tw0_b750"
 # The contrast: a member whose trap term is degenerate (trap_flat = trap_wall
 # = 1), so substrate does not enter the rate at all. "" skips the second pass.
-contrast_member = "step_wc0p1_ts3_tcinf"
+contrast_member = "step_wc0p1_ts3_tcinf_b750"
 
 # Hexes holding less coastline than this are dropped from the correlations and
 # the scatter: a length-weighted mean over a sliver of coast is noise, and its
