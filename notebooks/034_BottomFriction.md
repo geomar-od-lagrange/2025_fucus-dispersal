@@ -89,12 +89,18 @@ map_horizon_days = 90
 # Isobath to overlay on the maps, in metres of BSH H0 (floor position, see
 # docs/h0_semantics.md). Fucus vesiculosus no longer grows below ~3 m.
 isobath_m = 3.0
+# Dilution maps leave a hex blank (NaN dilution) when less than this
+# fraction of its area is water: a sliver's tiny water area turns a few
+# samples into a dilution decades above its neighbours
+# (docs/visualisations.md). Its percentage, and every non-dilution product,
+# keep it.
+dilution_min_water_fraction = 0.25
 # Floor and top of the dilution colour scale, fraction of the released
 # particle-time per km², whole decades. The same in every dilution figure
 # (026, 026a, 034): the authors' fixed scale, two classes per decade
 # (docs/visualisations.md). Every hex with weight is drawn: values below the
 # floor take the under colour, values above the top the over colour; white is
-# only "no particles".
+# "no particles", or a hex below `dilution_min_water_fraction` water.
 dilution_floor = 1e-7
 dilution_top = 0.1
 # Map extent (degrees). The 024a key tiles the whole BSH domain including the
@@ -174,7 +180,8 @@ dilution_bounds = np.logspace(
 # decade. Every hex with weight is drawn (masking sub-floor hexes made
 # material look as if it vanished): below the floor in the under colour, above
 # the top in the over colour — the lowest and highest class colours, shown as
-# the colorbar's extend="both" triangles. White is only "no particles".
+# the colorbar's extend="both" triangles. White is "no particles", or a
+# zero-water or sliver hex (below `dilution_min_water_fraction`).
 dilution_cmap = plt.get_cmap("turbo").resampled(len(dilution_bounds) - 1)
 dilution_norm = BoundaryNorm(dilution_bounds, dilution_cmap.N)
 # Tick labels on the whole decades only; the half-decade edges stay unlabelled.
@@ -458,14 +465,17 @@ def to_hex_gdf(counts_df, key_df, released):
     gdf = (
         counts_df.groupby("target_hex", as_index=False)["n_obs"].sum()
         .merge(
-            key_df[["hex_id", "geometry", "water_area_m2"]],
+            key_df[["hex_id", "geometry", "area_m2", "water_area_m2"]],
             left_on="target_hex", right_on="hex_id",
         )
         .pipe(gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326")
     )
     gdf["percentage"] = 100 * gdf["n_obs"] / gdf["n_obs"].sum()
     gdf["dilution"] = gdf["n_obs"] / released / (
-        gdf["water_area_m2"].where(gdf["water_area_m2"] > 0) / 1e6
+        gdf["water_area_m2"].where(
+            (gdf["water_area_m2"] > 0)
+            & (gdf["water_area_m2"] >= dilution_min_water_fraction * gdf["area_m2"])
+        ) / 1e6
     )
     return gdf
 
@@ -588,7 +598,7 @@ for regime, g in gdfs.items():
     print(
         f"{regime}: {g.loc[g['dilution'] < dilution_floor, 'percentage'].sum():.3f} % of the "
         f"weight below the dilution floor (under colour), "
-        f"{g.loc[g['dilution'].isna(), 'percentage'].sum():.3f} % on zero-water hexes, "
+        f"{g.loc[g['dilution'].isna(), 'percentage'].sum():.3f} % on zero-water and sliver hexes (no dilution), "
         f"{g.loc[g['dilution'] > dilution_top, 'percentage'].sum():.3f} % above the top"
     )
 # Shared across the pair: percentage saturates at the 99th percentile of the

@@ -113,6 +113,13 @@ de_lat_max = 55.5
 # see docs/h0_semantics.md). Fucus vesiculosus no longer grows below ~3 m.
 isobath_m = 3.0
 
+# Dilution maps leave a hex blank (NaN dilution) when less than this
+# fraction of its area is water: a sliver's tiny water area turns a few
+# samples into a dilution decades above its neighbours
+# (docs/visualisations.md). Its percentage, and every non-dilution product,
+# keep it.
+dilution_min_water_fraction = 0.25
+
 # Most panels a facet grid may carry before it is split across figures —
 # at 180 mm page width more panels shrink each map below readable size.
 max_panels_per_figure = 12
@@ -357,9 +364,11 @@ joins the key geometry, and derives both relative views. The
 normalisation is over whatever subset is passed in, so a per-origin panel
 reads as that origin's own share of particle-time.
 
-Hexes whose wet polygon has no water area (`water_area_m2` 0 — the hex
-is all land in the BSH coastline, yet a sub-grid trajectory position
-fell inside it) get no `dilution`; they still carry a `percentage`.
+Hexes with less than `dilution_min_water_fraction` of their area in water
+get no `dilution` and stay blank on the dilution maps: zero-water hexes
+(all land in the BSH coastline, yet a sub-grid trajectory position fell
+inside) and slivers, whose tiny water area makes share / area unstable.
+They still carry a `percentage`.
 
 ```python
 def to_hex_gdf(binned_df, key_df):
@@ -369,14 +378,17 @@ def to_hex_gdf(binned_df, key_df):
     gdf = (
         binned_df.groupby("target_hex", as_index=False)["weight"].sum()
         .merge(
-            key_df[["hex_id", "geometry", "water_area_m2"]],
+            key_df[["hex_id", "geometry", "area_m2", "water_area_m2"]],
             left_on="target_hex", right_on="hex_id",
         )
         .pipe(gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326")
     )
     gdf["percentage"] = 100 * gdf["weight"] / gdf["weight"].sum()
     gdf["dilution"] = gdf["percentage"] / (
-        gdf["water_area_m2"].where(gdf["water_area_m2"] > 0) / 1e6
+        gdf["water_area_m2"].where(
+            (gdf["water_area_m2"] > 0)
+            & (gdf["water_area_m2"] >= dilution_min_water_fraction * gdf["area_m2"])
+        ) / 1e6
     )
     return gdf
 
@@ -721,7 +733,7 @@ print(
     f"{100 * weight_sentinel / weight_raw:.4f} %"
 )
 print(
-    f"  hexes without water area (no dilution): "
+    f"  zero-water and sliver hexes (no dilution): "
     f"{int(gdf_full['dilution'].isna().sum()):,}"
 )
 print(f"  max percentage in one hex: {gdf_full['percentage'].max():.4f} %")

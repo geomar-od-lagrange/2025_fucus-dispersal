@@ -148,8 +148,18 @@ credited with a whole hex of dilution volume; in 026, 026a and 034 it is
 instead normalised by the *released* particle-time (below). Percentage is
 linear. Absolute counts are dropped from the headline maps — a count
 is only readable against a release-set size the reader does not have.
-Hexes with `water_area_m2 == 0` carry a percentage but no dilution. The
-percentage scale saturates at the 99th percentile with an over-range
+**Sliver mask.** A hex with less than a quarter of its area in water
+(`water_area_m2 < dilution_min_water_fraction · area_m2`, parameter
+default 0.25, in 025/026/026a/026b/034) has NaN dilution and is left blank on
+every dilution map; zero-water hexes are the limiting case. It keeps its
+percentage, and no other product (percentage maps, median age, the 90 %-area
+metric, exports other than the `dilution` column) masks it. Share / area is
+unstable as the area goes to zero: a coastal hex with ~1 km² of water and a few
+samples drew decades above its neighbours, the top of a log scale held by
+geometry rather than by drift. Considered flooring the area at ¼ hex;
+rejected (authors, 2026-11-15), a floor invents water the hex does not have
+and still paints the hex, whereas blank says "not resolved at this hex size".
+The percentage scale saturates at the 99th percentile with an over-range
 colorbar arrow: occupancy is concentrated enough that a few hexes sit two
 decades above the bulk, and scaling to the maximum paints every other hex
 the same dark colour.
@@ -174,7 +184,7 @@ decades; 1 per km² would be all released particle-time in one km²), two
 classes per decade, `extend="both"`, tick labels on whole decades, one shared
 colourbar per figure. Every hex with weight is drawn: below the floor in the
 under colour, above the top in the over colour (the lowest and highest class
-colours); white means no particles, or a hex with no water area. Considered
+colours); white means no particles, or a zero-water or sliver hex (above). Considered
 masking sub-floor hexes; rejected, the 180 d panel then looked as if material
 vanished. Override: `turbo` sampled discretely (one colour per class) instead
 of the default colormap — six decades must stay distinguishable and read as
@@ -352,7 +362,12 @@ the maps keep `time_horizons_days_csv` — and share
 `q` of the cumulative weight. The hex that crosses `q` counts only the
 fraction of its area needed (a 6 km hex is 93.5 km² of water, so whole
 hexes would quantise small-T areas); hexes with weight but no water area
-rank first at zero area. `length_km = sqrt(area_km2)` is the side of the
+rank first at zero area. Sliver hexes are **not** masked here: they rank by
+their true density and enter at their own (small) water area. The metric is
+a sum of water area, so a sliver costs exactly the water it has; masking would
+either drop its particle-time from the share or charge it for land. The
+sliver mask fixes a display artefact (one tiny denominator on a log colour
+scale), not a bias in a sum, and 034 ranks the same way. `length_km = sqrt(area_km2)` is the side of the
 equal-area square, a length scale rather than a distance travelled.
 `pooled` ranks the summed weights of every year in `release_years`; each year is the
 same reduction on its own releases, so the per-year rows give the
@@ -385,7 +400,8 @@ colourbar of the pipeline): `BoundaryNorm` at 0, 5, 10, 15, 20, 30, 40, 60,
 Finer below 100 d, where the class edges are closest; colourbar label `days` (the title names the quantity), ticks at
 the bounds. **Mask:** a hex is drawn only if its share of the
 window's weight (`percentage`) is at or above the 5th percentile of the
-per-hex shares, zero-water hexes excluded (as on the dilution map). At
+per-hex shares, zero-water hexes excluded (slivers kept: the sliver mask is
+for dilution maps only). At
 production (ALL, 2016–2024) that keeps 10,151 of 10,714 surface and 5,218
 of 5,509 bottom hexes, 99.8–99.9 % of the weight (the rest is mostly the
 zero-water hexes). Considered the dilution map's 1st-percentile floor;
@@ -433,7 +449,7 @@ layout. Overrides: panel titles at
 `fontsize="medium"` (the longest HELCOM names overrun a 45 mm panel at the
 default `large`); colorbar `pad=0.01` (the default 0.05 is a fraction of
 the whole grid's height, a blank band above the bar). The run also
-prints each origin's share on zero-water hexes (NaN dilution, not drawn),
+prints each origin's share on zero-water and sliver hexes (NaN dilution, not drawn),
 apart from the below-floor share.
 
 ## Notebook 026b — per origin subbasin and year (special case)

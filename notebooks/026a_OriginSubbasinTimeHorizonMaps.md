@@ -122,12 +122,19 @@ origin_subbasins_csv = ""
 # see docs/h0_semantics.md). Fucus vesiculosus no longer grows below ~3 m.
 isobath_m = 3.0
 
+# Dilution maps leave a hex blank (NaN dilution) when less than this
+# fraction of its area is water: a sliver's tiny water area turns a few
+# samples into a dilution decades above its neighbours
+# (docs/visualisations.md). Its percentage, and every non-dilution product,
+# keep it.
+dilution_min_water_fraction = 0.25
+
 # Floor and top of the dilution colour scale, fraction of the released
 # particle-time per km², whole decades. The same in every dilution figure
 # (026, 026a, 034): the authors' fixed scale, two classes per decade
 # (docs/visualisations.md). Every hex with weight is drawn: values below the
 # floor take the under colour, values above the top the over colour; white is
-# only "no particles".
+# "no particles", or a hex below `dilution_min_water_fraction` water.
 dilution_floor = 1e-7
 dilution_top = 0.1
 
@@ -210,7 +217,8 @@ dilution_bounds = np.logspace(
 # decade. Every hex with weight is drawn (masking sub-floor hexes made
 # material look as if it vanished): below the floor in the under colour, above
 # the top in the over colour — the lowest and highest class colours, shown as
-# the colorbar's extend="both" triangles. White is only "no particles".
+# the colorbar's extend="both" triangles. White is "no particles", or a
+# zero-water or sliver hex (below `dilution_min_water_fraction`).
 dilution_cmap = plt.get_cmap("turbo").resampled(len(dilution_bounds) - 1)
 dilution_norm = BoundaryNorm(dilution_bounds, dilution_cmap.N)
 # Tick labels on the whole decades only; the half-decade edges stay unlabelled.
@@ -454,9 +462,11 @@ over the weight passed in (that horizon's own share of the particle-time
 present), `dilution` over the released particle-time `released` of the
 same release set and horizon. `released_of(code, h)` is an origin's.
 
-Hexes whose wet polygon has no water area (`water_area_m2` 0 — the hex
-is all land in the BSH coastline, yet a sub-grid trajectory position
-fell inside it) get no `dilution`; they still carry a `percentage`.
+Hexes with less than `dilution_min_water_fraction` of their area in water
+get no `dilution` and stay blank on the dilution maps: zero-water hexes
+(all land in the BSH coastline, yet a sub-grid trajectory position fell
+inside) and slivers, whose tiny water area makes share / area unstable.
+They still carry a `percentage`.
 
 ```python
 def to_hex_gdf(binned_df, key_df, released):
@@ -467,14 +477,17 @@ def to_hex_gdf(binned_df, key_df, released):
     gdf = (
         binned_df.groupby("target_hex", as_index=False)["weight"].sum()
         .merge(
-            key_df[["hex_id", "geometry", "water_area_m2"]],
+            key_df[["hex_id", "geometry", "area_m2", "water_area_m2"]],
             left_on="target_hex", right_on="hex_id",
         )
         .pipe(gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326")
     )
     gdf["percentage"] = 100 * gdf["weight"] / gdf["weight"].sum()
     gdf["dilution"] = gdf["weight"] / released / (
-        gdf["water_area_m2"].where(gdf["water_area_m2"] > 0) / 1e6
+        gdf["water_area_m2"].where(
+            (gdf["water_area_m2"] > 0)
+            & (gdf["water_area_m2"] >= dilution_min_water_fraction * gdf["area_m2"])
+        ) / 1e6
     )
     return gdf
 
@@ -680,7 +693,7 @@ def hex_map(gdf, column, ax, norm, cmap=None, title=None):
 
 def below_floor_report(gdf):
     """Shares (%) of ``gdf``'s weight that the dilution maps leave out:
-    below the floor, and on zero-water hexes (no dilution)."""
+    below the floor, and on zero-water or sliver hexes (no dilution)."""
     dilution = gdf["dilution"]
     return (
         gdf.loc[dilution < dilution_floor, "percentage"].sum(),
@@ -835,14 +848,14 @@ for h in overview_horizons_days:
     print(f"wrote {fig_path} ({fig.get_size_inches()[1] * 25.4:.1f} mm tall)")
     plt.show()
     # Per origin: the share of the origin's particle-time below the floor
-    # (under colour) and on hexes with no water area (NaN dilution, not
+    # (under colour) and on zero-water or sliver hexes (NaN dilution, not
     # drawn), and the share of the mapped weight outside the map extent.
     outside = {code: share_outside_extent(gdfs[code]) for code in overview_codes}
     for code in overview_codes:
         below, no_water = below_floor_report(gdfs[code])
         print(
             f"    {subbasin_id_to_name[code]}: {below:.2f} % below floor, "
-            f"{no_water:.2f} % on zero-water hexes, "
+            f"{no_water:.2f} % on zero-water and sliver hexes (no dilution), "
             f"{outside[code]:.3f} % of the mapped weight outside the map extent, "
             f"remaining / released {gdfs[code]['weight'].sum() / released_of(code, h):.4f}"
         )

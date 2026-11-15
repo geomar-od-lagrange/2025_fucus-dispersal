@@ -111,12 +111,19 @@ area_quantiles_csv = "0.9"
 # see docs/h0_semantics.md). Fucus vesiculosus no longer grows below ~3 m.
 isobath_m = 3.0
 
+# Dilution maps leave a hex blank (NaN dilution) when less than this
+# fraction of its area is water: a sliver's tiny water area turns a few
+# samples into a dilution decades above its neighbours
+# (docs/visualisations.md). Its percentage, and every non-dilution product,
+# keep it.
+dilution_min_water_fraction = 0.25
+
 # Floor and top of the dilution colour scale, fraction of the released
 # particle-time per km², whole decades. The same in every dilution figure
 # (026, 026a, 034): the authors' fixed scale, two classes per decade
 # (docs/visualisations.md). Every hex with weight is drawn: values below the
 # floor take the under colour, values above the top the over colour; white is
-# only "no particles".
+# "no particles", or a hex below `dilution_min_water_fraction` water.
 dilution_floor = 1e-7
 dilution_top = 0.1
 
@@ -199,7 +206,8 @@ dilution_bounds = np.logspace(
 # decade. Every hex with weight is drawn (masking sub-floor hexes made
 # material look as if it vanished): below the floor in the under colour, above
 # the top in the over colour — the lowest and highest class colours, shown as
-# the colorbar's extend="both" triangles. White is only "no particles".
+# the colorbar's extend="both" triangles. White is "no particles", or a
+# zero-water or sliver hex (below `dilution_min_water_fraction`).
 dilution_cmap = plt.get_cmap("turbo").resampled(len(dilution_bounds) - 1)
 dilution_norm = BoundaryNorm(dilution_bounds, dilution_cmap.N)
 # Tick labels on the whole decades only; the half-decade edges stay unlabelled.
@@ -392,9 +400,11 @@ over the weight passed in (each horizon panel reads as that horizon's own
 share of the particle-time present), `dilution` over the released
 particle-time `released` of the same release set and horizon.
 
-Hexes whose wet polygon has no water area (`water_area_m2` 0 — the hex
-is all land in the BSH coastline, yet a sub-grid trajectory position
-fell inside it) get no `dilution`; they still carry a `percentage`.
+Hexes with less than `dilution_min_water_fraction` of their area in water
+get no `dilution` and stay blank on the dilution maps: zero-water hexes
+(all land in the BSH coastline, yet a sub-grid trajectory position fell
+inside) and slivers, whose tiny water area makes share / area unstable.
+They still carry a `percentage`.
 
 ```python
 def to_hex_gdf(binned_df, key_df, released):
@@ -405,14 +415,17 @@ def to_hex_gdf(binned_df, key_df, released):
     gdf = (
         binned_df.groupby("target_hex", as_index=False)["weight"].sum()
         .merge(
-            key_df[["hex_id", "geometry", "water_area_m2"]],
+            key_df[["hex_id", "geometry", "area_m2", "water_area_m2"]],
             left_on="target_hex", right_on="hex_id",
         )
         .pipe(gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326")
     )
     gdf["percentage"] = 100 * gdf["weight"] / gdf["weight"].sum()
     gdf["dilution"] = gdf["weight"] / released / (
-        gdf["water_area_m2"].where(gdf["water_area_m2"] > 0) / 1e6
+        gdf["water_area_m2"].where(
+            (gdf["water_area_m2"] > 0)
+            & (gdf["water_area_m2"] >= dilution_min_water_fraction * gdf["area_m2"])
+        ) / 1e6
     )
     return gdf
 
@@ -648,7 +661,7 @@ gdfs = {
 for h in time_horizons_days:
     # Σ mapped weight / released particle-time: what stranding (survival
     # weights) and domain exits have taken by T. Σ dilution · area is the
-    # same ratio minus the zero-water hexes.
+    # same ratio minus the hexes without dilution (zero-water and slivers).
     print(
         f"{h} d: remaining / released particle-time "
         f"{gdfs[h]['weight'].sum() / (released_per_bin * h // age_bin_days):.4f}"
@@ -661,7 +674,7 @@ for h in time_horizons_days:
     print(
         f"{h} d: {gdfs[h].loc[dilution < dilution_floor, 'percentage'].sum():.3f} % of the "
         f"weight below the dilution floor (under colour), "
-        f"{gdfs[h].loc[dilution.isna(), 'percentage'].sum():.3f} % on zero-water hexes, "
+        f"{gdfs[h].loc[dilution.isna(), 'percentage'].sum():.3f} % on zero-water and sliver hexes (no dilution), "
         f"{gdfs[h].loc[dilution > dilution_top, 'percentage'].sum():.3f} % above the top"
     )
 
@@ -763,11 +776,12 @@ median_age = median_age_days(
     .loc[hex_weight > 0]
 )
 # Median age describes the age of the cloud present, so it stays on the
-# weight present; `released` only feeds the zero-water filter's dilution.
+# weight present (`released` only feeds the unused dilution column). Only
+# zero-water hexes are dropped: the sliver mask is for dilution maps alone.
 gdf_age = to_hex_gdf(binned, key, released_per_bin * n_age_bins).join(
     median_age, on="target_hex"
 )
-gdf_age = gdf_age[gdf_age["dilution"] > 0]
+gdf_age = gdf_age[gdf_age["water_area_m2"] > 0]
 # 5th percentile, not the 1st that floors the dilution colour scale: the
 # isolated estuary hexes sit at the 0.2nd–4.3rd percentile of share (surface,
 # ALL, 2016–2024, production member).

@@ -115,6 +115,13 @@ mapped_years_csv = ""
 # see docs/h0_semantics.md). Fucus vesiculosus no longer grows below ~3 m.
 isobath_m = 3.0
 
+# Dilution maps leave a hex blank (NaN dilution) when less than this
+# fraction of its area is water: a sliver's tiny water area turns a few
+# samples into a dilution decades above its neighbours
+# (docs/visualisations.md). Its percentage, and every non-dilution product,
+# keep it.
+dilution_min_water_fraction = 0.25
+
 # Map extent (degrees), one for every map of the pipeline: the Baltic with
 # the Belt Sea and Kattegat, North Sea cropped (docs/visualisations.md). Set
 # all four to 0 to fall back to the key's full bounds.
@@ -401,9 +408,11 @@ joins the key geometry and derives both relative views. The
 normalisation is over whatever subset is passed in, so each horizon
 panel reads as that horizon's own share of particle-time.
 
-Hexes whose wet polygon has no water area (`water_area_m2` 0 — the hex
-is all land in the BSH coastline, yet a sub-grid trajectory position
-fell inside it) get no `dilution`; they still carry a `percentage`.
+Hexes with less than `dilution_min_water_fraction` of their area in water
+get no `dilution` and stay blank on the dilution maps: zero-water hexes
+(all land in the BSH coastline, yet a sub-grid trajectory position fell
+inside) and slivers, whose tiny water area makes share / area unstable.
+They still carry a `percentage`.
 
 ```python
 def to_hex_gdf(binned_df, key_df, total=None):
@@ -415,14 +424,17 @@ def to_hex_gdf(binned_df, key_df, total=None):
     gdf = (
         binned_df.groupby("target_hex", as_index=False)["weight"].sum()
         .merge(
-            key_df[["hex_id", "geometry", "water_area_m2"]],
+            key_df[["hex_id", "geometry", "area_m2", "water_area_m2"]],
             left_on="target_hex", right_on="hex_id",
         )
         .pipe(gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326")
     )
     gdf["percentage"] = 100 * gdf["weight"] / (gdf["weight"].sum() if total is None else total)
     gdf["dilution"] = gdf["percentage"] / (
-        gdf["water_area_m2"].where(gdf["water_area_m2"] > 0) / 1e6
+        gdf["water_area_m2"].where(
+            (gdf["water_area_m2"] > 0)
+            & (gdf["water_area_m2"] >= dilution_min_water_fraction * gdf["area_m2"])
+        ) / 1e6
     )
     return gdf
 
