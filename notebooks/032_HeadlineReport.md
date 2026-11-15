@@ -36,8 +36,8 @@ Seven tables:
 
 | table | question | source |
 |---|---|---|
-| A | beached fraction by release season and year, production member | `HexAgg_beaching_*` |
-| B | how far that moves across the rate-model sweep | `HexAgg_beaching_*`, every member on disk |
+| A | beached fraction by release season and year, production member, per regime | `HexAgg_beaching_*` |
+| B | how far that moves across the rate-model sweep, per regime | `HexAgg_beaching_*`, every member on disk |
 | C | what survival weighting does to subbasin connectivity | `HexAgg_survconn_*` + `Exports/028/*.csv` |
 | D | how far propagules travel, per season and regime | `Exports/027/*.geojson` |
 | E | how concentrated the cloud is at the long horizon | `Exports/026/*.geojson` + `024a` key |
@@ -78,7 +78,7 @@ hex_radius = 6000
 regimes_csv = "surface_stokes,bottom"
 # The production rate-model member: tables A, C and the beaching/survival
 # figures report this one, table B sweeps every member on disk.
-member = "step_wc0p1_ts3_tcinf_tf1_tw0"
+member = "step_wc0p1_ts3_tcinf_tf1_tw0_b750"
 # Release seasons, in reading order. Contract in docs/visualisations.md.
 seasons_csv = "DJF,MAM,JJA,SON,ALL"
 # Release years the tables pool: "first-last" (inclusive) or one year
@@ -240,15 +240,25 @@ analysis_parts = member_parts[member_parts.year.isin(analysis_years)]
 sweep_members = sorted(
     analysis_parts.loc[analysis_parts.kind == "beaching", "member"].unique().tolist()
 )
-beaching_regimes = [
-    r
-    for r in regimes
-    if not analysis_parts[(analysis_parts.kind == "beaching") & (analysis_parts.regime == r)].empty
-]
-if member not in sweep_members:
-    raise ValueError(f"member {member!r} has no 024e partitions; on disk: {sweep_members}")
+# Every beaching/survival table runs per regime over the regimes whose 024e
+# store holds the production member; a regime without one is reported and
+# left out, so a partial 024d–g build still yields a report.
+beaching_regimes = []
+for r in regimes:
+    if analysis_parts[
+        (analysis_parts.kind == "beaching")
+        & (analysis_parts.regime == r)
+        & (analysis_parts.member == member)
+    ].empty:
+        gaps.append(f"`{r}`: no `024e` partitions for member `{member}` — no beaching/survival tables")
+        print(f"MISSING: 024e {r} {member} — {r} is left out of the beaching/survival tables")
+    else:
+        beaching_regimes.append(r)
 if not beaching_regimes:
-    raise ValueError(f"no 024e beaching partitions for any of {regimes}")
+    raise ValueError(
+        f"no 024e beaching partitions at member {member!r} for any of {regimes}; "
+        f"members on disk: {sweep_members}"
+    )
 
 print(f"key {key_path.name}: {len(key)} hexes")
 print(f"per-(regime, year) partitions: {len(year_parts)}")
@@ -258,8 +268,8 @@ print(f"024e members on disk ({len(sweep_members)}): {', '.join(sweep_members)}"
 print(f"beaching regimes: {', '.join(beaching_regimes)}")
 
 # The 025/026 family runs survival-weighted at the production member where a
-# 024f store exists for the regime (only surface_stokes has 024d sidecars)
-# and unweighted otherwise — the rule scripts/025-031_ConsumersAll_job.sh
+# 024f store exists for the regime and unweighted otherwise (a regime whose
+# 024d–f build has not landed) — the rule scripts/025-031_ConsumersAll_job.sh
 # applies. Its exports and figures carry that tag in their names.
 heatmap_tag = {
     r: member
@@ -286,9 +296,9 @@ key, and a stale product is a gap like a missing one. The derivation is a
 list of `(store kind, regime, member)` sources per product (`member = None`:
 every member, for the sweep); the 025/026 family derives from 024f at the
 production member where the regime is weighted, from the 024 counts
-otherwise. 035 draws 026's area CSVs rather than a store, so its sources
-are those CSVs, each with its own store sources: a 035 figure drawn from a
-stale CSV is stale however new it is. Considered recording the input
+otherwise. 035 draws 026's area CSVs and 029's stranding curves rather
+than a store, so its sources are those CSVs, each with its own store
+sources: a 035 figure drawn from a stale CSV is stale however new it is. Considered recording the input
 partitions' build ids in every product and comparing those; rejected,
 mtime needs no change to the consumers. Copying outputs without preserving
 mtimes defeats it.
@@ -591,6 +601,10 @@ table_c_ratio_md = {}
 table_c_ratio = {}
 for regime in (r for r in beaching_regimes if not survconn.empty):
     frame = survconn[survconn.regime == regime]
+    if frame.empty:
+        gaps.append(f"`{regime}`: no `024g` survconn partitions for member `{member}` — "
+                    "its table C Σw/Σn is absent.")
+        continue
     rows = []
     table_c_ratio[regime] = {}
     for season in seasons:
@@ -908,7 +922,7 @@ parameters (regime, season, hex radius, member or the regime's 025/026
 weighting tag, horizon). Resolution takes the exact `<stem>.png` only: every
 field of a stem is a run parameter, and a looser `<stem>_*.png` match would
 silently resolve one member's figure for another whose tag it extends
-(`step_wc0p1_ts3_tcinf` → `step_wc0p1_ts3_tcinf_tf1_tw0`). An entry that
+(`step_wc0p1_ts3_tcinf_tf1_tw0` → `step_wc0p1_ts3_tcinf_tf1_tw0_b750`). An entry that
 resolves to nothing, or to a stale PNG (its `sources`, see Staleness), is
 recorded as a gap rather than raising: a partially-run consumer matrix
 should still yield a report. An entry read against another (`pairs_with`)
@@ -1010,17 +1024,26 @@ figure_specs = [
     ),
     dict(
         notebook="035", stem="AreaTimeSeries_{pooled}_r{radius}m", name="area_time_series_{pooled}",
-        # 035 draws 026's area CSVs, so it is only as fresh as they are.
+        # 035 draws 026's area CSVs and 029's stranding curves, so it is
+        # only as fresh as they are.
         sources=[
             (
                 export_root / "026" / f"026_areas_{r}_{pooled_season}_{heatmap_tag[r]}.csv",
                 heatmap_sources(r),
             )
             for r in regimes
+        ]
+        + [
+            (
+                export_root / "029" / f"stranded_curve_{r}_{pooled_season}_{member}.csv",
+                [("beaching", r, member)],
+            )
+            for r in beaching_regimes
         ],
-        note="Table F's area (left) and its square root (right) against the cumulative horizon T "
-        "(ages in [0, T)) at every age-bin edge, one line per regime at its 025/026 weighting: "
-        "pooled line, per-release-year min–max band.",
+        note="Stranded % of the released drifters by age T (top), table F's area (middle) and its "
+        "square root (bottom) against the cumulative horizon T (ages in [0, T)) at every age-bin "
+        "edge, one line per regime (stranding at the production member, areas at the regime's "
+        "025/026 weighting): pooled line, per-release-year min–max band.",
     ),
     dict(
         notebook="029", stem="WhereStranded_{regime}_r{radius}m_{season}_{member}",
@@ -1189,7 +1212,7 @@ sections = [
 ]
 
 sections += [
-    "## Table A — beached fraction by release season, production member",
+    "## Table A — beached fraction by release season, production member, per regime",
     "",
     f"`Σ weight[beach_hex ≥ 0] / Σ weight` from "
     f"`HexAggregates/HexAgg_beaching_r{hex_radius}m_<regime>_<year>_mMM_{member}.parquet`; "
