@@ -227,12 +227,18 @@ print(f"nobs={nobs} (hourly), git_sha={git_sha}, "
 
 # %%
 def _h0_nearest_sampler(h0):
-    """Nearest-cell H0 lookup for a regular BSH grid; NaN outside the grid."""
+    """Nearest-cell H0 lookup for a regular BSH grid; NaN outside the grid.
+
+    The step is the mean spacing, not ``lon[1] - lon[0]``: the static
+    coordinates are stored rounded to 1e-4°, so the first difference is off
+    by up to 1e-4° per cell and the index drifts by up to 1.5 fine cells
+    across the grid (docs/hexbinning_and_connectivity.md, source data).
+    """
     lon = h0.lon.values
     lat = h0.lat.values
     values = h0.H0.values
-    lon0, dlon = lon[0], lon[1] - lon[0]
-    lat0, dlat = lat[0], lat[1] - lat[0]  # dlat < 0 (descending)
+    lon0, dlon = lon[0], (lon[-1] - lon[0]) / (len(lon) - 1)
+    lat0, dlat = lat[0], (lat[-1] - lat[0]) / (len(lat) - 1)  # dlat < 0 (descending)
 
     def sample(lon_q, lat_q):
         i = np.round((lon_q - lon0) / dlon).astype(np.int64)

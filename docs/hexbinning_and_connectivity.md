@@ -327,7 +327,14 @@ Key file derives from:
 
 - BSH H0 statics (`data/bsh_hbmnoku_static/static_file_{fine,coarse}/H0_file_*.nc`)
 - BSH wet-cell coastline geojsons under `data/bsh_hbmnoku_static/`
-  (produced by `notebooks/004_extract_coastline.py`)
+  (produced by `notebooks/004_extract_coastline.py`). Each wet cell spans
+  its centre ∓ half the grid step, step and origin from a linear fit over
+  all stored centres, so the edges are the NE F-points the 003 c_files and
+  005 wall fields carry. The static coordinates are stored rounded to
+  1e-4°; a step taken from the first difference (0.0834 for 1/12°, −0.0083
+  for −1/120°) drifts the outline off the grid by up to 0.33 coarse and 1.5
+  fine cells. 024d's H0 nearest-cell sampler takes the mean step for the
+  same reason.
 - HELCOM subbasins shapefile (`HELCOM_subbasins_2022_level2.shp`)
 - REDLIST_SIS_Macrophytes shapefile (`F_vesiculo != 0`)
 
