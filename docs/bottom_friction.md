@@ -5,7 +5,7 @@ A *Fucus* sliding on the bed moves along the local bottom current `U` at
 `|U| ≤ U_b`. The break-off speed `U_b = 0.049 ± 0.005 m/s` is the lab flume
 fit; the study runs the central value only, as its own regime `bottom_ub49`
 beside the frictionless `bottom`. Design, prototype numbers and the authors'
-decisions: [bottom_friction.md](../plans/bottom_friction.md).
+decisions: [bottom_friction.md](../plans/done/bottom_friction.md).
 
 | piece | where |
 |---|---|

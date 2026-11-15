@@ -1,3 +1,5 @@
+> Implemented — see [docs/bottom_friction.md](../../docs/bottom_friction.md).
+
 # Bottom friction for the `bottom` regime
 
 Add the lab bed-friction model to the `bottom` drifters in 010: a *Fucus*
@@ -11,7 +13,7 @@ numbers and draft code in `tmp_bottom_friction/` (untracked), runs in
 
 - **Wired** (branch `worktree-agent-addfa4b95e8442caa`, not merged: the main
   checkout serves the ε = 2 rerun's refills). Docs:
-  [bottom_friction.md](../docs/bottom_friction.md); §Wiring below is done.
+  [bottom_friction.md](../../docs/bottom_friction.md); §Wiring below is done.
 - **Decisions (authors, 2026-11-13):** implementation route approved:
   friction in the 010 kernel, on the interpolated UV at every RK4 stage
   (§Design; no field-level scaling, load hook or preprocessed fields); ε

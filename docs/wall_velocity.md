@@ -6,7 +6,7 @@ face, so onshore forcing pulls drifters exponentially close to it (~1e-12
 cell), where float64 rounding freezes them for good. 010 therefore adds a
 small **wall velocity ε pointing away from land** on wall faces and drops
 any step that would end on land. Diagnosis, prototype and ε sweep:
-[numerical_coastal_trapping.md](../plans/numerical_coastal_trapping.md).
+[numerical_coastal_trapping.md](../plans/done/numerical_coastal_trapping.md).
 
 | piece | where |
 |---|---|

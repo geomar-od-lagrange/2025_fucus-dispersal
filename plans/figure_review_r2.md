@@ -190,7 +190,7 @@ Bothnian Sea · QUA The Quark · BOB Bothnian Bay
 
 The coastal dilution hot spots led to an investigation of drifters that pin
 against coast walls; findings and the fix live in
-[numerical_coastal_trapping.md](numerical_coastal_trapping.md). The dilution
+[numerical_coastal_trapping.md](done/numerical_coastal_trapping.md). The dilution
 colour range and the ¼-hex area floor wait on that fix.
 
 ## Paper pass (2026-11-03)

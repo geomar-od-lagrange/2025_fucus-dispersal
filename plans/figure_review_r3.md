@@ -3,7 +3,7 @@
 Remarks (2026-11-03) on the R2 paper pass (`paper` `2be9796`, 17 figures).
 Previous round: [figure_review_r2.md](figure_review_r2.md). Values still
 refresh after the coastal-trapping rerun
-([numerical_coastal_trapping.md](numerical_coastal_trapping.md)). This round
+([numerical_coastal_trapping.md](done/numerical_coastal_trapping.md)). This round
 changes styling only and runs on the current stores. All consumers here are
 parquet-only, so runs stay small (the node is shared with the trapping
 prototype).

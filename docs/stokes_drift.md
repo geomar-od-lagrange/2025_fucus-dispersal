@@ -111,7 +111,7 @@ Zero coast faces stop flux *through* the coast, not drift *toward* it:
 inside the wall cell the C-grid interpolates the wall-normal velocity
 linearly to 0 at the wall, so onshore Stokes still carries drifters up
 to the wall, where they stall. See
-[numerical_coastal_trapping.md](../plans/numerical_coastal_trapping.md).
+[numerical_coastal_trapping.md](../plans/done/numerical_coastal_trapping.md).
 
 ## Open concern: spread bridges thin land barriers
 

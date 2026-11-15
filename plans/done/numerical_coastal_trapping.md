@@ -1,3 +1,5 @@
+> Implemented — see [docs/wall_velocity.md](../../docs/wall_velocity.md).
+
 # Numerical coastal trapping
 
 Drifters in 010 pile up against the model's zero-flux coast faces and freeze
@@ -5,7 +7,7 @@ there. Findings below (2026-10-27/28, all from the 2019 sample, scratch in
 `tmp_stall_audit/`, `tmp_stokes_faces/`, `tmp_pinned_time/`,
 `tmp_land_entry/`, `tmp_pin_sites/`, `tmp_bottom_check/`; all untracked); the fix (a wall velocity applied in the
 010 kernel) is planned at the end. Found during the figure review:
-[figure_review_r2.md](figure_review_r2.md).
+[figure_review_r2.md](../figure_review_r2.md).
 
 ## Start here (state 2026-11-03)
 
@@ -60,7 +62,7 @@ there. Findings below (2026-10-27/28, all from the 2019 sample, scratch in
   entirely — its rerun 24918541 and 024 job 24918602 cancelled; remove 034,
   `velocity_scale` plumbing and docs in a cleanup pass after the chain's
   024* jobs have run (done with the bottom-friction wiring; 034 kept,
-  repurposed as bottom vs `bottom_ub49`). Bottom friction (plans/bottom_friction.md) becomes its
+  repurposed as bottom vs `bottom_ub49`). Bottom friction (plans/done/bottom_friction.md) becomes its
   own regime alongside `bottom`, U_b = 0.049 m/s only, full 2016–2025, after
   this rerun is in.
 - **Handoff 2026-11-14 10:45** (session ends ~17:15): every ε=2 regime-year
@@ -87,7 +89,7 @@ there. Findings below (2026-10-27/28, all from the 2019 sample, scratch in
   partial-ub49 version until the ub49 chain (consumers 24918862) reruns it.
 - **Held until after the fix:** dilution colour top (1e-1 vs 1e-2), the ¼-hex
   dilution area floor, the zero-water hex remap (G6) — see
-  [figure_review_r2.md](figure_review_r2.md).
+  [figure_review_r2.md](../figure_review_r2.md).
 
 ## Finding: coastal dilution hot spots and stalled drifters (2026-10-27)
 
@@ -493,7 +495,7 @@ cell of a permanent zero-flux face of a wet cell (spot checks: 1e-13–1e-12).
       ids+=($(scripts/submit_010.sh $r 2025 29 | tail -1 | cut -d' ' -f1))
   done
   # (history: the bottom_vs0p8 lines below are void -- VELOCITY_SCALE and
-  # bottom_vs0p8 no longer exist; see plans/bottom_friction.md)
+  # bottom_vs0p8 no longer exist; see plans/done/bottom_friction.md)
   vs=$(RELEASE_NS=0,7,12,18,24,31,37,43,49,55,61,67 VELOCITY_SCALE=0.8 \
        scripts/submit_010.sh bottom 2019 | tail -1 | cut -d' ' -f1)
   # 024/024b/024c per (regime, year) -> 024d -> 024e/f/g -> 025-031 + 035
