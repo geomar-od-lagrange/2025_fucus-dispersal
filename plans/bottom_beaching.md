@@ -1,6 +1,6 @@
 # Beaching statistics for bottom particles
 
-Status: **plan, author decisions in (2026-11-15), not started.** Touches
+Status: **plan, author decisions in (2026-11-15); Step 0 done (result below), band choice open.** Touches
 024d–g, the beaching consumers and their job scripts; start only after the
 coastline-grid-fix rerun has landed
 ([coastline_grid_fix.md](done/coastline_grid_fix.md), landed 2026-11-15), which edited and
@@ -45,6 +45,42 @@ coastline rerun, no 024d rebuild:
    bottom (after Stage 1 below) a **much larger** reduction is expected,
    since bottom drifters are not pushed onto the wall and spread across the
    band; Validation measures it on one release before the full build.
+
+**Result (2026-11-15, done).** Tag fix `86375ec`; the 2000 m tag is unchanged
+and a 2019-01 024e rerun at 2000 m reproduces the production parquet exactly
+(351 672 rows, only `git_sha`/`slurm_job_id` differ). `…_tf1_tw0_b750` built
+for 024e + 024f, all 113 `(year, month)` cells (job 24930464; rows in
+`024efg_ReduceAll_job.sh`). `surface_stokes`, 2016–2024 pooled (37.46 M
+drifters), 180 d window; per-year min–max in brackets. Scripts, CSVs and
+figures: `tmp_bottom_beaching/` (`compare.py`, `step0_*.csv`, `fig/`).
+
+| quantity | 2000 m | 750 m |
+|---|---|---|
+| stranded ≤ 30 d | 38.4 % [36.1–40.2] | 35.4 % [33.1–37.3] |
+| stranded ≤ 90 d | 57.7 % [53.1–61.8] | 54.4 % [49.6–58.4] |
+| stranded ≤ 180 d | 70.3 % [65.2–76.0] | 67.3 % [62.0–73.5] |
+| ≤ 180 d DJF / MAM / JJA / SON | 67.2 / 73.0 / 72.8 / 68.0 % | 63.9 / 70.1 / 69.9 / 65.0 % |
+| receiving hexes (> 0) | 1 206 | 1 097 |
+| hexes holding 90 / 99 % of stranded weight | 488 / 831 | 449 / 757 |
+| Gini over receiving hexes; top-10 share | 0.687; 12.8 % | 0.687; 13.4 % |
+| survocc `Σsurv / Σocc` (afloat share of particle-time) | 46.8 % | 49.9 % |
+| in-band particle-hours (rel. to 2000 m) | 1 | 0.67 |
+| strong-wave share of in-band hours (`w_on ≥ 0.10`) | 6.05 % | 7.93 % |
+| strong-wave in-band hours (rel. to 2000 m) | 1 | 0.88 |
+| drifters ever in band / ever strong-wave in band | 100.0 / 99.2 % | 99.98 / 98.1 % |
+
+The 109 hexes lost at 750 m held 0.6 % of the 2000 m stranded weight;
+Spearman rank correlation of per-hex stranded share 0.955; the top-10 hexes
+are the same set but one. Per origin subbasin the 180 d drop is 0.1–5.2
+points (largest in The Quark 25.1 → 19.9 % and Bothnian Sea 24.6 → 20.6 %,
+smallest where stranding is near-total, Kiel Bay / Gdansk Basin ≥ 99.6 %).
+The exposure numbers are counted directly from all 686 sidecars
+(`exposure_one.py`, 657 of them in 2016–2024), with 024e's gate.
+
+**Read:** as expected, surface stranding moves little — −3.0 points at 180 d,
+the same shift in every season and well inside the interannual range; the
+band keeps 88 % of strong-wave in-band hours while cutting in-band hours by
+a third, so the drifters that strand sit in the first ring already.
 
 **Raster quantisation.** `dist` is the EDT of the 500 m raster
 (`raster_dx_m`) in whole cells, and the reducers gate `dist·25 < band_m`, so
