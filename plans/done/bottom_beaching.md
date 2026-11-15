@@ -1,18 +1,20 @@
+> Implemented — see [docs/beaching.md](../../docs/beaching.md).
+
 # Beaching statistics for bottom particles
 
-Status: **code landed, validation done (below); full build not yet launched.** Author
+Status: **implemented; production build finished 2026-11-15 (below).** Author
 decision 2026-11-15: `band_m = 750` is production for every regime (tag
 `…_tf1_tw0_b750`), every sweep member rebuilt at 750, the production point at
 2000 m kept as the one band sensitivity. Touches
 024d–g, the beaching consumers and their job scripts; start only after the
 coastline-grid-fix rerun has landed
-([coastline_grid_fix.md](done/coastline_grid_fix.md), landed 2026-11-15), which edited and
+([coastline_grid_fix.md](coastline_grid_fix.md), landed 2026-11-15), which edited and
 reran the same notebooks.
 
 ## Design
 
 `bottom` and `bottom_ub49` drifters strand under **the same criterion as
-`surface_stokes`** ([beaching.md](../docs/beaching.md)): the same rate model,
+`surface_stokes`** ([beaching.md](../../docs/beaching.md)): the same rate model,
 the same thresholded quantity — the surface onshore Stokes `w_on` sampled at
 the drifter position — and the same absolute `w_c = 0.10` m/s. A narrow
 near-shore band is what makes the surface/bed distinction irrelevant: within
@@ -30,7 +32,7 @@ This also drops any new wave-variable download.
 
 The production `band_m = 2000` is questioned: under strong onshore Stokes
 surface drifters reach the wall anyway (ε rest point 0.01–0.07 cell ≈
-10–60 m fine, 50–350 m coarse; [wall_velocity.md](../docs/wall_velocity.md)),
+10–60 m fine, 50–350 m coarse; [wall_velocity.md](../../docs/wall_velocity.md)),
 so the first raster ring may be the right band, for **both** surface and
 bottom. Approved test, on the `surface_stokes` sidecars written by the
 coastline rerun, no 024d rebuild:
@@ -204,12 +206,10 @@ bottom_ub49 24930592 → 024efg surface_stokes 24930593, bottom 24930594,
 bottom_ub49 24930595 → ConsumersAll (160 units) 24930596; 033 ×5
 24930597–601; 036 24930602 → headline (3 regimes) 24930603. Log:
 `<outputs>/logs/launch_bottom_beaching_20261115.log`. Next: check all OK
-(consumer log "160 OK"), refresh docs/beaching.md results from 029/031/032,
-move this plan to plans/done/, then the paper numbers.
+(consumer log "160 OK").
 
 Build finished 2026-11-15 22:02: 024d 686/686 OK per bottom regime, 024efg
 OK, consumers 160 OK / 0 FAIL, 033 ×5, 036, headline completed. Stranded
 within 180 d (production `_b750`, 2016–2024 pooled, ALL seasons):
-surface_stokes 67.3 %, bottom 22.6 %. Next: refresh docs/beaching.md results
-from 029/031/032, move this plan to plans/done/, paper numbers.
+surface_stokes 67.3 %, bottom 22.6 %.
 

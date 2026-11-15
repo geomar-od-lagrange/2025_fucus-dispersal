@@ -5,15 +5,20 @@ per input c-file per variant. The Parcels runs in
 `notebooks/010_FucusDispersal.md` consume these 2D fields directly —
 sigma-layer selection happens here, not at runtime in the kernel.
 
-| Variant          | U/V content                                | Consumer regime          |
-|------------------|--------------------------------------------|--------------------------|
-| `surface`        | sigma layer 1                              | `regime="surface"`       |
-| `bottom`         | deepest fluid layer per face               | `regime="bottom"`        |
-| `surface_stokes` | surface + interpolated CMEMS Stokes drift  | `regime="surface_stokes"`|
+| Variant          | U/V content                                | Consumer (010 `regime`)                              |
+|------------------|--------------------------------------------|------------------------------------------------------|
+| `surface`        | sigma layer 1                              | none directly; the base of `surface_stokes`          |
+| `bottom`         | deepest fluid layer per face               | `bottom`, and `bottom_ub49` (same fields, run with bed friction at `break_off_speed_mm_s`) |
+| `surface_stokes` | surface + interpolated CMEMS Stokes drift  | `surface_stokes`                                     |
+
+The production regimes are `surface_stokes`, `bottom` and `bottom_ub49`; the
+no-Stokes `surface` regime is retired. 003 still writes the `surface` file
+because the `surface_stokes` sum starts from it; nothing runs on it.
 
 Output globs as `c_file_{fine,coarse}_<YYYYMMDDHH>_<i>_<j>_<variant>.nc`
-under `output_root/2d_fields/`. 010 picks a variant by changing the
-`regime` parameter; the fieldset glob is
+under `output_root/2d_fields/`. 010 picks a field set by its `regime`
+parameter (`surface_stokes` or `bottom`; the `bottom_ub49` output regime is
+`bottom` plus `break_off_speed_mm_s`); the fieldset glob is
 `c_file_{fine,coarse}_*_{regime}.nc`.
 
 ## Why preprocess to 2D

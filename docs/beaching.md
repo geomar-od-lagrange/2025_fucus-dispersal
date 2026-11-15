@@ -104,7 +104,7 @@ the window is the never-beached residual.
 |---|---|---|
 | `w_c` | onshore Stokes above which stranding is on (m/s) | absolute, 0.10; **the** sweep axis (0.05–0.15) |
 | `tau_strong_hours` | e-folding time while `w_on ≥ w_c` | hours; below ~6 h everything in band during a strong-wave event strands and the value stops mattering |
-| `tau_calm_days` | background in-band rate regardless of forcing; 0 = off | ∞ or O(1 yr); a year drains 39 % over the 180 d window, so it is a real axis |
+| `tau_calm_days` | background in-band rate regardless of forcing; 0 = off | ∞ or O(1 yr); a year would drain 39 % of a drifter held in band for the whole 180 d window, but in the 750 m band it moves the pooled total ≤ 1.1 points (see Sensitivity) |
 | `delta` | linear edge width around `w_c` | 0 (hard step) by default; `≈0.02` checks against nearest-hour / nearest-cell sampling noise |
 | `trap_flat`, `trap_wall` | strong-wave rate factor on a fully flat / fully walled cell; the realised factor is `trap_wall + (trap_flat − trap_wall)·ff/100` | **1.0 / 0.0** at the production point: the rate is proportional to the substrate's flat fraction and pure-wall shore retains nothing. `1.0 / 1.0` keeps the term inert (the wave field alone sets the rate); every member with a weight ≠ 1 names both in its tag |
 | `band_m` | near-shore band width (m), ≤ the sidecar's `band_max_m` | **750** = the first 500 m raster ring (see [The band](#the-band)); 2000 is the one sensitivity member; any value but 2000 tags `_b<band_m>` |
@@ -139,11 +139,11 @@ distinction stops mattering — the same `w_on` criterion is defensible for
 `bottom` drifters, which a 2 km band (several cells out on the fine nest)
 would not be. For `surface_stokes` the narrower band costs little: under
 strong onshore forcing surface drifters reach the wall anyway (ε rest point
-0.01–0.07 cell, [wall_velocity.md](wall_velocity.md)). Measured on every
-`surface_stokes` release 2016–2024 (37.46 M drifters, 180 d, production
-trap point; [bottom_beaching.md](../plans/bottom_beaching.md) Step 0):
+0.01–0.07 cell, [wall_velocity.md](wall_velocity.md)). Measured on `surface_stokes`, release years 2016–2024 pooled (37.46 M
+drifters, 180 d, production trap point; in-band hours and the lost-hex share
+from the [Step 0 analysis](../plans/done/bottom_beaching.md)):
 
-| quantity | 2000 m | 750 m |
+| quantity (`surface_stokes`) | 2000 m | 750 m |
 |---|---|---|
 | stranded ≤ 30 / 90 / 180 d | 38.4 / 57.7 / 70.3 % | 35.4 / 54.4 / 67.3 % |
 | ≤ 180 d DJF / MAM / JJA / SON | 67.2 / 73.0 / 72.8 / 68.0 % | 63.9 / 70.1 / 69.9 / 65.0 % |
@@ -151,13 +151,22 @@ trap point; [bottom_beaching.md](../plans/bottom_beaching.md) Step 0):
 | in-band particle-hours (rel.) | 1 | 0.67 |
 | strong-wave in-band hours (rel.); share of in-band | 1; 6.05 % | 0.88; 7.93 % |
 
+Sources: the 30 / 90 / 180 d row is `Exports/029/stranded_curve_surface_stokes_ALL_*`
+(the 2000 m file has no `_b750` suffix); seasons are `HEADLINE.md` table A
+(750 m) and table B (2000 m member `step_wc0p1_ts3_tcinf_tf1_tw0`); hexes
+count the features of `029_surface_stokes_ALL_*_T180d.geojson`.
+
 The band cuts in-band hours by a third but keeps 88 % of the strong-wave
-in-band hours, so stranding moves by −3 points at 180 d, the same shift in
-every season and well inside the interannual range; the 109 hexes lost held
-0.6 % of the 2000 m stranded weight (Spearman 0.955 of per-hex share). A
-finer raster (250 m) would only sharpen the fine nest — the coarse model
-coast is 5 km — and is a full 024d rebuild; not done. The production point
-at 2000 m stays built for every reducer and regime as the band sensitivity.
+in-band hours, so surface stranding moves by −3 points at 180 d, the same
+shift in every season and well inside the interannual range; the 109 hexes
+lost held 0.6 % of the 2000 m stranded weight (Spearman 0.955 of per-hex
+share). The bed regimes are more band-sensitive: pooled ALL at 180 d,
+`bottom` 37.2 → 22.6 % and `bottom_ub49` 21.9 → 8.0 % from 2000 m to 750 m
+(table B): the 750–2000 m ring holds a larger share of their strong-wave
+exposure than of the surface drifters'. A finer raster (250 m)
+would only sharpen the fine nest — the coarse model coast is 5 km — and is a
+full 024d rebuild; not done. The 2000 m member stays built for every reducer
+and regime as the band sensitivity.
 
 ### Provenance
 
@@ -278,19 +287,32 @@ same for `surface_stokes`, `bottom` and `bottom_ub49`. `trap = ff/100`
 decides how much of each strong-wave hour a given shore can convert into
 stranding.
 
-`surface_stokes`, release years 2016–2024 pooled (37.46 M water-seeded
-drifters), 180 d window, from the [Step 0
-build](../plans/bottom_beaching.md): stranded **35.4 / 54.4 / 67.3 %** by
-30 / 90 / 180 d (per-year min–max at 180 d 62.0–73.5 %), 63.9 / 70.1 / 69.9
-/ 65.0 % by 180 d for DJF / MAM / JJA / SON releases, 1 097 receiving hexes
-(Gini 0.687 over them, top-10 hexes 13.4 %), and 49.9 % of the particle-time
-afloat (024f `Σsurv / Σocc`). Over 180 d the release season barely orders the
-total (6.2 points DJF → MAM) against the interannual range within one
-season. The per-regime numbers — stranded % per release year and season
-(`032` table A), the cumulative curve with its interannual band (`029`
-`BeachedFractionCurve_*`, panel (a) of `035`), receiving hexes, Gini, median
-stranding age and displacement (`031`), the `flat` share (`033`) — come from
-the 750 m build and are read off those products, not restated here.
+### Results
+
+Production member, release years 2016–2024 pooled (9 years, 180 d window,
+water-seeded drifters), all three regimes. Each row's source is in the last
+column; `HEADLINE.md` is `<outputs>/Headline/HEADLINE.md` ([`032`](../notebooks/032_HeadlineReport.py)),
+`029` means `<outputs>/Exports/029/`.
+
+| quantity | `surface_stokes` | `bottom` | `bottom_ub49` | source |
+|---|---|---|---|---|
+| stranded ≤ 30 / 90 / 180 d (%) | 35.4 / 54.4 / 67.3 | 6.7 / 14.6 / 22.6 | 2.7 / 5.2 / 8.0 | `029/stranded_curve_<regime>_ALL_*_b750.csv` |
+| per-year min–max at 180 d (%) | 62.0–73.5 | 19.6–25.4 | 7.0–9.3 | same; HEADLINE table A |
+| ≤ 180 d, DJF / MAM / JJA / SON releases (%) | 63.9 / 70.1 / 69.9 / 65.0 | 21.6 / 17.5 / 24.1 / 27.6 | 7.9 / 6.0 / 8.1 / 10.0 | HEADLINE table A |
+| spread across seasons (points) | 6.2 (DJF → MAM) | 10.0 (MAM → SON) | 4.0 (MAM → SON) | HEADLINE table A |
+| receiving hexes (of 43 601) | 1 097 | 876 | 689 | features of `029/029_<regime>_ALL_*_b750_T180d.geojson` |
+| Gini over receiving hexes; top-10 share (%) | 0.687; 13.4 | 0.749; 13.0 | 0.739; 16.3 | same geojsons, `stranded_weight` |
+| particle-time afloat ≤ 180 d, `Σw/Σn` | 0.499 | 0.863 | 0.950 | HEADLINE table C |
+| not stranded at 180 d, basin-wide (%) [year range] | 32.7 [26.5–38.0] | 77.4 [74.6–80.4] | 92.0 [90.7–93.0] | HEADLINE table G (`029/afloat_by_origin_*`) |
+| not stranded at 180 d by origin subbasin (%), lowest – highest | 0.2 (Gdansk Basin) – 80.1 (The Quark) | 28.0 (Great Belt) – 99.9 (Åland Sea) | 64.1 (Great Belt) – 100.0 (Åland Sea) | HEADLINE table G |
+
+"Not stranded" includes drifters that left the BSH domain and applies no
+lifetime. The release season orders the surface total only weakly (6.2
+points) against the interannual range within one season (up to 23.1 points,
+SON); the bed regimes order the seasons more clearly, SON highest and MAM
+lowest. The cumulative curve with its interannual band is panel (a) of `035`;
+median stranding age and displacement per member are `031`'s stats panels
+(`Figures/031/`), the `flat` share is `033`.
 
 The Gini is computed over hexes that *receive* weight — zero-weight hexes are
 dropped, so it measures concentration among receiving hexes, not over the
@@ -306,7 +328,9 @@ No consumer tabulates the fraction per release month.
 Every member is built on the production band (750 m) for every regime, by
 `024efg_ReduceAll_job.sh` ([job_scripts.md](job_scripts.md)); `031` sweeps
 the members of one regime (`Figures/031/`) and `032` table B tabulates the
-trap axis. Three independent axes, plus the band:
+pooled and per-season beached fraction of **every** `024e` member on disk
+(15 per regime: the sweep below plus the 2000 m member), sorted by the `ALL`
+column. Three independent axes, plus the band:
 
 | axis | members (`step_…`) | at |
 |---|---|---|
@@ -317,21 +341,36 @@ trap axis. Three independent axes, plus the band:
 Every wave member sits at the **inert** trap weights, so it compares against
 the inert `w_c = 0.10` member, not production; mixing the axes in one table
 would compare members that differ in two knobs at once. 024f carries the
-trap axis plus `w_c` 0.075 / 0.15 and `τ_calm` 365 d; 024g the trap axis.
-The 2000 m production member is the only band sensitivity: Step 0 showed the
-band shifts the surface total by −3 points (table above), and the full 2000 m
-sweep would add a store per member and regime for no new axis.
+trap axis plus `w_c` 0.075 / 0.15 and `τ_calm` 365 d; 024g the trap axis. The
+2000 m production member is the only band sensitivity; the full 2000 m sweep
+would add a store per member and regime for no new axis.
 
-What the axes did at 2000 m on `surface_stokes`, to be re-read off `031` at
-750 m: **`w_c` is the axis** (it moved the total by ~40 points across
-0.05–0.15 and the median stranding age from ~5 d to ~30 d); `τ_strong` scales
-the total and stops mattering below ~6 h; `τ_calm = 1 yr` drains calm-water
-residents and adds receiving hexes; `δ` is noise-level, so the hard step
-stays. **`trap_wall` is not a smooth knob near zero**: the intermediates
-`…_tf1_tw0p25`/`…_tf1_tw0p5` rescale the inert total and keep its receiving
-set, while `tw0` shrinks the receiving set and changes the model's character.
+Stranded within 180 d, pooled ALL seasons and release years 2016–2024 (%;
+`HEADLINE.md` table B, `_b750` unless noted; the full table adds the
+per-season columns and the interannual range):
 
-**The beached fraction is not a reportable number**; the pattern and the
+| member (`step_…`) | `surface_stokes` | `bottom` | `bottom_ub49` |
+|---|---|---|---|
+| **production** `wc0p1_ts3_tcinf_tf1_tw0_b750` | **67.3** | **22.6** | **8.0** |
+| wave: `wc0p05_ts3_tcinf` / `wc0p075_ts3_tcinf` | 99.6 / 99.0 | 56.5 / 46.8 | 16.8 / 13.5 |
+| wave: `wc0p1_ts3_tcinf` (inert reference) | 96.2 | 34.7 | 9.8 |
+| wave: `wc0p15_ts3_tcinf` | 70.7 | 12.1 | 3.5 |
+| `τ_strong` 1 h / 12 h: `wc0p1_ts1_tcinf` / `wc0p1_ts12_tcinf` | 97.6 / 90.3 | 40.9 / 21.4 | 11.9 / 5.9 |
+| `τ_calm` 365 d: `wc0p1_ts3_tc365` | 96.6 | 35.8 | 10.0 |
+| `δ = 0.02`: `wc0p1_ts3_tcinf_d0p02` | 96.6 | 35.5 | 10.0 |
+| trap: `…_tf1_tw0p5` / `…_tf1_tw0p25` | 94.6 / 91.9 | 31.9 / 29.0 | 9.3 / 8.9 |
+| band 2000 m: `wc0p1_ts3_tcinf_tf1_tw0` (no `_b`) | 70.3 | 37.2 | 21.9 |
+
+Across all 15 members the pooled ALL value spans 67.3–99.7 % on
+`surface_stokes`, 12.1–56.7 % on `bottom` and 3.5–21.9 % on `bottom_ub49`.
+**`w_c` is the axis**: 0.05 → 0.15 moves the inert total by 29 (`surface_stokes`),
+44 (`bottom`) and 13 (`bottom_ub49`) points. `τ_strong` scales the total and
+matters less below ~6 h; `τ_calm` = 1 yr and `δ` move it by ≤ 1.1 points at
+the 750 m band, so the hard step and no calm background stay. **`trap_wall` is
+not a smooth knob near zero** on the surface regime: 1 → 0.5 → 0.25 costs 1.6
+and 2.7 points, 0.25 → 0 costs 24.6. The bed regimes, whose inert totals are
+already low, step more evenly (`bottom` 2.8 / 2.9 / 6.4; `bottom_ub49` 0.5 /
+0.4 / 0.9). **The beached fraction is not a reportable number**; the pattern and the
 member range are.
 
 ## Limitations
