@@ -47,7 +47,7 @@ the origin axis (`helcom_subbasin` of the release hex). Partitioned per
 
 `HexAgg_survocc_r<radius>m_<regime>_<year>_mMM_<member>.parquet`, additive
 across `release_doy`/month/year. The `_<member>` tag is the same rate-model
-string `024e` builds (production: `step_wc0p1_ts3_tcinf_tf1_tw0`), and `030`
+string `024e` builds (production: `step_wc0p1_ts3_tcinf_tf1_tw0_b750`), and `030`
 takes it as an opaque `member` parameter. `024f` must be run at the same rate
 parameters as `024e` and `024g`, or the survival and stranding stores describe
 different models.

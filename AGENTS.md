@@ -131,7 +131,9 @@ filename.
   024 counts store.
 - `notebooks/024d_*` — beaching forcing sidecar: per real drifter and
   hour, the rate-model-free ingredients (onshore Stokes, distance to
-  land, hex id, shore flag, displacement), one zarr per trajectory zarr.
+  land, hex id, shore flag, displacement), one zarr per trajectory zarr,
+  for every regime (all strand under the same surface-Stokes criterion in
+  a 750 m band, docs/beaching.md).
   The heavy trajectory + raw-Stokes pass. `notebooks/024e_*` (stranding
   weight) and `notebooks/024f_*` (survival-weighted occupancy) are
   seconds-per-zarr reducers over it, one store per rate-model member.
@@ -162,12 +164,13 @@ filename.
 - `notebooks/034_*` — bed-friction comparison: `bottom` against
   `bottom_ub49` on the releases both hold, one season of the
   `release_years` pooled, area holding 90 % of particle-time per horizon
-  (pooled and per year) plus a map pair, from the 024 counts store.
+  (pooled and per year) plus a map pair, from the 024 counts store, and
+  stranded % per horizon from the two production 024e stores.
 - `notebooks/035_*` — stranding and area time series: stranded % (029's
-  curve CSV), the area holding 90 % of particle-time and its square root
-  against age / cumulative horizon, one line per regime with the
-  interannual band, read from 026's area CSVs and 029's stranded-curve
-  CSV (so after 026 and 029).
+  curve CSV per regime), the area holding 90 % of particle-time and its
+  square root against age / cumulative horizon, one line per regime with
+  the interannual band, read from 026's area CSVs and 029's stranded-curve
+  CSVs (so after 026 and 029).
 - `notebooks/036_*` — seeding map: the release cells by HELCOM subbasin
   (the 024a key's assignment) and the land-seeded share per cell, read
   from `land_seed` of one regime-year of trajectory zarrs.

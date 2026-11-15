@@ -73,10 +73,11 @@ paired with its refill's seed). Considered: fresh seeds as for every other
 regime, rejected: friction would then be compared across different release
 positions in every cell.
 
-Downstream, `bottom_ub49` is one more regime for 024/024b/024c and the
-025–028 consumers (unweighted, like `bottom`); beaching (024d–g, 029–031) is
-`surface_stokes`-only. `scripts/025-031_ConsumersAll_job.sh` runs it by
-default and adds 034.
+Downstream, `bottom_ub49` is one more regime for every stage: 024/024b/024c,
+the beaching branch (024d–g, 029–031, same criterion as every regime,
+[beaching.md](beaching.md)) and the survival-weighted 025–028 consumers.
+`scripts/025-031_ConsumersAll_job.sh` runs it by default and adds 034, which
+compares `bottom` and `bottom_ub49` in area and in stranded %.
 
 ## Considered, rejected
 

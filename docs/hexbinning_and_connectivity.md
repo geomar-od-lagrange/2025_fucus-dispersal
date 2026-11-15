@@ -248,7 +248,7 @@ because it absorbs Skagerrak water that is legitimately not Baltic.
 Centroid-within left 39,145 of 43,601 hexes at `-1`, including 1,855 of
 the 2,604 hexes that carry BSH coastline (71 % of the domain's coast
 length) and 614 of the 1,207 hexes that ever receive stranded weight —
-49.2 % of the stranded weight of `step_wc0p1_ts3_tcinf_tf1_tw0` and
+49.2 % of the stranded weight of `step_wc0p1_ts3_tcinf_tf1_tw0` (2000 m band) and
 52.0 % of the inert `step_wc0p1_ts3_tcinf`. That is not an outside class,
 it is a processing error, and it made every subbasin-level product a
 subset of its own population.

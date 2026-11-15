@@ -331,12 +331,13 @@ into `--exclude=` and prints the three job ids. All three job scripts also take
 `[regime] [year] [hex_radius]` directly, for a single rerun.
 
 The beaching branch (024d and its reducers) is not part of this: it is one
-whole-regime pass over every year at once, submitted separately.
+whole-regime pass over every year at once, submitted separately per regime.
 
 ## Horizontal scaling for the GPFS-bound builder (024d)
 
-`scripts/024d_BuildBeachingForcing_job.sh` fans out one independent
-single-process papermill run per trajectory zarr (`xargs -P ${SLURM_NTASKS}`, so
+`scripts/024d_BuildBeachingForcing_job.sh <regime>` (and
+`scripts/submit_024d.sh <regime> [sbatch args]`) fans out one independent
+single-process papermill run per trajectory zarr of that regime (`xargs -P ${SLURM_NTASKS}`, so
 `njobs ≠ ntasks`: throttle concurrency without editing the job). No MPI, no
 Dask; the bottleneck is streaming trajectory zarrs and hourly Stokes files off
 GPFS. Three consequences, all defaults in the script:
@@ -403,7 +404,7 @@ parquet — seconds per zarr, ~3 min for a whole month — so they are CPU-bound
 not GPFS-bound: small `--ntasks` (12), no `--spread-job`, no `--constraint`.
 All three take `[regime] [hex_radius] [stagger_max_s]` positionally and the
 rate-model member from the environment (`W_C`, `TAU_STRONG_HOURS`,
-`TAU_CALM_DAYS`, `DELTA`, `TRAP_FLAT`, `TRAP_WALL`, `BAND_M`, and
+`TAU_CALM_DAYS`, `DELTA`, `TRAP_FLAT`, `TRAP_WALL`, `BAND_M` (default 750), and
 `MAX_AGE_DAYS`, the reduction window shared by all three, default 180 d,
 which must cover the largest age horizon any consumer asks for),
 so a sweep is a loop of submissions differing only in an export; each
@@ -413,10 +414,12 @@ the parquet it wrote match by eye. The kernel-race retry and the per-cell
 
 When *every* member has to be rebuilt at once — after a sidecar rebuild
 invalidates all of them — `scripts/024efg_ReduceAll_job.sh` replaces that loop
-of one-member submissions with a single 024d-shaped job whose unit of work is
-one `(reducer, member, year, month)` cell: 27 members (15 for 024e, 8 for 024f,
-4 for 024g) x the `(year, month)` grid — 324 cells per full release year —
-driven by
+of one-member submissions with a single 024d-shaped job per regime
+(`024efg_ReduceAll_job.sh <regime>`) whose unit of work is
+one `(reducer, member, year, month)` cell: 28 members (15 for 024e, 8 for 024f,
+5 for 024g; every one at the production band 750 m plus the production point
+at 2000 m as the band sensitivity, [beaching.md](beaching.md)) x the
+`(year, month)` grid — 336 cells per full release year — driven by
 `xargs -P ${SLURM_NTASKS}` over `srun -n1 -N1 --exact --no-kill` steps with the
 same 3-attempt kernel-race retry and `OK`/`FAIL` tally. The members are a plain
 table in the script rather than an environment sweep, so the exact set is read
@@ -432,7 +435,9 @@ attrs, so a partial rerun at another window is detectable downstream.
 `submit_024d.sh` — it expands the node blacklist into `--exclude`, sizes
 `--ntasks` from the cell count (capped at `MAX_TASKS`, default 292) and passes
 extra `sbatch` args through, so chaining it behind the sidecar build is
-`scripts/submit_024efg.sh --dependency=afterok:<024d job id>`.
+`scripts/submit_024efg.sh <regime> --dependency=afterok:<024d job id>`. With no
+sidecars on disk yet (queued behind that 024d) it books the cap; the job lists
+its cells again at run time.
 Reducers are CPU-light but decompress one sidecar's `(trajectory, obs)`
 arrays over the whole window at once, so memory scales with `max_age_days`:
 `--mem-per-cpu=8G`, `--cpus-per-task=2` (16 GB per cell) against measured
@@ -457,8 +462,8 @@ away.
 | `028_SubbasinConnectivityMatrix_job.sh` | `[regime] [hex_radius] [season] [member]` — empty `member` reads the unweighted 024c store, a tag reads 024g plus the same member's 024e store (stranded column) |
 | `029_BeachingMaps_job.sh`, `030_SurvivalHeatmaps_job.sh` | `[regime] [hex_radius] [member] [season]` |
 | `031_BeachingSweep_job.sh` | `[regime] [hex_radius] [members_csv] [labels_csv] [baseline_member] [season]` |
-| `034_BottomFriction_job.sh` | `[season] [hex_radius]` — `bottom` vs `bottom_ub49` from the 024 counts store, the releases both hold |
-| `035_AreaTimeSeries_job.sh` | `[season] [hex_radius] [member]` — draws `surface_stokes` at 026 tag `member` (default the production member) and `bottom` unweighted, from 026's area CSVs |
+| `034_BottomFriction_job.sh` | `[season] [hex_radius]` — `bottom` vs `bottom_ub49` from the 024 counts store and the production 024e stores, the releases both hold |
+| `035_AreaTimeSeries_job.sh` | `[season] [hex_radius] [member]` — draws `surface_stokes` and `bottom`, each at 026 tag `member` (default the production member) and with its 029 stranding curve |
 | `036_SeedingMap_job.sh` | `[hex_radius]` — no season or member; also reads `land_seed` of one regime-year of trajectory zarrs (notebook defaults `surface_stokes` 2019). Not in the consumer driver: the release set does not change between runs |
 
 Every default is `regime=surface_stokes`, `hex_radius=6000`. `age_bin_days`,
@@ -483,25 +488,25 @@ papermill contract and this driver only decides which combinations run:
 
 | stages | coverage | units |
 |---|---|---|
-| 025, 026, 026a, 026b | surface_stokes production member + bottom, bottom_ub49 unweighted, × 5 seasons | 60 |
-| 027 | {surface_stokes, bottom, bottom_ub49} × 5 seasons | 15 |
-| 028 | surface_stokes unweighted + production member, bottom, bottom_ub49 unweighted, × 5 seasons | 20 |
-| 029, 030 | surface_stokes, production member, × 5 seasons | 10 |
-| 031 | surface_stokes × 5 seasons, `members_csv` = every 024e member on disk | 5 |
+| 025, 026, 026a, 026b | production member (024f) × 3 regimes × 5 seasons | 60 |
+| 027 | 3 regimes × 5 seasons | 15 |
+| 028 | unweighted + production member × 3 regimes × 5 seasons | 30 |
+| 029, 030 | production member × 3 regimes × 5 seasons | 30 |
+| 031 | 3 regimes × 5 seasons, `members_csv` = every 024e member of the regime on disk | 15 |
 | 034 | bottom vs bottom_ub49 in one figure × 5 seasons | 5 |
 | 035 | surface_stokes and bottom in one figure × 5 seasons, second wave | 5 |
 
 The units run as one flat `xargs` pool with no ordering among them, except
-035: it reads the 026 area CSVs of both regimes, so the 035 units form a
-second wave that starts once every other unit has finished.
-`LIST_ONLY=1 bash scripts/025-031_ConsumersAll_job.sh` prints the 120 units;
-`STAGES` / `REGIMES` / `SEASONS` restrict the matrix (default regimes
-`surface_stokes bottom bottom_ub49`; 029/030/031 need `surface_stokes`
-among them, 035 `surface_stokes` or `bottom`, 034 `bottom_ub49`, or `bottom`
-once `bottom_ub49` counts exist). With the default regimes (`REGIMES` unset)
-the `bottom_ub49` units of 025–028 and 034 are listed only where their store
-(counts, distance, connectivity) is on disk, so a run before the
-`bottom_ub49` sweep has no FAIL lines for it; an explicit `REGIMES`, as the
+035: it reads the 026 area CSVs and 029 stranding curves of both regimes, so
+the 035 units form a second wave that starts once every other unit has
+finished. `LIST_ONLY=1 bash scripts/025-031_ConsumersAll_job.sh` prints the
+160 units; `STAGES` / `REGIMES` / `SEASONS` restrict the matrix (default
+regimes `surface_stokes bottom bottom_ub49`; 035 needs `surface_stokes` or
+`bottom` among them, 034 `bottom_ub49`, or `bottom` once `bottom_ub49` counts
+exist). With the default regimes (`REGIMES` unset) a regime's unit is listed
+only where the store it reads (counts, distance, connectivity, or the
+production member's beaching / survocc / survconn) is on disk, so a run before
+a regime's build has no FAIL lines for it; an explicit `REGIMES`, as the
 chain passes, is taken as given. The 031 member list is
 read off `HexAggregates/` inside the job, not at submit time — the reducers
 write those stores minutes earlier in the chain below, so any hardcoded list
@@ -533,14 +538,14 @@ and left alone.
 
 ```
 A  024 + 024b + 024c per (regime, year)   afterany on that pair's 010 job
-B  024d sidecars, surface_stokes          afterany on the surface_stokes 010 jobs
-C  024e/024f/024g reducers                afterok on B
+B  024d sidecars, one job per regime      afterany on that regime's 010 jobs
+C  024e/024f/024g reducers, per regime    afterok on that regime's B
 D  025-035 consumers, the chain's regimes afterok on every A job and on C
 E  headline regeneration                  afterok on D
 ```
 
-B and C are skipped when no 010 job is `surface_stokes` (a `bottom_ub49`
-sweep on its own); D then waits on A alone. D runs the consumer matrix for
+Every regime has a B and a C: all regimes strand under the same criterion
+([beaching.md](beaching.md)). D runs the consumer matrix for
 the chain's regimes only (`REGIMES`, exported to the job), so a chain over
 `bottom_ub49` redraws 025–028 for it and 034, not the whole study.
 
@@ -564,7 +569,7 @@ Every `sbatch` in the chain goes through `robust_sbatch`
 (`scripts/slurm_submit.sh`), because a loaded slurmctld fails with `Socket
 timed out on send/recv operation` *after* creating the job — a naive retry
 then queues the work twice. So each stage carries a job name that is unique to
-it and stable across reruns (`<tag>-<regime>-<year>-024b`, `<tag>-024d`, …,
+it and stable across reruns (`<tag>-<regime>-<year>-024b`, `<tag>-<regime>-024d`, …,
 where `<tag>` hashes the 010 id set), and the queue rather than sbatch's exit
 status decides what still needs submitting:
 
@@ -579,9 +584,10 @@ The chain is therefore idempotent: rerun the identical command after a partial
 failure and it adopts what is queued, submits only the rest, and prints an
 `adopted`/`submitted` column saying which was which. Stages queued under names
 this chain cannot reconstruct — an earlier chain, or a hand submission — are
-adopted by id instead: `ADOPT_A="<024/024b/024c ids>" ADOPT_B=<024d id>
-ADOPT_C=<024efg id>` skips those stages entirely and hangs D and E off the ids
-given, which the chain takes on trust. An aborted run still
+adopted by id instead: `ADOPT_A="<024/024b/024c ids>"
+ADOPT_B="<regime>:<024d id> ..." ADOPT_C="<024efg ids>"` skips those stages
+(B per regime) and hangs the later ones off the ids given, which the chain
+takes on trust. An aborted run still
 prints the stages it did queue plus the command to resume. A stage that has
 already *finished* has left the queue and would be submitted again, so resume
 while the chain is still pending.
