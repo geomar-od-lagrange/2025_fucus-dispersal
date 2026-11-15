@@ -207,3 +207,9 @@ bottom_ub49 24930595 → ConsumersAll (160 units) 24930596; 033 ×5
 (consumer log "160 OK"), refresh docs/beaching.md results from 029/031/032,
 move this plan to plans/done/, then the paper numbers.
 
+Build finished 2026-11-15 22:02: 024d 686/686 OK per bottom regime, 024efg
+OK, consumers 160 OK / 0 FAIL, 033 ×5, 036, headline completed. Stranded
+within 180 d (production `_b750`, 2016–2024 pooled, ALL seasons):
+surface_stokes 67.3 %, bottom 22.6 %. Next: refresh docs/beaching.md results
+from 029/031/032, move this plan to plans/done/, paper numbers.
+
