@@ -94,9 +94,9 @@ season = "ALL"
 release_years = "2016-2024"
 
 # Rate-model member: the opaque tag the reducer put in the store filename
-# (e.g. "step_wc0p1_ts3_tcinf_tf1_tw0"). Selects the partitions and tags
+# (e.g. "step_wc0p1_ts3_tcinf_tf1_tw0_b750"). Selects the partitions and tags
 # the figures.
-member = "step_wc0p1_ts3_tcinf_tf1_tw0"
+member = "step_wc0p1_ts3_tcinf_tf1_tw0_b750"
 
 # Elapsed-time horizons to map (days): the snapshot bin [T − age_bin_days, T)
 # ending at each. Each a multiple of age_bin_days and ≤ the store's

@@ -11,7 +11,7 @@ set -euo pipefail
 # Lightweight: reads the 024e beaching parquet + the 024a key, no Dask cluster.
 # One (regime, hex_radius, member, season) per submit; the notebook pools the
 # season's monthly partitions across the notebook's release_years. E.g.:
-#   sbatch scripts/029_BeachingMaps_job.sh surface_stokes 6000 step_wc0p1_ts3_tcinf_tf1_tw0 ALL
+#   sbatch scripts/029_BeachingMaps_job.sh surface_stokes 6000 step_wc0p1_ts3_tcinf_tf1_tw0_b750 ALL
 # season is one of DJF / MAM / JJA / SON / ALL (release month).
 # 024e_BuildBeaching_job.sh must have run first for the matching member (and
 # for the notebook's contrast_member). age_bin_days / disp_bin_km fall back to
@@ -22,7 +22,7 @@ set -euo pipefail
 
 regime="${1:-surface_stokes}"
 hex_radius="${2:-6000}"
-member="${3:-step_wc0p1_ts3_tcinf_tf1_tw0}"
+member="${3:-step_wc0p1_ts3_tcinf_tf1_tw0_b750}"
 season="${4:-ALL}"
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
 

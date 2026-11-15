@@ -23,40 +23,37 @@
 # means 85 allocations queueing independently behind the same dependency, for
 # units that are minutes long.
 #
-# The matrix, at the default regimes (surface_stokes, bottom, bottom_ub49):
+# The matrix, per regime of the default regimes (surface_stokes, bottom,
+# bottom_ub49), x 5 seasons:
 #
-#   025, 026, 026a, 026b  (surface_stokes production member,
-#         bottom and bottom_ub49 unweighted)              x 5 seasons   60
-#   027  x {surface_stokes, bottom, bottom_ub49}          x 5 seasons   15
-#   028  (surface_stokes unweighted, surface_stokes production member,
-#         bottom and bottom_ub49 unweighted)              x 5 seasons   20
-#   029, 030  surface_stokes, production member           x 5 seasons   10
-#   031  surface_stokes, every 024e member on disk        x 5 seasons    5
-#   034  bottom vs bottom_ub49 in one figure              x 5 seasons    5
+#   025, 026, 026a, 026b  production member (024f)        4 x 3 x 5     60
+#   027                                                   1 x 3 x 5     15
+#   028  unweighted (024c) and production member (024g)   2 x 3 x 5     30
+#   029, 030  production member                           2 x 3 x 5     30
+#   031  every 024e member of the regime on disk          1 x 3 x 5     15
+#   034  bottom vs bottom_ub49 in one figure                  1 x 5      5
 #   035  surface_stokes and bottom in one figure
-#        (026's, 029's CSVs)                              x 5 seasons    5
+#        (026's, 029's CSVs)                                  1 x 5      5
 #                                                                     ----
-#                                                                      120
+#                                                                      160
 #
 # Every stage honours $REGIMES: a regime-specific stage runs only for the
-# regimes listed, 029/030/031 only when surface_stokes is, 035 when
-# surface_stokes or bottom is (it draws both), 034 when bottom_ub49 is, or
-# bottom is and bottom_ub49 counts exist (it draws both). With the default
-# regimes (REGIMES unset) a bottom_ub49 unit of 025-028 is listed only where
-# its store is on disk, so a run before the bottom_ub49 sweep reports no FAIL
-# for it; an explicit REGIMES (the chain sets one) is taken as given, and a
-# missing store then fails its unit.
+# regimes listed, 035 when surface_stokes or bottom is (it draws both), 034
+# when bottom_ub49 is, or bottom is and bottom_ub49 counts exist (it draws
+# both). With the default regimes (REGIMES unset) a regime's unit is listed
+# only where the store it reads is on disk, so a run before a regime's build
+# reports no FAIL for it; an explicit REGIMES (the chain sets one) is taken as
+# given, and a missing store then fails its unit.
 #
-# 035 draws the 026 area exports of both regimes and the 029 stranding curve
-# of surface_stokes, so the 035 units run as a
-# second wave after every other unit has finished; the first wave is one
-# flat pool with no ordering between its units.
+# 035 draws the 026 area exports and the 029 stranding curves of both
+# regimes, so the 035 units run as a second wave after every other unit has
+# finished; the first wave is one flat pool with no ordering between its
+# units.
 #
-# `surface` (no Stokes) is not produced further (plans/analysis_wrapup.md §0),
-# and only surface_stokes has 024d sidecars, hence the beaching/survival stages
-# and the weighted 025/026/026a/026b/028 are Stokes-only; the heatmap family
-# shows surface_stokes survival-weighted (024f) and the bottom regimes
-# unweighted (024 counts), all over the same max_age_days window.
+# `surface` (no Stokes) is not produced further (plans/analysis_wrapup.md §0).
+# Every other regime has 024d sidecars and strands under the same criterion
+# (docs/beaching.md), so the heatmap family is survival-weighted (024f) for
+# every regime, over the same max_age_days window.
 #
 # Nothing here names a release year: every consumer pools whatever release
 # years the HexAggregates store holds, so the figures span the years that
@@ -100,7 +97,7 @@ repo_root=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
 hex_radius=${HEX_RADIUS:-6000}
 # The rate-model member the study reports (plans/analysis_wrapup.md §0); the
 # other members only appear in the 031 sweep.
-production_member=${PRODUCTION_MEMBER:-step_wc0p1_ts3_tcinf_tf1_tw0}
+production_member=${PRODUCTION_MEMBER:-step_wc0p1_ts3_tcinf_tf1_tw0_b750}
 stages=${STAGES:-025 026 026a 026b 027 028 029 030 031 034 035}
 regimes=${REGIMES:-surface_stokes bottom bottom_ub49}
 seasons=${SEASONS:-ALL DJF MAM JJA SON}
@@ -120,15 +117,16 @@ exclude=$(sed "s/#.*//" scripts/node-blacklist.txt | tr -d "[:blank:]" \
 
 export output_root repo_root hex_radius production_member logdir exclude
 
-# Every 024e member on disk, as the comma-separated list 031 sweeps over. Read
-# at run time, not at submit time: the 024e/f/g reducers write these minutes
-# before this job starts, so a hardcoded list would be stale by construction.
+# Every 024e member of regime $1 on disk, as the comma-separated list 031
+# sweeps over. Read at run time, not at submit time: the 024e/f/g reducers
+# write these minutes before this job starts, so a hardcoded list would be
+# stale by construction.
 beaching_members_csv() {
     local f b
-    for f in "${output_root}/HexAggregates"/HexAgg_beaching_r"${hex_radius}"m_surface_stokes_[0-9][0-9][0-9][0-9]_m[0-9][0-9]_*.parquet; do
+    for f in "${output_root}/HexAggregates"/HexAgg_beaching_r"${hex_radius}"m_"$1"_[0-9][0-9][0-9][0-9]_m[0-9][0-9]_*.parquet; do
         [ -e "${f}" ] || continue
         b=$(basename "${f}" .parquet)
-        sed -E "s/^HexAgg_beaching_r[0-9]+m_surface_stokes_[0-9]{4}_m[0-9]{2}_//" <<< "${b}"
+        sed -E "s/^HexAgg_beaching_r[0-9]+m_$1_[0-9]{4}_m[0-9]{2}_//" <<< "${b}"
     done | sort -u | paste -sd,
 }
 export -f beaching_members_csv
@@ -158,7 +156,7 @@ run_one() {
         030)  job=scripts/030_SurvivalHeatmaps_job.sh
               args=("${regime}" "${hex_radius}" "${member}" "${season}") ;;
         031)  job=scripts/031_BeachingSweep_job.sh
-              args=("${regime}" "${hex_radius}" "$(beaching_members_csv)" "" \
+              args=("${regime}" "${hex_radius}" "$(beaching_members_csv "${regime}")" "" \
                     "${production_member}" "${season}") ;;
         034)  job=scripts/034_BottomFriction_job.sh
               args=("${season}" "${hex_radius}") ;;
@@ -213,11 +211,12 @@ list_work() {
     local stage regime season member
     # Whether $1 is one of the listed regimes.
     has_regime() { [[ " ${regimes} " == *" $1 "* ]]; }
-    # Whether regime $1's unit is dropped: default regimes, bottom_ub49, and
-    # no partition of its store $2 (counts, distance, connectivity) on disk.
+    # Whether regime $1's unit is dropped: default regimes, and no partition
+    # of its store $2 on disk -- `counts`/`distance`/`connectivity` per year,
+    # or `<store>_m*_<member>` (`beaching`, `survocc`, `survconn`) per month.
     store_missing() {
-        [ -z "${REGIMES:-}" ] && [ "$1" = bottom_ub49 ] && ! compgen -G \
-            "${output_root}/HexAggregates/HexAgg_$2_r${hex_radius}m_$1_[0-9][0-9][0-9][0-9].parquet" \
+        [ -z "${REGIMES:-}" ] && ! compgen -G \
+            "${output_root}/HexAggregates/HexAgg_${2%%_*}_r${hex_radius}m_$1_[0-9][0-9][0-9][0-9]${2#"${2%%_*}"}.parquet" \
             > /dev/null
     }
     if [ -n "${WORK_LIST:-}" ]; then
@@ -228,13 +227,9 @@ list_work() {
         case "${stage}" in
             025|026|026a|026b)
                 for regime in ${regimes}; do
-                    store_missing "${regime}" counts && continue
-                    # Survival-weighted where 024d sidecars exist, unweighted
-                    # otherwise (only surface_stokes has them).
-                    member=-
-                    [ "${regime}" = surface_stokes ] && member=${production_member}
+                    store_missing "${regime}" "survocc_m[0-9][0-9]_${production_member}" && continue
                     for season in ${seasons}; do
-                        echo "${stage} ${regime} ${season} ${member}"
+                        echo "${stage} ${regime} ${season} ${production_member}"
                     done
                 done ;;
             027)
@@ -248,23 +243,26 @@ list_work() {
                 for regime in ${regimes}; do
                     store_missing "${regime}" connectivity && continue
                     for season in ${seasons}; do
+                        # Twice: the unweighted 024c matrix and the
+                        # survival-weighted 024g one, on one population.
                         echo "028 ${regime} ${season} -"
-                        # surface_stokes twice: the unweighted 024c matrix and
-                        # the survival-weighted 024g one, on one population.
-                        if [ "${regime}" = surface_stokes ]; then
-                            echo "028 ${regime} ${season} ${production_member}"
-                        fi
+                        store_missing "${regime}" "survconn_m[0-9][0-9]_${production_member}" \
+                            || echo "028 ${regime} ${season} ${production_member}"
                     done
                 done ;;
             029|030)
-                has_regime surface_stokes || continue
-                for season in ${seasons}; do
-                    echo "${stage} surface_stokes ${season} ${production_member}"
+                for regime in ${regimes}; do
+                    store_missing "${regime}" "beaching_m[0-9][0-9]_${production_member}" && continue
+                    for season in ${seasons}; do
+                        echo "${stage} ${regime} ${season} ${production_member}"
+                    done
                 done ;;
             031)
-                has_regime surface_stokes || continue
-                for season in ${seasons}; do
-                    echo "031 surface_stokes ${season} -"
+                for regime in ${regimes}; do
+                    store_missing "${regime}" "beaching_m[0-9][0-9]_${production_member}" && continue
+                    for season in ${seasons}; do
+                        echo "031 ${regime} ${season} -"
+                    done
                 done ;;
             034)
                 # bottom_ub49 against bottom in one figure (both fixed in the
@@ -281,8 +279,8 @@ list_work() {
                     echo "034 bottom_ub49 ${season} -"
                 done ;;
             035)
-                # Both regimes in one figure: surface_stokes at the production
-                # member's 026 tag, bottom unweighted (fixed in the job script).
+                # Both regimes in one figure, each at the production member's
+                # 026 tag and 029 stranding curve (fixed in the job script).
                 has_regime surface_stokes || has_regime bottom || continue
                 for season in ${seasons}; do
                     echo "035 both ${season} ${production_member}"
@@ -312,10 +310,12 @@ echo "025-031 dependency: $(scontrol show job "${SLURM_JOB_ID}" 2>/dev/null \
       | sed -n 's/.*Dependency=\([^ ]*\).*/\1/p' | head -1)"
 echo "025-031: ${njobs} units, ${SLURM_NTASKS} concurrent, hex_radius=${hex_radius},"\
      "production member ${production_member}, logs -> ${logdir}"
-echo "025-031 031 sweep members: $(beaching_members_csv)"
-ls "${output_root}/HexAggregates"/HexAgg_beaching_r"${hex_radius}"m_surface_stokes_*_"${production_member}".parquet \
-    >/dev/null 2>&1 \
-    || echo "025-031 WARNING: no 024e store for production member ${production_member}"
+for regime in ${regimes}; do
+    echo "025-031 031 sweep members ${regime}: $(beaching_members_csv "${regime}")"
+    ls "${output_root}/HexAggregates"/HexAgg_beaching_r"${hex_radius}"m_"${regime}"_*_"${production_member}".parquet \
+        >/dev/null 2>&1 \
+        || echo "025-031 WARNING: no 024e ${regime} store for production member ${production_member}"
+done
 
 tally=${logdir}/${SLURM_JOB_NAME}_${SLURM_JOB_ID}.tally
 # `set -e` must not kill the driver when a unit exhausts its retries (or when

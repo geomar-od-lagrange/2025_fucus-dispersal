@@ -11,11 +11,11 @@ set -euo pipefail
 # Lightweight: reads HexAggregates counts or survocc parquet, no Dask cluster.
 # Pools the regime's partitions in the notebook's release_years and keeps one release season, then maps cumulative elapsed-time horizons.
 # Submit once per (regime, season, hex_radius, member), e.g.:
-#   sbatch scripts/026_TimeHorizonMaps_job.sh surface_stokes ALL 6000 step_wc0p1_ts3_tcinf_tf1_tw0
+#   sbatch scripts/026_TimeHorizonMaps_job.sh surface_stokes ALL 6000 step_wc0p1_ts3_tcinf_tf1_tw0_b750
 #   sbatch scripts/026_TimeHorizonMaps_job.sh bottom SON 6000
 # season is one of DJF / MAM / JJA / SON / ALL. member "" (default) reads the
 # unweighted 024 counts store; a 024f rate-model tag reads that member's
-# survival-weighted survocc store (surface_stokes only: 024d sidecars).
+# survival-weighted survocc store (any regime with 024d sidecars).
 # age_bin_days (10), max_age_days (180) and the horizons (30,60,90,180) fall
 # back to the notebook defaults; age_bin_days must match the store, horizons
 # must be its multiples, and a 024f store must cover max_age_days.

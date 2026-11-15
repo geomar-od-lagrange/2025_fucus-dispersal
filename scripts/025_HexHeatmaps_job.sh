@@ -11,11 +11,11 @@ set -euo pipefail
 # Lightweight: reads from HexAggregates parquet, no Dask cluster needed.
 # Pools the regime's partitions in the notebook's release_years and keeps one release
 # season. Submit once per (regime, season, hex_radius, member), e.g.:
-#   sbatch scripts/025_HexHeatmaps_job.sh surface_stokes ALL 6000 step_wc0p1_ts3_tcinf_tf1_tw0
+#   sbatch scripts/025_HexHeatmaps_job.sh surface_stokes ALL 6000 step_wc0p1_ts3_tcinf_tf1_tw0_b750
 #   sbatch scripts/025_HexHeatmaps_job.sh bottom SON 6000
 # season is one of DJF / MAM / JJA / SON / ALL. member "" (default) reads the
 # unweighted 024 counts store; a 024f rate-model tag reads that member's
-# survival-weighted survocc store (surface_stokes only: 024d sidecars).
+# survival-weighted survocc store (any regime with 024d sidecars).
 # age_bin_days (10) and max_age_days (180) fall back to the notebook defaults.
 
 regime="${1:-surface_stokes}"

@@ -107,9 +107,9 @@ season = "ALL"
 release_years = "2016-2024"
 
 # Rate-model member: the opaque tag the reducer put in the store filename
-# (e.g. "step_wc0p1_ts3_tcinf_tf1_tw0"). Selects the partitions and tags
+# (e.g. "step_wc0p1_ts3_tcinf_tf1_tw0_b750"). Selects the partitions and tags
 # the figures.
-member = "step_wc0p1_ts3_tcinf_tf1_tw0"
+member = "step_wc0p1_ts3_tcinf_tf1_tw0_b750"
 # Second member, read only by the source/sink substrate block: a member whose
 # trap term is degenerate (trap_flat = trap_wall = 1), so substrate does not
 # enter its rate at all and its deposit is where the drift alone puts the

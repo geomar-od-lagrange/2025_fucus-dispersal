@@ -49,7 +49,7 @@ aggregated the way the reader looks at it, per hex.
 Two rate-model members are shown side by side, and which is which is the
 whole point of the comparison:
 
-- **`member`** (default `step_wc0p1_ts3_tcinf_tf1_tw0`) — the production
+- **`member`** (default `step_wc0p1_ts3_tcinf_tf1_tw0_b750`) — the production
   setting. `trap_flat = 1`, `trap_wall = 0`, so the realised strong-wave
   factor is `trap = ff/100`: **substrate genuinely drives the trapping
   term**, and a fully walled hex (`ff = 0`) strands nothing at all.
@@ -113,7 +113,7 @@ release_years = "2016-2024"
 # Production rate-model member: the opaque tag the reducer put in the store
 # filename. Substrate drives the trapping term here (trap_flat = 1,
 # trap_wall = 0, so trap = ff/100 and pure-wall coast strands nothing).
-member = "step_wc0p1_ts3_tcinf_tf1_tw0"
+member = "step_wc0p1_ts3_tcinf_tf1_tw0_b750"
 # The contrast: a member whose trap term is degenerate (trap_flat = trap_wall
 # = 1), so substrate does not enter the rate at all. "" skips the second pass.
 contrast_member = "step_wc0p1_ts3_tcinf"
