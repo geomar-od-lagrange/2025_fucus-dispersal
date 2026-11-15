@@ -21,9 +21,11 @@ compute node via `pixi run`.
   outline notes is planned in
   [manuscript_extension.md](manuscript_extension.md).
 
-- **Data twin push owed:** the `data` gitlink points at twin merge
-  `d2d43cb` (shoreclass parquet with `grid`/`on_seam`, stored via LFS),
-  which is not yet on the git.geomar.de remote. `--recurse-submodules`
+- **Data twin push owed:** the `data` gitlink points at twin commit
+  `98022cd` (coastline geojsons on the true grid,
+  [coastline_grid_fix.md](coastline_grid_fix.md)), on top of merge `d2d43cb`
+  (shoreclass parquet with `grid`/`on_seam`, stored via LFS); neither is
+  on the git.geomar.de remote yet. `--recurse-submodules`
   clones fail until `git -C data push origin main` runs with
   git.geomar.de credentials.
 
