@@ -1,6 +1,9 @@
 # Coastline grid registration fix and sliver-hex dilution mask
 
-Status: **plan written; implementation next** (update this line as steps land).
+Status: **implemented and validated (steps 1–3); production rerun (step 4)
+pending code review.** Commits: plan 9ff8f15, 004/024d fix 5ce12c1, sliver
+mask 2638f7c, 024a bbox + data gitlink a7beb52 (twin commit 98022cd, local,
+not pushed).
 
 ## Bug
 
@@ -49,7 +52,11 @@ authors; fixing it is a sidecar change plus a twin blob rebuild.
   `np.nonzero(wet)`). Regenerate both geojsons in `./data` and commit inside
   the submodule (no push); stage the gitlink deliberately.
 - **024d:** `_h0_nearest_sampler` takes the step the same way.
-- **Key:** 024a unchanged in code; rebuilt from the new geojsons.
+- **Key:** 024a's `fine_bbox` from the same fitted outer edge
+  (`grid_extent`). With the geojson on the true grid, the old
+  `min ± half mean step` bbox sat 1e-5° off the fine polygons; the hairline
+  gap between fine and clipped coarse water became a self-intersection in
+  EPSG:3035 (TopologyException in the water-area intersection).
 
 ## Sliver mask (dilution maps only)
 
@@ -84,18 +91,21 @@ bias in a sum. Documented in `docs/visualisations.md`.
 
 ## Rerun order (sbatch, partition base)
 
-1. 004 (sbatch wrap) → `data/bsh_hbmnoku_static/coastline{,_always_wet}.geojson`
-   (done before review; validation below).
-2. `sbatch scripts/024a_BuildHexKey_job.sh 6000` (r6000m is the only radius
-   on disk).
-3. If any `helcom_subbasin` changes: 024c for every (regime, year), and
-   024f/024g (with 024e) for every member — via `submit_aggregates.sh` /
-   `submit_024efg.sh`.
-4. 024d (`scripts/024d_*_job.sh`, ~50 min on 141 nodes) → 024e/f/g
-   (`scripts/submit_024efg.sh`) — needed for the 024d fix.
-5. `sbatch scripts/025-031_ConsumersAll_job.sh` (default REGIMES), afterok on
-   2–4.
-6. 033 × {ALL, DJF, MAM, JJA, SON}, 036, then `scripts/headline_report_job.sh`.
+Done: 004 → `data/bsh_hbmnoku_static/coastline{,_always_wet}.geojson`.
+
+1. `sbatch scripts/024a_BuildHexKey_job.sh 6000` (r6000m is the only radius
+   on disk; ~23 min).
+2. 024c: **not needed** — the rebuilt key changes no `helcom_subbasin`.
+   024/024b: hex ids only, unchanged.
+3. `scripts/submit_024d.sh --dependency=afterok:<1>` (all surface_stokes
+   zarrs, `overwrite True`; ~50 min on 141 nodes last time) then
+   `scripts/submit_024efg.sh --dependency=afterok:<3>` — for the 024d fix.
+4. `sbatch --dependency=afterok:<1>:<3b> scripts/025-031_ConsumersAll_job.sh`
+   (default REGIMES; 120 units, check "N OK, 0 FAIL").
+5. afterok on 4: `sbatch scripts/033_ShorelineTypeMap_job.sh surface_stokes 6000
+   step_wc0p1_ts3_tcinf_tf1_tw0 <S> step_wc0p1_ts3_tcinf` for S in ALL DJF MAM
+   JJA SON; `sbatch scripts/036_SeedingMap_job.sh 6000`; then
+   `sbatch scripts/headline_report_job.sh`.
 
 ## Validation (before the rerun)
 
@@ -109,6 +119,28 @@ bias in a sum. Documented in `docs/visualisations.md`.
   output root), number of changed hexes.
 - 024d raster: old vs fixed sampler, share of raster cells whose water/land
   flips.
+
+## Validation results (2026-11-15, `tmp_coastline_fix/`)
+
+- Vertex → F-lattice distance (cells, max): old fine 0.50 lon / 0.50 lat,
+  coarse 0.33 / 0; new fine 0.004 / 0.006, coarse 0.001 / 0.
+- Point-in-polygon at every H0 centre vs H0 notnull: old fine 98.61 %
+  (3,398 cells differ), new 100 % both grids (also `always_wet` vs H0 > 0).
+  vs the 005 surface_stokes land flag: new fine 99.61 % (949), coarse
+  99.98 % (33) — the cells 005 closes that H0 calls wet, not registration.
+  Figure: `fig/coastline_old_new_vs_walls.png` (16.43E 57.09N, 22.8E 59N,
+  17.3E 62.3N, 14.3E 53.9N).
+- Scratch key (`out_root/`, `out/key_compare.parquet`): water area vs
+  `water_area_fixed.parquet` h0fix max |Δ| 0.035 km² over 12,420 wet hexes
+  (the fine-bbox edge, 1e-5°); totals old 1,044,544, new 1,044,258 km².
+  159 partly-land hexes change water area by > 2×; slivers (< ¼ water)
+  781 → 765. `helcom_subbasin`, `mean_depth_m`, `fucus_area_m2` unchanged.
+  `dist_to_coast_m`: median Δ 0.5 km, up to 121 km in the North Sea, where the
+  old fine/coarse seam gap was counted as coast; no notebook reads it.
+- All eight former outliers are now < 0.1 water fraction → masked.
+- 024d 500 m raster: 46,610 of 4.18 M water cells (1.1 %) flip water/land
+  between the old and fixed sampler (14,302 fine, 32,308 coarse) — all
+  coastal, i.e. in the beaching band.
 
 ## Docs
 
