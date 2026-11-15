@@ -3,8 +3,8 @@
 Status: **plan, author decisions in (2026-11-15), not started.** Touches
 024d–g, the beaching consumers and their job scripts; start only after the
 coastline-grid-fix rerun has landed
-([coastline_grid_fix.md](coastline_grid_fix.md)), which is editing and
-rerunning the same notebooks.
+([coastline_grid_fix.md](done/coastline_grid_fix.md), landed 2026-11-15), which edited and
+reran the same notebooks.
 
 ## Design
 
