@@ -1,6 +1,9 @@
 # Beaching statistics for bottom particles
 
-Status: **plan, author decisions in (2026-11-15); Step 0 done (result below), band choice open.** Touches
+Status: **code landed, validation done (below); full build not yet launched.** Author
+decision 2026-11-15: `band_m = 750` is production for every regime (tag
+`…_tf1_tw0_b750`), every sweep member rebuilt at 750, the production point at
+2000 m kept as the one band sensitivity. Touches
 024d–g, the beaching consumers and their job scripts; start only after the
 coastline-grid-fix rerun has landed
 ([coastline_grid_fix.md](done/coastline_grid_fix.md), landed 2026-11-15), which edited and
@@ -154,7 +157,37 @@ regenerated.
 4. Gate: bring the bottom/surface ratios to the authors before the full
    bottom build.
 
-## Open questions for the authors
+## Validation result (2026-11-15, job 24930567)
+
+`tmp_bottom_beaching/val_job.sh` + `val_analyse.py`, release 2019-10-18,
+tmp `output_root` (`tmp_bottom_beaching/val/`), production rate model, 180 d.
+
+- New 024d on `surface_stokes` reproduces the production sidecar **bit for
+  bit** (all five arrays + coords; attrs differ only in `git_sha`,
+  `slurm_job_id`, `slurm_step_id`). 024e at 2000 m and at 750 m reproduces
+  the production / Step 0 partitions' doy-291 rows exactly (63 882 and
+  53 451 rows, `DataFrame.equals`).
+- `bottom` and `bottom_ub49` sidecars build (~6 min/zarr wall, MaxRSS
+  9.8 GB, 121 / 78 MB on disk); 024e at 750 + 2000, 024f + 024g at 750 run
+  for all three regimes.
+
+| regime | band | in-band h / drifter | strong share of in-band | ever strong-wave in band | stranded 30 / 90 / 180 d | median age bin | receiving hexes |
+|---|---|---|---|---|---|---|---|
+| surface_stokes | 750 | 2 405 | 9.4 % | 99.5 % | 35.7 / 59.0 / 64.1 % | 20–30 d | 734 |
+| surface_stokes | 2000 | 3 168 | 8.1 % | 99.7 % | 40.0 / 63.1 / 66.9 % | 10–20 d | 827 |
+| bottom | 750 | 460 | 2.2 % | 53.1 % | 7.2 / 21.4 / 28.9 % | 50–60 d | 559 |
+| bottom | 2000 | 1 182 | 3.2 % | 77.0 % | 17.3 / 35.5 / 43.0 % | 40–50 d | 729 |
+| bottom_ub49 | 750 | 74 | 2.9 % | 16.3 % | 2.5 / 6.0 / 9.7 % | 50–60 d | 428 |
+| bottom_ub49 | 2000 | 512 | 3.6 % | 44.0 % | 11.4 / 19.4 / 24.8 % | 40–50 d | 640 |
+
+**Read:** as expected the band cuts bottom stranding far more than surface
+(180 d: −2.9 points surface, −14.1 bottom, −15.1 bottom_ub49): bottom
+drifters spend 1/5 of the surface in-band time in the first ring, and see
+strong waves there a quarter as often. Bottom/surface ratio at 180 d, 750 m:
+0.45 (`bottom`), 0.15 (`bottom_ub49`). Gate item 4: bring these to the
+authors before the full bottom build.
+
+## Open questions for the authors (answered 2026-11-15)
 
 1. **Band** after Step 0: 2000 m or the first raster ring (`band_m = 750`),
    for all regimes?
