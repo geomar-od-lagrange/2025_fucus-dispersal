@@ -966,7 +966,8 @@ figure_specs = [
         sources=heatmap_sources(primary_regime),
         note=f"Basin-wide relative density, {weighting_phrase(figure_fields['tag'])}, ages < "
         f"{max_age_days} d: share of particle-time (left) and dilution per km² of hex water area "
-        "(right). Where the particle-time sits, and how much of it is a coastal-hex artefact.",
+        "(right; hexes under a quarter water left blank). Where the particle-time sits, and "
+        "how concentrated it is per km² of water.",
     ),
     dict(
         notebook="025", stem="HexRelativeDensityDE_{regime}_{pooled}_r{radius}m_{tag}",

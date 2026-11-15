@@ -313,9 +313,11 @@ the polygons 024a takes the hex water area from), merged fine-first as in
 024a (fine polygons plus the coarse ones outside the fine bbox) and drawn
 minus a 0.001° strip along the fine bbox, where the two grids meet in open
 water (026/026a/034; 029/033/036 drop one fine cell either side of it), or
-unioned on a 1e-3° precision grid, which closes
-the slivers the two grids' 1e-4°-rounded cell edges leave along the seam
-(025/026b/027/030/031); black at `linewidth=0.5`. The model coastline rather than Natural
+unioned on a 1e-3° precision grid
+(025/026b/027/030/031). Each closes the hairline seam these notebooks'
+own fine bbox leaves: it is built from the 1e-4°-rounded H0 centres and sits
+up to 1e-5° off the fine polygons' fitted outer edge (024a uses the fitted
+edge, because it intersects in EPSG:3035); black at `linewidth=0.5`. The model coastline rather than Natural
 Earth because the maps show where the model's water is — hexes, isobath and
 coast then register on one grid (authors, 2026-10-27). The cartopy notebooks
 (020/022/023) use `add_feature(cfeature.COASTLINE)` per the AGENTS.md

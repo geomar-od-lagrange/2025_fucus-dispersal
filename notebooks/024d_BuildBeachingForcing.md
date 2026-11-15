@@ -45,8 +45,9 @@ instead of a re-read of the trajectories and the raw wave field.
 - **distance to shore** — a rasterised distance-to-coast field built from
   the **BSH H0 land-sea mask** (finite `H0` = water, NaN = land, `H0 ≤ 0`
   = tidal flat), fine-over-coarse, in EPSG:3035. This is the mask the
-  particles were advected on; the coastline geojson polygons miss a large
-  fraction of genuine water positions and are not used here.
+  particles were advected on, sampled cell by cell, so no polygon geometry
+  (and no polygon-to-raster step) sits between the model grid and the
+  raster.
 - **shore type** — the **flat fraction** `ff` of the nearest coastal land
   cell, in percent: the seg-length-weighted share of classified shoreline
   within that cell that is low/flat (sandy, marshy, unconsolidated) rather
@@ -250,6 +251,16 @@ def _h0_nearest_sampler(h0):
     return sample
 
 
+def _grid_extent(coord):
+    """Outer cell edges (low, high) of a regular BSH axis from its stored
+    centres: a linear fit, the same as 004 and 024a use, so the fine/coarse
+    switch sits on the fine nest's outer cell edge (the coastline merge's
+    `fine_bbox`), not half a cell inside it at the outermost centres."""
+    step, first = np.polyfit(np.arange(coord.size), coord, 1)
+    edges = first + step * np.array([-0.5, coord.size - 0.5])
+    return float(edges.min()), float(edges.max())
+
+
 def build_beaching_raster(data_root, dx_m, hp, shoreclass_path):
     """Distance-to-coast field + seaward normal + flat fraction + hex id on a
     3035 raster.
@@ -266,10 +277,7 @@ def build_beaching_raster(data_root, dx_m, hp, shoreclass_path):
     )
     sample_fine = _h0_nearest_sampler(h0_fine)
     sample_coarse = _h0_nearest_sampler(h0_coarse)
-    fine_bbox = (
-        float(h0_fine.lon.min()), float(h0_fine.lon.max()),
-        float(h0_fine.lat.min()), float(h0_fine.lat.max()),
-    )
+    fine_bbox = (*_grid_extent(h0_fine.lon.values), *_grid_extent(h0_fine.lat.values))
 
     to_3035 = Transformer.from_crs(4326, 3035, always_xy=True)
     from_3035 = Transformer.from_crs(3035, 4326, always_xy=True)
@@ -450,8 +458,8 @@ def bsh_water_on_grid(data_root, lon, lat):
     sample_coarse = _h0_nearest_sampler(h0_coarse)
     lon2, lat2 = np.meshgrid(lon, lat)
     dlon, dlat = lon[1] - lon[0], lat[1] - lat[0]
-    lon_lo, lon_hi = float(h0_fine.lon.min()), float(h0_fine.lon.max())
-    lat_lo, lat_hi = float(h0_fine.lat.min()), float(h0_fine.lat.max())
+    lon_lo, lon_hi = _grid_extent(h0_fine.lon.values)
+    lat_lo, lat_hi = _grid_extent(h0_fine.lat.values)
 
     water = np.zeros(lon2.shape, dtype=bool)
     for ox in (-0.5, 0.0, 0.5):

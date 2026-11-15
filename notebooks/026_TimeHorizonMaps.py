@@ -778,12 +778,13 @@ median_age = median_age_days(
     .loc[hex_weight > 0]
 )
 # Median age describes the age of the cloud present, so it stays on the
-# weight present (`released` only feeds the unused dilution column). Only
-# zero-water hexes are dropped: the sliver mask is for dilution maps alone.
+# weight present (`released` only feeds the unused dilution column). Hexes
+# with no weight (no median) and zero-water hexes are dropped; slivers stay:
+# the sliver mask is for dilution maps alone.
 gdf_age = to_hex_gdf(binned, key, released_per_bin * n_age_bins).join(
     median_age, on="target_hex"
 )
-gdf_age = gdf_age[gdf_age["water_area_m2"] > 0]
+gdf_age = gdf_age[(gdf_age["water_area_m2"] > 0) & (gdf_age["weight"] > 0)]
 # 5th percentile, not the 1st that floors the dilution colour scale: the
 # isolated estuary hexes sit at the 0.2nd–4.3rd percentile of share (surface,
 # ALL, 2016–2024, production member).
