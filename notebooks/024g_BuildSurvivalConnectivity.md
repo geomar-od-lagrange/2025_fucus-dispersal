@@ -64,10 +64,10 @@ import xarray as xr
 
 ```python
 # Pattern: Fucus_BSH_YYYYMMDDTHHMMSS_{regime}_dt{N}min_seed{S}. The sidecar
-# zarrs carry the stem of the trajectory zarr they were built from.
-_ZARR_STEM_RE = re.compile(
-    r"^Fucus_BSH_(\d{8}T\d{6})_(surface_stokes|surface|bottom)_dt\d+min_seed\d+$"
-)
+# zarrs carry the stem of the trajectory zarr they were built from. The regime
+# is any word (`surface_stokes`, `bottom_ub49`, ...): the `_dt<N>min_seed<S>`
+# tail anchors where it ends, and the caller checks it against `regime`.
+_ZARR_STEM_RE = re.compile(r"^Fucus_BSH_(\d{8}T\d{6})_(\w+)_dt\d+min_seed\d+$")
 
 
 def parse_zarr_stem(path):
@@ -118,8 +118,11 @@ tau_calm_days = 0.0
 # Linear edge width (m/s) around w_c; 0 gives a hard step.
 delta = 0.0
 
-# Near-shore band width (m); must be ≤ the sidecar's `band_max_m`.
-band_m = 2000.0
+# Near-shore band width (m); must be ≤ the sidecar's `band_max_m`. 750 is
+# the first 500 m raster ring (the gate is `dist·25 < band_m` on whole
+# raster cells, so 501–700 m selects the edge-adjacent ring and 701–1000 m
+# adds its diagonals); the production band for every regime.
+band_m = 750.0
 
 # Shore-type retention weights: the strong-wave rate is scaled by
 # `trap = trap_wall + (trap_flat - trap_wall) * ff/100`, interpolating between
@@ -154,9 +157,8 @@ member = (
     # 1.0/1.0 production tag stays as it is.
     + (f"_tf{trap_flat:g}_tw{trap_wall:g}"
        if (trap_flat != 1.0 or trap_wall != 1.0) else "")
-    # Likewise only a non-default band carries its width, so the 2000 m
-    # production stores keep their names and a band member never overwrites
-    # them.
+    # A band other than 2000 m carries its width (production: `_b750`), so
+    # the 2000 m stores keep their names and two bands never share a file.
     + (f"_b{band_m:g}" if band_m != 2000.0 else "")
 )
 member = member.replace(".", "p")

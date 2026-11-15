@@ -80,10 +80,10 @@ import xarray as xr
 
 ```python
 # Pattern: Fucus_BSH_YYYYMMDDTHHMMSS_{regime}_dt{N}min_seed{S}. The sidecar
-# zarrs carry the stem of the trajectory zarr they were built from.
-_ZARR_STEM_RE = re.compile(
-    r"^Fucus_BSH_(\d{8}T\d{6})_(surface_stokes|surface|bottom)_dt\d+min_seed\d+$"
-)
+# zarrs carry the stem of the trajectory zarr they were built from. The regime
+# is any word (`surface_stokes`, `bottom_ub49`, ...): the `_dt<N>min_seed<S>`
+# tail anchors where it ends, and the caller checks it against `regime`.
+_ZARR_STEM_RE = re.compile(r"^Fucus_BSH_(\d{8}T\d{6})_(\w+)_dt\d+min_seed\d+$")
 
 
 def parse_zarr_stem(path):
@@ -102,9 +102,9 @@ def parse_zarr_stem(path):
 # Write root; also holds the BeachingForcing sidecar this reads.
 output_root = "../output"
 
-# One (regime, release_year) per run. surface_stokes is the baseline — the
-# beaching driver is the wave field those runs actually felt; surface/bottom
-# are sensitivity variants (Stokes was not in their drift).
+# One (regime, release_year) per run: surface_stokes, bottom or bottom_ub49.
+# Every regime strands under the same criterion — the surface onshore Stokes
+# at the drifter position, inside the near-shore band (docs/beaching.md).
 regime = "surface_stokes"
 release_year = 2019
 # Restrict to releases in this calendar month (1..12); 0 = whole year.
@@ -114,8 +114,8 @@ release_month = 8
 hex_radius = 6000
 
 # --- step-hazard parameters ---
-# Onshore-Stokes threshold (m/s); THE sweep axis. Measured in-band forcing:
-# p75 0.057, p90 0.088, p99 0.15 m/s.
+# Onshore-Stokes threshold (m/s), absolute — the same value for every regime
+# and band; THE sweep axis.
 w_c = 0.1
 # e-folding time (h) while the onshore forcing is above w_c. Below ~6 h
 # everything in band during a Baltic strong-wave episode strands and the
@@ -126,8 +126,11 @@ tau_calm_days = 0.0
 # Linear edge width (m/s) around w_c; 0 gives a hard step.
 delta = 0.0
 
-# Near-shore band width (m); must be ≤ the sidecar's `band_max_m`.
-band_m = 2000.0
+# Near-shore band width (m); must be ≤ the sidecar's `band_max_m`. 750 is
+# the first 500 m raster ring (the gate is `dist·25 < band_m` on whole
+# raster cells, so 501–700 m selects the edge-adjacent ring and 701–1000 m
+# adds its diagonals); the production band for every regime.
+band_m = 750.0
 
 # Shore-type retention weights: the strong-wave rate is scaled by
 # `trap = trap_wall + (trap_flat - trap_wall) * ff/100`, interpolating between
@@ -175,9 +178,8 @@ member = (
     # 1.0/1.0 production tag stays as it is.
     + (f"_tf{trap_flat:g}_tw{trap_wall:g}"
        if (trap_flat != 1.0 or trap_wall != 1.0) else "")
-    # Likewise only a non-default band carries its width, so the 2000 m
-    # production stores keep their names and a band member never overwrites
-    # them.
+    # A band other than 2000 m carries its width (production: `_b750`), so
+    # the 2000 m stores keep their names and two bands never share a file.
     + (f"_b{band_m:g}" if band_m != 2000.0 else "")
 )
 member = member.replace(".", "p")
