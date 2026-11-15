@@ -316,7 +316,10 @@ bbox+margin (Stokes, numerical excursion). The build does not abort.
 
 `water_area_m2` and `dist_to_coast_m` come from per-hex intersections
 with `fine_polys ∪ (coarse_polys \ fine_bbox)`, where `fine_bbox` is
-the H0-fine bbox padded by half a fine cell. Coarse is clipped to
+the fine grid's outer cell edge from the same linear fit 004 uses, so the
+clipped coarse water abuts the fine polygons exactly (an edge from the
+rounded `min ± half step` leaves a 1e-5° gap that is a self-intersection
+once projected to EPSG:3035). Coarse is clipped to
 coarse-only territory before union, making the two sides spatially
 disjoint — fine has sole authority inside its bbox, coarse fills the
 rest. A plain `unary_union` would wet pixels fine resolves as land.

@@ -138,18 +138,25 @@ hp = HexProj(
 # same file with overlap in the German Bight. A plain `unary_union` over
 # both wets pixels that fine resolves as land. The right merge is
 # `fine_polys ∪ (coarse_polys \ fine_bbox)`, where `fine_bbox`
-# is the H0-fine bbox padded by half a fine cell so all fine cells fall
-# inside.
+# is the outer cell edge of the fine grid, so all fine cells fall inside.
+#
+# The edges come from the same linear fit over the stored centres that 004
+# builds the polygons with, so the clipped coarse water abuts the fine
+# polygons exactly. `min ± half the mean step` lands up to 1e-5° off them
+# (the centres are stored rounded to 1e-4°); that hairline gap between two
+# rings turns into a self-intersection once projected to EPSG:3035.
 
 # %%
-fine_lon_pad = abs(float(h0_fine.lon.diff("lon").mean())) / 2
-fine_lat_pad = abs(float(h0_fine.lat.diff("lat").mean())) / 2
-fine_bbox = box(
-    float(h0_fine.lon.min()) - fine_lon_pad,
-    float(h0_fine.lat.min()) - fine_lat_pad,
-    float(h0_fine.lon.max()) + fine_lon_pad,
-    float(h0_fine.lat.max()) + fine_lat_pad,
-)
+def grid_extent(coord):
+    """Outer cell edges (low, high) of a regular axis from its stored centres."""
+    step, first = np.polyfit(np.arange(coord.size), coord, 1)
+    edges = first + step * np.array([-0.5, coord.size - 0.5])
+    return float(edges.min()), float(edges.max())
+
+
+fine_lon_lo, fine_lon_hi = grid_extent(h0_fine.lon.values)
+fine_lat_lo, fine_lat_hi = grid_extent(h0_fine.lat.values)
+fine_bbox = box(fine_lon_lo, fine_lat_lo, fine_lon_hi, fine_lat_hi)
 
 
 def fine_first_union(gdf):
