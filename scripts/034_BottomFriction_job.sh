@@ -9,17 +9,21 @@
 
 set -euo pipefail
 
-# Parquet only: the 024 counts partitions of `bottom` and `bottom_ub49` and the
-# 024a key. Compares the two on the releases both hold, pooled over the
-# release years of one season: area holding 90 % of particle-time per horizon
-# (CSV + length-ratio figure) and the map pair at 90 d. Run after 024 for both
-# regimes and every release year. Submit once per (season, hex_radius), e.g.:
-#   sbatch scripts/034_BottomFriction_job.sh ALL 6000
+# Parquet only: the 024 counts and 024e beaching partitions of `bottom` and
+# `bottom_ub49` and the 024a key. Compares the two on the releases both hold,
+# pooled over the release years of one season: area holding 90 % of
+# particle-time per horizon (CSV + length-ratio figure), the map pair at 90 d,
+# and the stranded % per horizon at the 024e `member` (CSV). Run after 024 and
+# 024e (at `member`) for both regimes and every release year; without the
+# 024e partitions the stranded table is reported missing and skipped. Submit
+# once per (season, hex_radius), e.g.:
+#   sbatch scripts/034_BottomFriction_job.sh ALL 6000 step_wc0p1_ts3_tcinf_tf1_tw0_b750
 # season is one of DJF / MAM / JJA / SON / ALL. scripts/025-031_ConsumersAll_job.sh
 # runs it for every season when bottom_ub49 is among its regimes.
 
 season="${1:-ALL}"
 hex_radius="${2:-6000}"
+member="${3:-step_wc0p1_ts3_tcinf_tf1_tw0_b750}"
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
 repo_root=/gxfs_work/geomar/smomw122/2025_fucus-dispersal
 
@@ -32,6 +36,7 @@ pixi run papermill --cwd notebooks/ \
     -p output_root ${output_root} \
     -p hex_radius ${hex_radius} \
     -r season ${season} \
+    -r member ${member} \
     -k python
 
 # The job status must be papermill's, not the accounting tool's.

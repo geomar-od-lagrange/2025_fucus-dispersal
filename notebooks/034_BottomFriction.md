@@ -24,7 +24,8 @@ docs/bottom_friction.md), pooled over one release season of the
 `release_years`, as the other consumers pool. Only the releases present in
 **both** regimes enter (per year, the common release doys), so the two
 sides always describe the same release set. Reads the 024 counts
-partitions and the 024a key; parquet only, no Dask.
+partitions, the 024a key and the 024e beaching partitions of one rate-model
+member; parquet only, no Dask.
 
 **Footprint metric** (the R1 area of plans/done/horizons_and_weighting.md D6):
 for each cumulative elapsed-time horizon `T` (every `age_bin` whose window
@@ -35,6 +36,10 @@ summed up to the crossing hex, the crossing hex taken fractionally (a 6 km
 hex is 93.5 km², so whole hexes would quantise small-`T` areas).
 `length_km = sqrt(area_km2)` is the side of a square of that area. Pooled
 over the release years and per release year, for the interannual range.
+
+**Stranded share** (029's stranding curve at the same horizons): the
+percentage of the released real drifters stranded at ages below `T`, from
+the 024e store at `member`, on the same release set.
 
 ```python
 import itertools
@@ -67,6 +72,9 @@ hex_radius = 6000
 # Trajectories/<regime>/.
 regime_ref = "bottom"
 regime_var = "bottom_ub49"
+# 024e rate-model member of the stranded-share table, the same for both
+# regimes (docs/beaching.md).
+member = "step_wc0p1_ts3_tcinf_tf1_tw0_b750"
 # Release season: DJF, MAM, JJA, SON or ALL (every month).
 season = "ALL"
 # Release years pooled: "first-last" (inclusive) or one year ("2019").
@@ -648,6 +656,182 @@ for column, (norm, cmap, extend, colorbar_kwargs) in VIEWS.items():
     fig.savefig(fig_path, dpi=FIGURE_DPI)
     print(f"wrote {fig_path}")
     plt.show()
+```
+
+# Stranded share
+
+One 024e partition per `(regime, year, month, member)`,
+`HexAgg_beaching_r<radius>m_<regime>_<year>_mMM_<member>.parquet`, columns
+per docs/beaching.md "Store schema". The release set is the counts one
+above narrowed to the `(year, release_doy)` both regimes' 024e partitions
+hold, so the stranded rows and the area rows describe the same releases
+(a release one 024e side lacks is dropped from both and reported). As 029,
+
+`stranded(T) = 100 · Σweight[beach_hex ≥ 0 & beach_age_bin < T / age_bin_days] / Σweight`,
+
+with Σweight the released real drifters (deposits + residual), pooled from
+the summed weights and per release year. Each partition's build attrs are
+taken per file before the concat (pandas drops attrs that differ between
+the frames) and must agree on the window, the binning and the rate-model
+point across both regimes: the comparison is one rate model on two drift
+regimes. A regime without 024e partitions at `member` is reported and the
+table skipped, so the area comparison still runs before 024d–e have.
+
+```python
+# Keys every pooled partition of one member must share: the reduction window,
+# the binning and the rate-model point. Provenance (builder, git_sha,
+# slurm_job_id) and the partition's identity (regime, release_year,
+# release_month) legitimately differ and are not compared.
+POOLED_KEYS = (
+    "max_age_days", "age_bin_days", "disp_bin_km", "w_c", "tau_strong_hours",
+    "tau_calm_days", "delta", "trap_flat", "trap_wall", "band_m",
+)
+
+
+def pooled_attrs(attrs, store):
+    """The build attrs every pooled partition shares, from one `df.attrs`
+    per partition."""
+    old = sum("max_age_days" not in a for a in attrs)
+    if old:
+        raise ValueError(
+            f"{old} of {len(attrs)} {store} partition(s) carry no build attrs "
+            f"(old schema, written before max_age_days was recorded) — rebuild "
+            f"them with the current 024e reducer"
+        )
+    distinct = {tuple(a[k] for k in POOLED_KEYS) for a in attrs}
+    if len(distinct) > 1:
+        raise ValueError(
+            f"pooled {store} partitions disagree on {POOLED_KEYS}: "
+            f"{sorted(distinct)} — rebuild them at one setting"
+        )
+    return dict(zip(POOLED_KEYS, distinct.pop()))
+
+
+def beaching_partitions(regime):
+    """{release_year: [path, ...]} of the regime's in-season 024e partitions
+    at `member` in the counts comparison's years."""
+    part_re = re.compile(
+        rf"HexAgg_beaching_r{hex_radius}m_{regime}_(\d{{4}})_m(\d{{2}})"
+        rf"_{re.escape(member)}\.parquet$"
+    )
+    out = {}
+    for f in sorted(store_root.glob(f"HexAgg_beaching_r{hex_radius}m_{regime}_*.parquet")):
+        m = part_re.search(f.name)
+        if m is None or int(m[1]) not in years or int(m[2]) not in season_months:
+            continue
+        out.setdefault(int(m[1]), []).append(f)
+    return out
+
+
+beaching_parts = {regime: beaching_partitions(regime) for regime in dict.fromkeys(regimes)}
+for regime, by_year in beaching_parts.items():
+    print(f"{regime}: 024e {member} partitions for {sorted(by_year)} "
+          f"({sum(len(v) for v in by_year.values())} monthly)")
+    if not by_year:
+        print(f"MISSING: 024e {regime} {member}, season {season} — the stranded-share "
+              f"table is NOT computed; run 024d/024e for {regime}")
+beaching_ok = all(beaching_parts.values())
+```
+
+```python
+# Each partition is reduced at once to per-`(release_doy, stranding bin)`
+# weight sums, the stranding bin being `beach_age_bin` where `beach_hex ≥ 0`
+# and -1 for the never-beached residual: additive, and all the horizons need.
+if beaching_ok:
+    beaching = {}
+    beaching_attrs = []
+    for regime, parts_by_year in beaching_parts.items():
+        reduced = []
+        for year, files in parts_by_year.items():
+            for f in files:
+                df = pd.read_parquet(
+                    f, columns=["release_doy", "beach_hex", "beach_age_bin", "weight"]
+                )
+                beaching_attrs.append(df.attrs)
+                df = df[df["release_doy"].isin(common_doys[year])]
+                reduced.append(
+                    df.assign(stranded_bin=df["beach_age_bin"].where(df["beach_hex"] >= 0, -1))
+                    .groupby(["release_doy", "stranded_bin"], as_index=False)["weight"].sum()
+                    .assign(release_year=year)
+                )
+        beaching[regime] = pd.concat(reduced, ignore_index=True)
+
+    window = pooled_attrs(beaching_attrs, f"024e {member} ({', '.join(beaching_parts)})")
+    assert window["age_bin_days"] == age_bin_days, (
+        f"024e age_bin_days {window['age_bin_days']} != {age_bin_days}"
+    )
+    assert max(time_horizons_days) <= window["max_age_days"], (
+        f"horizon {max(time_horizons_days)} d is past the 024e reduction window "
+        f"({window['max_age_days']} d) — rebuild 024e or lower the horizon"
+    )
+
+    # Narrow the counts release set to the (year, release_doy) both 024e
+    # sides hold.
+    release_sets = {
+        regime: set(zip(b["release_year"], b["release_doy"])) for regime, b in beaching.items()
+    }
+    beaching_releases = set.intersection(*release_sets.values())
+    if not beaching_releases:
+        raise ValueError(f"no common {season} release in the 024e partitions of {regimes}")
+    for regime, own in release_sets.items():
+        dropped = sorted(own - beaching_releases)
+        lacking = sorted((y, d) for y in years for d in common_doys[y] if (y, d) not in own)
+        if dropped:
+            print(f"{regime}: {len(dropped)} 024e releases absent from the other "
+                  f"regime, dropped: {dropped}")
+        if lacking:
+            print(f"{regime}: {len(lacking)} common counts releases without 024e rows: {lacking}")
+    beaching = {
+        regime: b[[pair in beaching_releases for pair in zip(b["release_year"], b["release_doy"])]]
+        for regime, b in beaching.items()
+    }
+    print(f"stranded share on {len(beaching_releases)} common {season} releases; "
+          f"window [0, {window['max_age_days']}) d, band {window['band_m']} m")
+```
+
+```python
+if beaching_ok:
+    rows = []
+    for regime, b in beaching.items():
+        for h in time_horizons_days:
+            is_stranded = (b["stranded_bin"] >= 0) & (b["stranded_bin"] < h // age_bin_days)
+            per_year = (
+                b[["release_year", "weight"]]
+                .assign(stranded=b["weight"].where(is_stranded, 0.0))
+                .groupby("release_year")[["weight", "stranded"]].sum()
+            )
+            per_scope = pd.concat(
+                [per_year.rename(index=str), per_year.sum().to_frame("pooled").T]
+            )
+            for scope, r in per_scope.iterrows():
+                rows.append(
+                    {"regime": regime, "scope": scope, "horizon_days": h,
+                     "released_weight": r["weight"],
+                     "stranded_pct": 100 * r["stranded"] / r["weight"]}
+                )
+    stranded = pd.DataFrame(rows)
+    ref = stranded.loc[
+        stranded["regime"] == regime_ref, ["scope", "horizon_days", "stranded_pct"]
+    ]
+    stranded = stranded.merge(ref, on=["scope", "horizon_days"], suffixes=("", "_ref"))
+    stranded["stranded_pct_minus_ref"] = stranded["stranded_pct"] - stranded.pop(
+        "stranded_pct_ref"
+    )
+
+    stranded_csv_path = export_dir / f"034_stranded_{season}_r{hex_radius}m_{member}.csv"
+    stranded.to_csv(stranded_csv_path, index=False, float_format="%.6g")
+    print(f"wrote {stranded_csv_path}")
+    stranded_range = (
+        stranded[stranded["scope"] != "pooled"]
+        .groupby(["horizon_days", "regime"])["stranded_pct"].agg(["min", "max"])
+    )
+    print(f"stranded % of released, season {season}, member {member}; "
+          "pooled with per-release-year min–max:")
+    print(
+        stranded[stranded["scope"] == "pooled"]
+        .set_index(["horizon_days", "regime"])[["stranded_pct", "stranded_pct_minus_ref"]]
+        .join(stranded_range).round(1).to_string()
+    )
 ```
 
 # Validation prints
