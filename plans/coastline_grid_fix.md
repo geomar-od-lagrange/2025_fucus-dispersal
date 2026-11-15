@@ -1,9 +1,15 @@
 # Coastline grid registration fix and sliver-hex dilution mask
 
-Status: **implemented and validated (steps 1–3); production rerun (step 4)
-pending code review.** Commits: plan 9ff8f15, 004/024d fix 5ce12c1, sliver
-mask 2638f7c, 024a bbox + data gitlink a7beb52 (twin commit 98022cd, local,
-not pushed).
+Status: **reviewed; shoreclass sidecar fixed; production rerun queued
+(2026-11-15).** Main-repo commits 9ff8f15 … 4848d9f; data twin 98022cd
+(coastline geojsons) and 247bcb3 (shoreclass table), local, not pushed;
+sidecar `2025_fucus-dispersal_shoreclass` 6d847d0, 2384256, local, not pushed.
+
+Rerun job ids: 024a 24930310 → 024d 24930311 → 024efg 24930312 →
+consumers 24930313 (afterok 024a + 024efg); 033 ALL/DJF/MAM/JJA/SON
+24930314–24930318 (afterok 024efg); 036 24930319 (afterok 024a); headline
+24930320 (afterok consumers, 033, 036). Pre-rerun snapshot (Headline/, 026/028/
+029/033/034 CSVs, old key): `tmp_coastline_fix/before/`.
 
 ## Bug
 
@@ -35,11 +41,19 @@ constant offset of ≤ 3.4e-5° (< 4 m), not a drift. The c_file / 005
 wall-field F-coordinates are correct to the 1e-4° storage rounding; left as is
 (changing them would mean rerunning 003/005/010 for no measurable gain).
 
-Out of this repo: the shoreclass sidecar
+The shoreclass sidecar
 (`../2025_fucus-dispersal_shoreclass/scripts/02_extract_bsh_coastline.py`)
-copies 004's arithmetic, so the sub-segment midpoints in
-`data/shoreclass_bsh_coastline/` carry the same drift. Reported to the
-authors; fixing it is a sidecar change plus a twin blob rebuild.
+copied 004's arithmetic, so the sub-segment midpoints in
+`data/shoreclass_bsh_coastline/` carried the same drift. Fixed there
+(`grid.axis_fit`, the same fit; `h0_bbox` on the fitted edge; stage 4 tells
+the nest seam from genuine coast by which side of the box edge the water is
+on), stages 2/4/5/6/7 rerun, twin blob rebuilt with
+`scripts/obtain/obtain_shoreclass.sh`. Old → new: 65,876 → 64,799
+sub-segments, 29,112 → 28,649 km; Baltic attributed 94.2 → 97.1 % (sidecar
+stats 93.3 → 97.1 %), mean `flat_fraction` 0.527 → 0.537, > 0.5 share
+52.2 → 53.3 % of attributed; `on_seam` 472 km (open-water double ring) →
+6 km. Per sub-segment vs the nearest old midpoint (median 281 m away):
+length-weighted mean |Δff| 0.012, 1.1 % flip sides of 0.5.
 
 ## Fix
 
