@@ -99,7 +99,7 @@ the window is the never-beached residual.
 | `tau_calm_days` | background in-band rate regardless of forcing; 0 = off | ∞ or O(1 yr); a year drains 39 % over the 180 d window, so it is a real axis |
 | `delta` | linear edge width around `w_c` | 0 (hard step) by default; `≈0.02` checks against nearest-hour / nearest-cell sampling noise |
 | `trap_flat`, `trap_wall` | strong-wave rate factor on a fully flat / fully walled cell; the realised factor is `trap_wall + (trap_flat − trap_wall)·ff/100` | **1.0 / 0.0** at the production point: the rate is proportional to the substrate's flat fraction and pure-wall shore retains nothing. `1.0 / 1.0` keeps the term inert (the wave field alone sets the rate); every member with a weight ≠ 1 names both in its tag |
-| `band_m` | near-shore band width (m), ≤ the sidecar's `band_max_m` | 2000; quantised by the mask — on the 5 km coarse grid 1–4 km all select the same first cell ring, so sweep it coarsely and report fine nest and coarse regions apart |
+| `band_m` | near-shore band width (m), ≤ the sidecar's `band_max_m` | 2000; quantised by the mask — on the 5 km coarse grid 1–4 km all select the same first cell ring, so sweep it coarsely and report fine nest and coarse regions apart; any value but 2000 tags `_b<band_m>` |
 | `max_age_days` | reduction window (d): the half-open `[0, max_age_days)` hours of the sidecar's `obs` axis; one value for 024e/024f/024g | 180, ≤ the sidecar's `window_days` (220); not a lifetime — weight still drifting at its end is the residual |
 | `age_bin_days`, `disp_bin_km` | store axis granularity | 10 d, 10 km |
 
@@ -201,8 +201,10 @@ Deposits + residual per source hex sum to that hex's released drifter count, so
 the beached fraction is `sum(weight | beach_hex ≥ 0) / sum(weight)`. The
 `member` tag names the rate-model point and consumers take it as an opaque
 string:
-`step_wc<w_c>_ts<tau_strong_hours>_tc<tau_calm_days|inf>[_d<delta>][_tf<trap_flat>_tw<trap_wall>]`,
-`.` → `p` (production: `step_wc0p1_ts3_tcinf_tf1_tw0`).
+`step_wc<w_c>_ts<tau_strong_hours>_tc<tau_calm_days|inf>[_d<delta>][_tf<trap_flat>_tw<trap_wall>][_b<band_m>]`,
+`.` → `p` (production: `step_wc0p1_ts3_tcinf_tf1_tw0`). `_b<band_m>` appears
+only off the 2000 m band (e.g. `…_tf1_tw0_b750`), so a band member writes its
+own store files beside the 2000 m ones.
 
 Each partition carries its build parameters as `df.attrs`, which pandas writes
 into the parquet metadata and `pd.read_parquet` restores: `builder`, `regime`,

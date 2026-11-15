@@ -414,15 +414,17 @@ the parquet it wrote match by eye. The kernel-race retry and the per-cell
 When *every* member has to be rebuilt at once — after a sidecar rebuild
 invalidates all of them — `scripts/024efg_ReduceAll_job.sh` replaces that loop
 of one-member submissions with a single 024d-shaped job whose unit of work is
-one `(reducer, member, year, month)` cell: 25 members (14 for 024e, 7 for 024f,
-4 for 024g) x the `(year, month)` grid — 1200 cells over four release years,
-1.2k more per further year — driven by
+one `(reducer, member, year, month)` cell: 27 members (15 for 024e, 8 for 024f,
+4 for 024g) x the `(year, month)` grid — 324 cells per full release year —
+driven by
 `xargs -P ${SLURM_NTASKS}` over `srun -n1 -N1 --exact --no-kill` steps with the
 same 3-attempt kernel-race retry and `OK`/`FAIL` tally. The members are a plain
 table in the script rather than an environment sweep, so the exact set is read
-off the source, and the tag each cell produces is rebuilt there exactly as the
-notebooks build it (including the `_tf{}_tw{}` suffix a shore-type-sensitive
-member carries). `tau_calm_days = 0` is how the notebooks spell an infinite
+off the source (`$MEMBERS`, same columns, replaces it for a one-off subset),
+and the tag each cell produces is rebuilt there exactly as the notebooks build
+it (including the `_tf{}_tw{}` suffix a shore-type-sensitive member carries and
+the `_b{}` suffix of a member off the 2000 m band; `band_m` is a table column,
+not a global). `tau_calm_days = 0` is how the notebooks spell an infinite
 calm timescale; it tags as `tcinf`. The reduction window is one variable,
 `max_age_days=180`, passed to every cell — the parquets record it in their
 attrs, so a partial rerun at another window is detectable downstream.

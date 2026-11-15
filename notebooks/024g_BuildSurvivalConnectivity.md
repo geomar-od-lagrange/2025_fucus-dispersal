@@ -154,6 +154,10 @@ member = (
     # 1.0/1.0 production tag stays as it is.
     + (f"_tf{trap_flat:g}_tw{trap_wall:g}"
        if (trap_flat != 1.0 or trap_wall != 1.0) else "")
+    # Likewise only a non-default band carries its width, so the 2000 m
+    # production stores keep their names and a band member never overwrites
+    # them.
+    + (f"_b{band_m:g}" if band_m != 2000.0 else "")
 )
 member = member.replace(".", "p")
 print(f"member: {member}")

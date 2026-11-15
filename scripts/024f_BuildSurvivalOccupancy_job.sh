@@ -33,8 +33,10 @@
 #   TRAP_FLAT, TRAP_WALL  strong-wave rate factor on fully flat /
 #               fully walled shore; the realised factor is
 #               TRAP_WALL + (TRAP_FLAT - TRAP_WALL)*ff/100
-#   BAND_M, MAX_AGE_DAYS  reduction window over the sidecar obs axis (d),
-#                         the same for 024e/024f/024g
+#   BAND_M      near-shore band width, m; a value other than 2000 tags
+#               the member `_b<band>`
+#   MAX_AGE_DAYS  reduction window over the sidecar obs axis (d),
+#               the same for 024e/024f/024g
 #
 # 024a_BuildHexKey_job.sh and 024d_BuildBeachingForcing_job.sh must have run
 # first for the matching hex_radius / (regime, year); the (year, month) grid is
@@ -92,6 +94,9 @@ if awk -v x="${DELTA}" 'BEGIN { exit !(x > 0) }'; then
 fi
 if awk -v a="${TRAP_FLAT}" -v b="${TRAP_WALL}" 'BEGIN { exit !(a != 1 || b != 1) }'; then
     member="${member}_tf$(fmt_g "${TRAP_FLAT}")_tw$(fmt_g "${TRAP_WALL}")"
+fi
+if awk -v x="${BAND_M}" 'BEGIN { exit !(x != 2000) }'; then
+    member="${member}_b$(fmt_g "${BAND_M}")"
 fi
 member="${member//./p}"
 echo "member: ${member}"

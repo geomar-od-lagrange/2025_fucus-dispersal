@@ -37,6 +37,8 @@
 #
 #   scripts/submit_024efg.sh --dependency=afterok:<024d job id>
 #   YEARS="2020 2021" scripts/submit_024efg.sh       # restrict the year set
+#   MEMBERS="024e 0.1 3 0 0 1.0 0.0 750" scripts/submit_024efg.sh
+#                                    # an ad-hoc member table instead of the default
 #   LIST_ONLY=1 bash scripts/024efg_ReduceAll_job.sh # print the cells
 #
 # The allocation-level exclusion is deliberately NOT repeated as a step-level
@@ -54,7 +56,6 @@ cd "${SLURM_SUBMIT_DIR:-$PWD}"
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
 regime=surface_stokes
 hex_radius=6000
-band_m=2000.0
 # Reduction window (d) over the sidecar obs axis, one value for all three
 # reducers; must be <= the sidecars' window_days (220).
 max_age_days=180
@@ -69,7 +70,7 @@ unset SLURM_CPU_BIND SLURM_CPU_BIND_LIST SLURM_CPU_BIND_TYPE SLURM_CPU_BIND_VERB
 # --- the rate-model members, spelled out ---------------------------------
 #
 # One line per (reducer, member): "reducer w_c tau_strong_h tau_calm_d delta
-# trap_flat trap_wall". tau_calm 0 means "no background rate" and tags as
+# trap_flat trap_wall band_m". tau_calm 0 means "no background rate" and tags as
 # `tcinf` — that is how the notebooks spell an infinite calm timescale, there
 # is no inf sentinel. The member tag is rebuilt below exactly as the notebooks
 # build it, so an executed notebook and the parquet it wrote match by eye.
@@ -79,40 +80,46 @@ unset SLURM_CPU_BIND SLURM_CPU_BIND_LIST SLURM_CPU_BIND_TYPE SLURM_CPU_BIND_VERB
 # Only the step hazard exists; the retired saturating member is not produced.
 # 024f: the 4 survocc members so far plus the same 3 trap members.
 # 024g: the production member plus the same 3 trap members.
-MEMBERS=$(cat <<'TABLE'
-024e 0.05  3  365 0    1.0 1.0
-024e 0.05  3  0   0    1.0 1.0
-024e 0.075 3  365 0    1.0 1.0
-024e 0.075 3  0   0    1.0 1.0
-024e 0.15  3  365 0    1.0 1.0
-024e 0.15  3  0   0    1.0 1.0
-024e 0.1   12 0   0    1.0 1.0
-024e 0.1   1  0   0    1.0 1.0
-024e 0.1   3  365 0    1.0 1.0
-024e 0.1   3  0   0    1.0 1.0
-024e 0.1   3  0   0.02 1.0 1.0
-024e 0.1   3  0   0    1.0 0.0
-024e 0.1   3  0   0    1.0 0.25
-024e 0.1   3  0   0    1.0 0.5
-024f 0.075 3  0   0    1.0 1.0
-024f 0.15  3  0   0    1.0 1.0
-024f 0.1   3  365 0    1.0 1.0
-024f 0.1   3  0   0    1.0 1.0
-024f 0.1   3  0   0    1.0 0.0
-024f 0.1   3  0   0    1.0 0.25
-024f 0.1   3  0   0    1.0 0.5
-024g 0.1   3  0   0    1.0 1.0
-024g 0.1   3  0   0    1.0 0.0
-024g 0.1   3  0   0    1.0 0.25
-024g 0.1   3  0   0    1.0 0.5
+# band_m 750 (the first 500 m raster ring): the production point for 024e and
+# 024f, the band test of plans/bottom_beaching.md Step 0.
+# $MEMBERS in the environment replaces the whole table (same columns).
+DEFAULT_MEMBERS=$(cat <<'TABLE'
+024e 0.05  3  365 0    1.0 1.0  2000
+024e 0.05  3  0   0    1.0 1.0  2000
+024e 0.075 3  365 0    1.0 1.0  2000
+024e 0.075 3  0   0    1.0 1.0  2000
+024e 0.15  3  365 0    1.0 1.0  2000
+024e 0.15  3  0   0    1.0 1.0  2000
+024e 0.1   12 0   0    1.0 1.0  2000
+024e 0.1   1  0   0    1.0 1.0  2000
+024e 0.1   3  365 0    1.0 1.0  2000
+024e 0.1   3  0   0    1.0 1.0  2000
+024e 0.1   3  0   0.02 1.0 1.0  2000
+024e 0.1   3  0   0    1.0 0.0  2000
+024e 0.1   3  0   0    1.0 0.25 2000
+024e 0.1   3  0   0    1.0 0.5  2000
+024e 0.1   3  0   0    1.0 0.0  750
+024f 0.075 3  0   0    1.0 1.0  2000
+024f 0.15  3  0   0    1.0 1.0  2000
+024f 0.1   3  365 0    1.0 1.0  2000
+024f 0.1   3  0   0    1.0 1.0  2000
+024f 0.1   3  0   0    1.0 0.0  2000
+024f 0.1   3  0   0    1.0 0.25 2000
+024f 0.1   3  0   0    1.0 0.5  2000
+024f 0.1   3  0   0    1.0 0.0  750
+024g 0.1   3  0   0    1.0 1.0  2000
+024g 0.1   3  0   0    1.0 0.0  2000
+024g 0.1   3  0   0    1.0 0.25 2000
+024g 0.1   3  0   0    1.0 0.5  2000
 TABLE
 )
+MEMBERS=${MEMBERS:-${DEFAULT_MEMBERS}}
 
 # Blacklisted nodes (see scripts/node-blacklist.txt), for the provenance line.
 exclude=$(sed "s/#.*//" scripts/node-blacklist.txt | tr -d "[:blank:]" \
           | grep -v "^$" | paste -sd,)
 
-export output_root regime hex_radius band_m logdir exclude
+export output_root regime hex_radius logdir exclude
 export max_age_days
 
 # awk's %g is printf's %g is Python's :g, so this reproduces the notebook's
@@ -121,7 +128,7 @@ fmt_g() { awk -v x="$1" 'BEGIN { printf "%g", x }'; }
 export -f fmt_g
 
 member_tag() {
-    local w_c=$1 ts=$2 tc=$3 delta=$4 tf=$5 tw=$6 m
+    local w_c=$1 ts=$2 tc=$3 delta=$4 tf=$5 tw=$6 band=$7 m
     m="step_wc$(fmt_g "${w_c}")_ts$(fmt_g "${ts}")"
     m="${m}_tc$(awk -v x="${tc}" 'BEGIN { if (x > 0) printf "%g", x; else printf "inf" }')"
     awk -v x="${delta}" 'BEGIN { exit !(x > 0) }' && m="${m}_d$(fmt_g "${delta}")"
@@ -129,14 +136,16 @@ member_tag() {
     if awk -v a="${tf}" -v b="${tw}" 'BEGIN { exit !(a != 1.0 || b != 1.0) }'; then
         m="${m}_tf$(fmt_g "${tf}")_tw$(fmt_g "${tw}")"
     fi
+    # Only a non-default band carries its width.
+    awk -v x="${band}" 'BEGIN { exit !(x != 2000) }' && m="${m}_b$(fmt_g "${band}")"
     echo "${m//./p}"
 }
 export -f member_tag
 
 run_one() {
-    reducer=$1 w_c=$2 ts=$3 tc=$4 delta=$5 tf=$6 tw=$7 year=$8 month=$9
+    reducer=$1 w_c=$2 ts=$3 tc=$4 delta=$5 tf=$6 tw=$7 band_m=$8 year=$9 month=${10}
     t0=${SECONDS}
-    tag=$(member_tag "${w_c}" "${ts}" "${tc}" "${delta}" "${tf}" "${tw}")
+    tag=$(member_tag "${w_c}" "${ts}" "${tc}" "${delta}" "${tf}" "${tw}" "${band_m}")
     ms=$(printf "m%02d" "${month}")
 
     case "${reducer}" in
@@ -211,14 +220,14 @@ list_cells() {
     done | sort -u -k1,1n -k2,2n
 }
 
-# "reducer w_c ts tc delta tf tw year month" per line.
+# "reducer w_c ts tc delta tf tw band_m year month" per line.
 list_work() {
     local cells
     cells=$(list_cells)
-    while read -r reducer w_c ts tc delta tf tw; do
+    while read -r reducer w_c ts tc delta tf tw band; do
         [ -n "${reducer}" ] || continue
         while read -r year month; do
-            echo "${reducer} ${w_c} ${ts} ${tc} ${delta} ${tf} ${tw} ${year} ${month}"
+            echo "${reducer} ${w_c} ${ts} ${tc} ${delta} ${tf} ${tw} ${band} ${year} ${month}"
         done <<< "${cells}"
     done <<< "${MEMBERS}"
 }
@@ -242,8 +251,8 @@ fi
 echo "024efg slurm: job ${SLURM_JOB_ID}, ntasks ${SLURM_NTASKS}, cpus-per-task"\
      "${SLURM_CPUS_PER_TASK}, mem-per-cpu ${SLURM_MEM_PER_CPU}M, exclude ${exclude:-<none>}"
 echo "024efg members:"
-echo "${MEMBERS}" | while read -r reducer w_c ts tc delta tf tw; do
-    [ -n "${reducer}" ] && echo "  ${reducer} $(member_tag "${w_c}" "${ts}" "${tc}" "${delta}" "${tf}" "${tw}")"
+echo "${MEMBERS}" | while read -r reducer w_c ts tc delta tf tw band; do
+    [ -n "${reducer}" ] && echo "  ${reducer} $(member_tag "${w_c}" "${ts}" "${tc}" "${delta}" "${tf}" "${tw}" "${band}")"
 done
 echo "024efg: ${njobs} cells (${ncells} (year, month) cells per member)," \
      "${SLURM_NTASKS} concurrent, regime=${regime}, hex_radius=${hex_radius},"\
