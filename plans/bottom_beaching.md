@@ -195,3 +195,15 @@ authors before the full bottom build.
    beaching.md tables) at the new band too, or only production?
 3. Finer raster (250 m, full 024d rebuild) — only if Step 0 shows the ring
    quantisation matters?
+
+## Production build (launched 2026-11-15 19:48)
+
+Review passed (one data step: stale 2000 m surface sweep stores moved to
+`<outputs>/archive_b2000_sweep_20261115/`). Jobs: 024d bottom 24930591,
+bottom_ub49 24930592 → 024efg surface_stokes 24930593, bottom 24930594,
+bottom_ub49 24930595 → ConsumersAll (160 units) 24930596; 033 ×5
+24930597–601; 036 24930602 → headline (3 regimes) 24930603. Log:
+`<outputs>/logs/launch_bottom_beaching_20261115.log`. Next: check all OK
+(consumer log "160 OK"), refresh docs/beaching.md results from 029/031/032,
+move this plan to plans/done/, then the paper numbers.
+
