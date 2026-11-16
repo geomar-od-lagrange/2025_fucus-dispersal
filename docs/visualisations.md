@@ -194,7 +194,7 @@ vanished. The range follows the data: the largest basin-wide dilution is
 ~5e-4 per km² (no hex above 10⁻³), while 10⁻⁷
 put 17 % (surface, 180 d) to 32 % (bottom) of
 the in-extent hexes in the under colour and drew the basin interiors as one
-block; at 10⁻⁹ that is ≤ 0.3 % surface, 6–10 % bottom. Considered 10⁻⁷–10⁻¹
+block; at 10⁻⁹ that is 0.15–0.32 % surface, 6.1–11.1 % bottom. Considered 10⁻⁷–10⁻¹
 and 10⁻⁷–10⁻³; rejected, empty top classes and a crowded under colour.
 The 026a overviews normalise each origin by its own releases (~1/16 of the
 basin-wide denominator), so their few hexes at the release site exceed 10⁻³:
