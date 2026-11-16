@@ -134,17 +134,19 @@ path and write time.
   0.01 (every horizon, both regimes). Max dilution is 1.3–1.9e-4 per km²
   surface, 0.7–1.6e-4 bottom (q99.9 ≤ 6.3e-5); > 1e-4: ≤ 0.06 % of hexes.
   At 0.1 the top six classes are empty, at 0.01 the top four.
-  **The floor is the live problem:** hexes below 1e-7 (under colour, the
-  same dark turbo end as the lowest class) are 40–57 % of the drawn surface
-  hexes (T30–T180) and 32–35 % of bottom (33 % bottom unweighted), though
-  they hold only 0.2–1.7 % of the particle-time. Below 1e-8: 31–39 % /
-  18–21 %; below 1e-9: 15–23 % / 10–12 %. Medians 6e-8–3e-7 (surface),
-  4–7e-7 (bottom). Script `tmp_dilution_top/dil_low.py`, `dil_max.py`.
-  Options: (i) 1e-7–1e-3 (8 classes, `top0p001`): no over, half the surface
-  hexes still under; (ii) **1e-9–1e-3 (12 classes, `floor1e-9_top1e-3`,
-  agent's suggestion):** no over, under 15–23 % surface / 10–12 % bottom,
-  colour range spent on the data; (iii) keep 1e-7–1e-1 and state the under
-  share in captions. Applies to 026, 026a, 034 (shared scale).
+  **The floor is the live problem.** Hexes inside the map extent below 1e-7
+  (under colour, the same dark turbo end as the lowest class): surface 7 %
+  (T30) / 17 % (T180), bottom 32 % / 32 % (unweighted bottom similar);
+  they hold 0.2–1.7 % of the particle-time. Below 1e-8: surface 2 / 0.5 %,
+  bottom 18 / 15 %; below 1e-9: surface 0.3 / 0.2 %, bottom 10 / 6 %. At
+  1e-7 the Bothnian Bay and Bornholm–Gotland interiors read as one dark
+  block. Scripts `tmp_dilution_top/{dil_max,dil_low,dil_extent}.py`.
+  Options: (i) 1e-7–1e-3 (8 classes, `top0p001`): no over, under share as
+  now; (ii) **1e-9–1e-3 (12 classes, `floor1e-9_top1e-3`, agent's
+  suggestion):** no over, under ≤ 0.3 % surface / 6–10 % bottom, colour
+  range spent on the data, basin interiors resolved; (iii) keep 1e-7–1e-1
+  and state the under share in captions. Applies to 026, 026a, 034 (shared
+  scale).
 - **028 emission floor.** Non-zero cells below 1e-4 (ALL, from
   `Exports/028/*_emission_fraction.csv`): surface_stokes `M` 24 % (T30) /
   31 % (T180); bottom `M` 11 / 20 %; bottom unweighted 13 / 22 %; ub49 `M`
