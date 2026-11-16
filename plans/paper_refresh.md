@@ -16,8 +16,8 @@ band for every regime finished 2026-11-15 22:01. Production member
    Table A).
 2. **bottom_ub49: FACTS plus both figures.** A 034 figure in Results
    "Spread by buoyancy", and ub49 as third regime line in the 035 figure.
-3. **Dilution top:** authors pick after a look (see Open for authors; the
-   floor turns out to matter more than the top).
+3. **Dilution scale: 1e-9 to 1e-3**, two classes per decade (026, 026a,
+   034; 025/026b use their own per-figure LogNorm). Measurements below.
 4. **2000 m vs 750 m band sensitivity:** not in the paper.
 5. **(a) 034 form: both** — T = 90 d dilution map pair (bottom | ub49) and
    the √area-vs-horizon plot.
@@ -25,8 +25,14 @@ band for every regime finished 2026-11-15 22:01. Production member
    026 median age, 026a origin overview T180d, 028 emission T30d/T180d.
    All four PNGs exist on disk from the 2026-11-15 runs (no rerun unless the
    dilution top or 028 floor changes).
-7. **(c) 028 below-floor:** authors asked whether the range should follow
-   the new data; measurement and proposal under Open for authors.
+7. **(c) 028 emission floor: 1e-5**, 1-2-5 classes (15). Under 1e-5
+   (T30/T180, ALL): surface `M` 14/20 %, bottom `M` 9/15 %, bottom
+   unweighted 10/15 %, ub49 `M` 2/10 %.
+9. **Sliver mask `dilution_min_water_fraction`: 0.25 → 0.10** (025, 026,
+   026a, 026b, 034).
+10. **Bottom where-stranded map (029) in the main text**, Results
+    "Beaching", after the surface one: `r4_where_stranded_bottom_ALL` ←
+    `029/WhereStranded_bottom_r6000m_ALL_M.png`.
 8. **(d) P2 combined surface | bottom figure: dropped.** Delete the
    `FIGURE SLOT` comment (main.tex ~912–916); one figure per regime stays.
 
@@ -39,7 +45,7 @@ Drop G6. The ¼-hex floor (`dilution_min_water_fraction = 0.25`) blanks far
 more: hexes < ¼ water hold 16.0 % of surface_stokes T180d particle-time
 (572 of 10 581 hexes; 10.9 % at T30d) and 3.1 % of bottom (363 hexes).
 At 0.10 it would be 4.3 % / 0.8 %. Scripts: `tmp_dilution_top/zero_water.py`,
-`tmp_dilution_top/sliver_floor.py`. → Open for authors.
+`tmp_dilution_top/sliver_floor.py`. Decided: 0.10 (item 9).
 
 ## Figure map (paper stem ← source PNG under `O/Figures/`)
 
@@ -125,7 +131,7 @@ path and write time.
 6. **Review agent** over the main.tex diff (facts vs sources), then hand to
    authors; commit/push in `paper/` only when told.
 
-## Open for authors
+## Measurements behind items 3, 7, 9 (decided 2026-11-16)
 
 - **Dilution top (0.1 vs 0.01).** Renders (ALL, member `M`, 026 code
   unchanged, production `Figures/` untouched):
