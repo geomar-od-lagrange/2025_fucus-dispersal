@@ -1,3 +1,7 @@
+> Implemented 2026-11-16 — scales and masks in [docs/visualisations.md](../../docs/visualisations.md)
+> ("Sliver mask", "Dilution (026, 026a, 034)", "028", "035"); the paper diff
+> sits uncommitted in `paper/` for author review.
+
 # Paper refresh: fold the eps = 2 mm/s pipeline into `paper/main.tex`
 
 `paper/main.tex` (physics part) and its 15 PNGs are from the eps = 0 runs
@@ -76,7 +80,26 @@ clause of the surface captions; colour-scale text follows the chosen top
 (026/026a/034) and 028 floor. Each figure's `% Source:` comment gets the new
 path and write time.
 
-## Steps
+## Outcome (2026-11-16)
+
+- Code: de5b775 (scales, mask, 028 floor, 035 regimes), bfda27a (driver
+  comments), c69a2a4 (docs), c910334 (035 legend: inline labels collided
+  with three regimes). Reruns: job 24940130, 140 / 140 units OK (025, 026,
+  026a, 026b × 3 regimes × 5 seasons × {M, unweighted bottom/ub49}; 028;
+  034); 035 × 5 seasons and 032 rerun in the session allocation after it.
+- Paper: 23 PNGs copied (15 refreshed, 8 new: friction map + length,
+  bottom where-stranded, 5 supplement); FACTS refreshed; 38 of 43
+  `[STALE eps0]` markers removed; the 5 left are numbers no consumer
+  re-measures (024d band shares, measured forcing, WAM fill, the Step 0
+  strong-wave share, the Q4 median-vs-mean diagnostic), each says why.
+  Builds to 28 pages; warnings: 4 pre-existing TODO citations (make exits
+  2 on them), 8 "Float too large" (2×2 map grids and 4×4 overviews).
+- New finding for the authors: the 026a overviews normalise per origin, so
+  up to 18 % (surface) and 61–74 % (bottom, Gdansk Basin) of an origin's
+  weight sits above the 1e-3 top, in < 0.6 % of its hexes (resting
+  drifters at the release site). Basin-wide maps: 0 % above.
+
+## Steps (as planned)
 
 1. **Authors pick** dilution range (floor + top) and 028 floor (Open for authors).
 2. **Consumer reruns** (node-local papermill fan-out or `sbatch`):
