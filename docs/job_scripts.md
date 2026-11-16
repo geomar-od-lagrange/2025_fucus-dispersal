@@ -457,7 +457,7 @@ away.
 | script | positional args |
 |---|---|
 | `024c_BuildHexConnectivity_job.sh` | `[regime] [year] [hex_radius]` (reads the 024 counts store, writes connectivity) |
-| `025_HexHeatmaps_job.sh`, `026*_job.sh` | `[regime] [season] [hex_radius] [member]` — empty `member` reads the unweighted 024 counts store, a tag reads 024f (also pass `-p data_root ${repo_root}/data` for the BSH H0 isobath) |
+| `025_HexHeatmaps_job.sh`, `026*_job.sh` | `[regime] [season] [hex_radius] [member]` — empty `member` reads the unweighted 024 counts store, a tag reads 024f (also pass `-p data_root ${repo_root}/data` for the coastline, the fine-grid bbox and the HELCOM borders) |
 | `027_HexDistanceQuantiles_job.sh` | `[regime] [hex_radius] [season]` |
 | `028_SubbasinConnectivityMatrix_job.sh` | `[regime] [hex_radius] [season] [member]` — empty `member` reads the unweighted 024c store, a tag reads 024g plus the same member's 024e store (stranded column) |
 | `029_BeachingMaps_job.sh`, `030_SurvivalHeatmaps_job.sh` | `[regime] [hex_radius] [member] [season]` |

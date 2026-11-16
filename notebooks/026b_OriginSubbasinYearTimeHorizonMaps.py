@@ -112,10 +112,6 @@ origin_subbasins_csv = ""
 # origin is still normalised over all of release_years. Empty ⇒ every year.
 mapped_years_csv = ""
 
-# Isobath to overlay on every panel, in metres of BSH H0 (floor position,
-# see docs/h0_semantics.md). Fucus vesiculosus no longer grows below ~3 m.
-isobath_m = 3.0
-
 # Dilution maps leave a hex blank (NaN dilution) when less than this
 # fraction of its area is water: a sliver's tiny water area turns a few
 # samples into a dilution decades above its neighbours
@@ -446,7 +442,7 @@ COLUMN_LABEL = {
 }
 
 # %% [markdown]
-# # Map backdrop: coastline, subbasin borders and the 3 m isobath
+# # Map backdrop: coastline and subbasin borders
 #
 # The `extent_*` parameters decide the extent, shared by every map of the
 # pipeline. The key tiles the full BSH model domain (North Sea included), so
@@ -463,15 +459,7 @@ COLUMN_LABEL = {
 #
 # Subbasin borders are the HELCOM level-2 polygons' shared edges only, so
 # their outer outlines do not draw a second coastline; drawn over the hexes
-# and under the coastline and the isobath.
-#
-# The isobath comes from the BSH static H0 grids, *not* from the key's
-# `mean_depth_m` — a hex mean over a 6 km cell cannot resolve a 3 m
-# contour. H0 is the floor position (`H0 > 0` is always wet, see
-# docs/h0_semantics.md), NaN over land, so `contour` masks land for free.
-# Fine grid takes precedence where it covers (German Bight / western
-# Baltic); the coarse grid is blanked inside the fine bbox so the two do
-# not draw the same contour twice.
+# and under the coastline.
 
 # %%
 if any((extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max)):
@@ -484,15 +472,6 @@ else:
 h0_fine = xr.open_dataset(
     data_root / "bsh_hbmnoku_static/static_file_fine/H0_file_fine.nc"
 ).H0
-h0_coarse = xr.open_dataset(
-    data_root / "bsh_hbmnoku_static/static_file_coarse/H0_file_coarse.nc"
-).H0
-h0_coarse_outside_fine = h0_coarse.where(
-    ~(
-        (h0_coarse.lon >= h0_fine.lon.min()) & (h0_coarse.lon <= h0_fine.lon.max())
-        & (h0_coarse.lat >= h0_fine.lat.min()) & (h0_coarse.lat <= h0_fine.lat.max())
-    )
-)
 
 half_lon = 0.5 * abs(float(h0_fine.lon.diff("lon").mean()))
 half_lat = 0.5 * abs(float(h0_fine.lat.diff("lat").mean()))
@@ -585,9 +564,9 @@ def dilution_norm(gdf):
 
 def hex_map(gdf, column, ax, norm, title=None, cbar_label=True):
     """Draw one relative-density panel: hex polygons through ``norm``,
-    subbasin borders, coastline, and the H0 isobath, all on a plain
+    subbasin borders and coastline, all on a plain
     (non-cartopy) lon/lat axis. Everything is already EPSG:4326, so no reprojection can push
-    hexes, coastline and isobath out of register. An empty ``gdf`` skips
+    hexes and coastline out of register. An empty ``gdf`` skips
     the hex layer and still renders the backdrop, keeping the grid layout
     stable."""
     # Only hexes touching the extent: off-extent patches still count in
@@ -621,16 +600,6 @@ def hex_map(gdf, column, ax, norm, title=None, cbar_label=True):
     # reads neither as coastline (black) nor as part of the hex field.
     basin_borders.plot(ax=ax, color="0.5", linewidth=basin_border_lw, zorder=1.5)
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
-    # One styling override for the isobath: magenta at a hairline width is
-    # the canonical anti-viridis, so the 3 m line stays legible over every
-    # fill colour and clear of the black coastline. Drawn last and at a
-    # zorder above every other artist, so where it runs along the coast it
-    # sits on the black line rather than under it.
-    for h0 in (h0_fine, h0_coarse_outside_fine):
-        ax.contour(
-            h0.lon, h0.lat, h0, levels=[isobath_m],
-            colors="magenta", linewidths=0.3, zorder=10,
-        )
     ax.set_xlim(domain_lon_min, domain_lon_max)
     ax.set_ylim(domain_lat_min, domain_lat_max)
     ax.set_aspect(1 / np.cos(np.radians(0.5 * (domain_lat_min + domain_lat_max))))

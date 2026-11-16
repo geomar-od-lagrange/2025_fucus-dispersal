@@ -161,8 +161,8 @@ pixi run papermill notebooks/024c_BuildHexConnectivity.ipynb \
     -p release_year 2020 \
     --cwd notebooks/
 
-# 025/026/026a/026b read the BSH static H0 grids from the data twin for the
-# 3 m isobath overlay, so they take data_root as well as output_root. They
+# 025/026/026a/026b read the coastline, the fine H0 grid's bbox and the
+# HELCOM borders from the data twin, so they take data_root as well as output_root. They
 # pool their release_years (default 2016-2024, holding 2020) and keep one release season; the smoke run has a
 # single January release, so pass season=ALL (DJF would also carry it).
 echo

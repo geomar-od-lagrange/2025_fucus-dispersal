@@ -61,7 +61,7 @@ from shapely.ops import unary_union
 # Parameters
 
 ```python tags=["parameters"]
-# Read root of the data twin (BSH static H0 for the isobath overlay, the BSH
+# Read root of the data twin (BSH static H0 for the fine-grid bbox, the BSH
 # wet-cell coastline, the HELCOM subbasins).
 data_root = "../data"
 # Read root of the hex-aggregate store; write root for figures and exports.
@@ -94,9 +94,6 @@ time_horizons_days_csv = "30,60,90,180"
 quantiles_csv = "0.9"
 # Horizon of the map pair; a multiple of age_bin_days, ≤ max_age_days.
 map_horizon_days = 90
-# Isobath to overlay on the maps, in metres of BSH H0 (floor position, see
-# docs/h0_semantics.md). Fucus vesiculosus no longer grows below ~3 m.
-isobath_m = 3.0
 # Dilution maps leave a hex blank (NaN dilution) when less than this
 # fraction of its area is water: a sliver's tiny water area turns a few
 # samples into a dilution decades above its neighbours
@@ -463,8 +460,7 @@ linear to the pooled 99th percentile. Extent is the Baltic crop of the
 parameters (the key's bounds if all four are 0). Coastline is the outline
 of the BSH HBMnoku wet cells, merged fine-first as in 024a (fine polygons
 plus the coarse ones outside the fine bbox, minus a 0.001° strip along the
-bbox where the grids meet in open water); the isobath is the BSH H0 3 m
-contour, fine grid taking precedence where it covers. Subbasin borders are
+bbox where the grids meet in open water). Subbasin borders are
 the edges two HELCOM level-2 polygons share, without codes.
 
 ```python
@@ -504,15 +500,6 @@ else:
 h0_fine = xr.open_dataset(
     data_root / "bsh_hbmnoku_static/static_file_fine/H0_file_fine.nc"
 ).H0
-h0_coarse = xr.open_dataset(
-    data_root / "bsh_hbmnoku_static/static_file_coarse/H0_file_coarse.nc"
-).H0
-h0_coarse_outside_fine = h0_coarse.where(
-    ~(
-        (h0_coarse.lon >= h0_fine.lon.min()) & (h0_coarse.lon <= h0_fine.lon.max())
-        & (h0_coarse.lat >= h0_fine.lat.min()) & (h0_coarse.lat <= h0_fine.lat.max())
-    )
-)
 
 wet = gpd.read_file(data_root / "bsh_hbmnoku_static/coastline.geojson")
 # Fine bbox padded by half a fine cell, so every fine cell lies inside it.
@@ -555,7 +542,7 @@ print(f"subbasin borders: {len(basin_borders)} shared edges between "
 def hex_map(gdf, column, ax, norm, cmap, title):
     """One relative-density panel on a plain lon/lat axis: hexes through
     ``norm`` and ``cmap`` (None: the default colormap), subbasin borders,
-    coastline, H0 isobath."""
+    coastline."""
     # Only hexes touching the extent: off-extent patches still count in
     # constrained_layout's bounding box and push the title off the page.
     gdf = gdf.cx[domain_lon_min:domain_lon_max, domain_lat_min:domain_lat_max]
@@ -570,14 +557,6 @@ def hex_map(gdf, column, ax, norm, cmap, title):
     # neither as coastline (black) nor as a hex fill; under the coastline.
     basin_borders.plot(ax=ax, color="0.5", linewidth=basin_border_lw, zorder=1.5)
     coast.plot(ax=ax, color="black", linewidth=0.5, zorder=2)
-    # Magenta hairline isobath: anti-viridis, legible over every fill colour.
-    # Drawn last at zorder 10, above every other artist: where it runs along
-    # the coast it must sit on the black line, not under it.
-    for h0 in (h0_fine, h0_coarse_outside_fine):
-        ax.contour(
-            h0.lon, h0.lat, h0, levels=[isobath_m],
-            colors="magenta", linewidths=0.3, zorder=10,
-        )
     ax.set_xlim(domain_lon_min, domain_lon_max)
     ax.set_ylim(domain_lat_min, domain_lat_max)
     ax.set_aspect(1 / np.cos(np.radians(0.5 * (domain_lat_min + domain_lat_max))))

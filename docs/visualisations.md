@@ -217,20 +217,9 @@ and are left out of the per-origin panels.
 The land-seeded mask itself is 010's per-trajectory `land_seed` in every
 viz ([wall_velocity.md](wall_velocity.md)).
 
-**3 m isobath overlay (025/026 family).** Fucus no longer grows below
-~3 m, so every map panel carries the `H0 = 3 m` contour as the viable-band
-marker, drawn from the BSH static H0 grids
-(`data/bsh_hbmnoku_static/static_file_{fine,coarse}/H0_file_*.nc`), not
-from the key's `mean_depth_m` (a 6 km hex mean cannot resolve a 3 m
-contour). H0 is NaN over land (see [h0_semantics.md](h0_semantics.md)), so
-`contour(levels=[3.0])` masks land for free. Fine grid takes precedence
-where it covers; the coarse grid is blanked inside the fine bbox.
-Override: magenta at `linewidths=0.3` — anti-viridis, hairline so it does
-not read as a second coastline. It is drawn last at `zorder=10`, above
-hexes, coastline, borders and markers, on every map that carries it: where it
-runs along the coast it must sit on the black line, not be flanked or hidden
-by it (authors, 2026-10-27; checked on 2× crops of the Danish straits and the
-Polish coast).
+**No depth contour.** The 025/026 family and 034 maps carry no isobath; hexes, subbasin borders
+and the model coastline are the only layers. Considered the BSH H0 3 m
+contour as a viable-band marker; dropped by the authors.
 
 **Print-ready figures (025–031, 033–036).** Every saved figure is one full
 text-width (180 mm) figure at 300 dpi: `fig.set_size_inches(180/25.4, h)`
@@ -251,8 +240,7 @@ across all maps, so panels compare place for place. The key tiles the whole
 BSH domain, so each map notebook prints the share of its mapped weight on
 hexes (representative point) outside the extent, per figure or horizon, for
 the captions. Exceptions: 025's German-waters zoom, and the per-trajectory
-020/023 maps (5–32 °E, not on the manuscript path). Every map with the
-3 m isobath draws it on top of all other layers (see the overlay above).
+020/023 maps (5–32 °E, not on the manuscript path).
 
 **Panel layout and colorbar placement.** Grids are `layout="constrained"`,
 each map's aspect fixed by its extent. The figure height is never estimated
@@ -305,7 +293,7 @@ polygon outlines, which retrace every island of the coast they were digitised
 against. Override: `color="0.5"`, `linewidth=0.52` (`basin_border_lw`), so a
 border reads neither as coastline (black) nor as part of the hex field; 0.52 is
 1.3× the former hairline so it survives print. `zorder=1.5`, above the hexes and
-below the coastline (2) and the isobath (10) (025–035; 036's category map draws
+below the coastline (2) (025–035; 036's category map draws
 borders at 2 under its coastline at 3). The shared-edge block is copied into
 each notebook. The subbasin codes, their code → name key and the release sites
 are on the 033 reference map only, so every other map stays readable and the
@@ -332,15 +320,15 @@ unioned on a 1e-3° precision grid
 own fine bbox leaves: it is built from the 1e-4°-rounded H0 centres and sits
 up to 1e-5° off the fine polygons' fitted outer edge (024a uses the fitted
 edge, because it intersects in EPSG:3035); black at `linewidth=0.5`. The model coastline rather than Natural
-Earth because the maps show where the model's water is — hexes, isobath and
-coast then register on one grid (authors, 2026-10-27). The cartopy notebooks
+Earth because the maps show where the model's water is — hexes and coast
+then register on one grid (authors, 2026-10-27). The cartopy notebooks
 (020/022/023) use `add_feature(cfeature.COASTLINE)` per the AGENTS.md
 default.
 
 ## Notebook 025 — Hex relative-density maps (special case)
 
 Plots on a plain (non-cartopy) lon/lat axis: hex polygons, the model
-coastline, HELCOM subbasin overlay and the H0 isobath are all already in
+coastline and HELCOM subbasin overlay are all already in
 EPSG:4326; cartopy reprojection would introduce sub-pixel mismatches that
 double-paint hex edges. Three products over one (regime, season) with the
 `release_years` pooled: Baltic percentage + dilution, the same clipped
@@ -350,8 +338,7 @@ a per-origin-subbasin percentage grid where each panel is normalised over
 its own releases (colour not comparable between panels). Surviving styling
 overrides: hex `edgecolor="face"` / `linewidth=0.4` (the default black
 hairline stroke dominates at Baltic zoom, and matching edge to fill makes
-the grid read as a continuous field), black coastline `linewidth=0.5`, and
-the magenta isobath. The `cmap` parameter is gone — the default colormap
+the grid read as a continuous field) and black coastline `linewidth=0.5`. The `cmap` parameter is gone — the default colormap
 carries the linear percentage and log dilution scales.
 
 ## Notebook 026 — Time-horizon relative-density maps (special case)
@@ -457,7 +444,7 @@ figure
 Each panel is still normalised over its own origin and drawn on the shared
 dilution scale, hexes below the floor not drawn. Panels use the
 shared extent (the run prints each origin's share of drawn weight outside
-it, and the maximum) and the isobath on top. One figure-wide horizontal colorbar
+it, and the maximum). One figure-wide horizontal colorbar
 (`panchor=False`, `pad=0.01`). The per-origin
 `OriginSubbasinTimeHorizonMaps_*` figures (percentage and dilution, one
 figure each, a 2 × 2 horizon grid titled `origin: <name>`) use the same
@@ -930,7 +917,7 @@ member can show.
   Hollow because the sites sit on the very coastal hexes whose value the
   reader compares against; magenta because the field is the full-range
   default map and the marker must read against both its near-black and its
-  yellow end (the isobath's anti-viridis argument); 2.5 pt is roughly the
+  yellow end (magenta is the anti-viridis); 2.5 pt is roughly the
   10 km cell's own size at 180 mm, so the marker stands for the cell rather
   than a point source. Considered the cell polygons as outlines (10 km squares
   exceed the 6 km hexes and mesh in the Danish straits and the Åland
@@ -1140,8 +1127,6 @@ right-hand panel on its own at the full page width.
 - [distance_calculation.md](distance_calculation.md) — 022's metric.
 - [hexbinning_and_connectivity.md](hexbinning_and_connectivity.md) — the
   stores 025/026/027 read, and 028's 024c/024g connectivity section.
-- [h0_semantics.md](h0_semantics.md) — the BSH H0 grids behind the 3 m
-  isobath overlay.
 - [job_scripts.md](job_scripts.md) — how each of these is submitted.
 - [../AGENTS.md](../AGENTS.md) — the styling rules this doc defends
   exceptions to.
