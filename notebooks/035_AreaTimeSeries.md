@@ -184,11 +184,13 @@ Three panels stacked on a shared age axis, from the top: (a) stranded % of
 released, (b) area, (c) `√area`. One colour per regime, by its position in
 `regimes_csv` in the default cycle (so a regime keeps its colour when
 another one's export is missing), shared by the regime's line, its band and
-its label in every panel. Each line is
-named by a text label in its colour at its first horizon instead of a
-legend box, which at print width covers curves or eats a strip of the page.
-Panel letters sit inside the panels, top right. No title and no band key:
-the season and the band (per-release-year min–max) go in the caption.
+its legend entry in every panel. One default legend in panel (a), upper
+left, names the regimes for all three panels: with three regimes the
+lines start together at the first horizon, where inline labels collided,
+and (a)'s upper left stays empty (stranding rises from zero). The
+weighting of each regime goes into the caption. Panel letters sit inside
+the panels, top right. No title and no band key: the season and the band
+(per-release-year min–max) go in the caption.
 
 ```python
 colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
@@ -197,6 +199,7 @@ REGIME_LABELS = {
     "surface": "surface",
     "surface_stokes": "surface + Stokes drift",
     "bottom": "bottom",
+    "bottom_ub49": "bottom + bed friction",
 }
 
 
@@ -206,31 +209,19 @@ def regime_color(regime):
 
 
 def series_panel(ax, lines, ylabel):
-    """Pooled line + per-year band + inline label per series, y from zero.
-    `lines` is a list of (label, color, frame, value column, min, max)."""
+    """Pooled line + per-year band per series, y from zero; the line carries
+    the series label for a legend. `lines` is a list of (label, color, frame,
+    value column, min, max)."""
     for label, color, t, value, lo, hi in lines:
         # The band takes the line's colour so each regime reads as one
         # object; alpha keeps the other regime's line visible through it.
         ax.fill_between(t.index, t[lo], t[hi], color=color, alpha=0.3)
         # Markers mark the horizons the exported table actually holds.
-        ax.plot(t.index, t[value], marker="o", color=color)
-        # Inline label in the line's colour at the first horizon, where the
-        # regimes are furthest apart (they cross later): above the topmost of
-        # several lines, below every other, so it names the line without a
-        # legend. A lone line rises from its first horizon, so its label goes
-        # below, into the empty space under the curve.
-        topmost = len(lines) > 1 and t[value].iloc[0] >= max(
-            f[v].iloc[0] for _, _, f, v, _, _ in lines
-        )
-        ax.annotate(
-            label, (t.index[0], t[value].iloc[0]),
-            xytext=(4, 10 if topmost else -10), textcoords="offset points",
-            ha="left", va="bottom" if topmost else "top", color=color,
-        )
+        ax.plot(t.index, t[value], marker="o", color=color, label=label)
     ax.set_ylabel(ylabel)
     # From zero, so the regimes compare as ratios by eye; the top leaves a
     # text line of headroom over the highest band (at a third of the page
-    # width per panel) for the labels and the panel letter.
+    # width per panel) for the panel letter.
     ax.set_ylim(0, 1.2 * max(f[hi].max() for _, _, f, _, _, hi in lines))
 
 
@@ -264,8 +255,9 @@ fig, axes = plt.subplots(len(PANELS), 1, sharex=True, layout="constrained")
 fig.set_size_inches(FIGURE_WIDTH_IN, FIGURE_WIDTH_IN)
 for ax, letter, (lines, ylabel) in zip(axes, "abc", PANELS):
     series_panel(ax, lines, ylabel)
-    # Top right: the line labels sit at the first horizon, top left.
+    # Top right; the legend takes (a)'s top left.
     ax.text(0.99, 0.96, f"({letter})", transform=ax.transAxes, ha="right", va="top")
+axes[0].legend(loc="upper left")
 axes[-1].set_xlabel("age / horizon T (d)")
 fig_path = figure_dir / f"AreaTimeSeries_{season}_r{hex_radius}m.png"
 fig.savefig(fig_path, dpi=FIGURE_DPI)

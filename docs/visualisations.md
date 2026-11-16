@@ -1057,12 +1057,11 @@ no parquet; it runs after 026 (every regime it draws) and 029
   is cumulative by age as the area is by horizon (ages in `[0, T)`, every
   age-bin edge), so the panels share the axis. y from zero so regimes compare
   as ratios, top 20 % above the highest band for labels and the panel letter.
-  Panel letters (a)–(c) sit inside the panels, top right. No title and no
-  legend: each line is named by a text label (`REGIME_LABELS`, plus the
-  weighting) in its colour at the first horizon (above the topmost line, below
-  the others, since the lines cross later); `color=` on the label is an
-  override so it reads as the line's name. The season and the band go in the
-  caption.
+  Panel letters (a)–(c) sit inside the panels, top right. No title; one
+  default legend in panel (a), upper left (`REGIME_LABELS`), names the
+  regimes for all three panels. Considered inline text labels at the first
+  horizon; rejected, with three regimes the lines start together there and the
+  labels collided. The weighting, the season and the band go in the caption.
 - **One colour per regime** from the default cycle, indexed by its position
   in `regimes_csv` so a regime keeps its colour when another is missing (the
   stranding curve takes its regime's colour); the pooled value is a line with
