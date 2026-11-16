@@ -159,10 +159,10 @@ samples drew decades above its neighbours, the top of a log scale held by
 geometry rather than by drift. Considered flooring the area at ¼ hex;
 rejected (authors, 2026-11-15), a floor invents water the hex does not have
 and still paints the hex, whereas blank says "not resolved at this hex size".
-Considered a mask at ¼ water; rejected (authors, 2026-11-16): on the eps =
-2 mm/s stores it blanked 16 % of the survival-weighted surface particle-time
-at 180 d (572 coastal hexes), at 0.1 4 % (bottom 3 % → 0.8 %). Zero-water hexes hold < 1e-7 of
-the particle-time, so they need no remap.
+Considered a mask at ¼ water; rejected, it blanks 16 % of the
+survival-weighted surface particle-time at 180 d (572 coastal hexes), the
+0.1 mask about 4 % (bottom 0.8 %). Zero-water hexes hold < 1e-7 of the
+particle-time, so they need no remap.
 The percentage scale saturates at the 99th percentile with an over-range
 colorbar arrow: occupancy is concentrated enough that a few hexes sit two
 decades above the bulk, and scaling to the maximum paints every other hex
@@ -190,9 +190,9 @@ colourbar per figure. Every hex with weight is drawn: below the floor in the
 under colour, above the top in the over colour (the lowest and highest class
 colours); white means no particles, or a zero-water or sliver hex (above). Considered
 masking sub-floor hexes; rejected, the 180 d panel then looked as if material
-vanished. Range set on the data (authors, 2026-11-16): on the eps = 2 mm/s
-stores the largest dilution is ~2e-4 per km² (no hex above 10⁻³; > 10⁻⁴ is
-≤ 0.06 % of hexes), while 10⁻⁷ put 17 % (surface, 180 d) to 32 % (bottom) of
+vanished. The range follows the data: the largest basin-wide dilution is
+~2e-4 per km² (no hex above 10⁻³; > 10⁻⁴ is ≤ 0.06 % of hexes), while 10⁻⁷
+put 17 % (surface, 180 d) to 32 % (bottom) of
 the in-extent hexes in the under colour and drew the basin interiors as one
 block; at 10⁻⁹ that is ≤ 0.3 % surface, 6–10 % bottom. Considered 10⁻⁷–10⁻¹
 and 10⁻⁷–10⁻³; rejected, empty top classes and a crowded under colour.
@@ -559,10 +559,13 @@ interannual mean) share one fixed `BoundaryNorm` across horizons, regimes and
 members: `EMISSION_BOUNDS`, 15 classes at 1–2–5 per decade over 10⁻⁵–1 with
 `extend="min"` for shares under the floor (a fraction is bounded by 1, and
 five decades below it the shares stop mattering; the thinnest cells reach
-~1e-8 unweighted, ~1e-17 survival-weighted). Floor 10⁻⁵, not 10⁻⁴ (authors,
-2026-11-16): at 10⁻⁴ 10–31 % of the non-zero cells (ALL, 30/180 d) sat in
-the under colour, next to the lowest class in hue; at 10⁻⁵ 2–20 %.
-Considered 10⁻⁶ (18 classes); rejected, adjacent classes too close in hue. Every edge is labelled (decades as powers of ten, the 2 and 5 edges by
+~1e-8 unweighted, ~1e-17 survival-weighted). Considered 10⁻⁴; rejected, it
+put 10–31 % of the non-zero cells (ALL, 30/180 d) in the under colour, next
+to the lowest class in hue (10⁻⁵: 2–20 %). Considered 10⁻⁶; rejected, 18
+classes make adjacent batlow classes too close in hue to read off the
+colorbar.
+
+Every edge is labelled (decades as powers of ten, the 2 and 5 edges by
 mantissa). The raw view has no fixed range: one class per half decade (edges
 `10**(k/2)`) from the smallest non-zero cell to the peak, floored
 `RAW_FLOOR_DECADES = 10` below the peak with `extend="min"` when that cuts
