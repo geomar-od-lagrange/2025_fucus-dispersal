@@ -191,7 +191,7 @@ under colour, above the top in the over colour (the lowest and highest class
 colours); white means no particles, or a zero-water or sliver hex (above). Considered
 masking sub-floor hexes; rejected, the 180 d panel then looked as if material
 vanished. The range follows the data: the largest basin-wide dilution is
-~2e-4 per km² (no hex above 10⁻³; > 10⁻⁴ is ≤ 0.06 % of hexes), while 10⁻⁷
+~5e-4 per km² (no hex above 10⁻³), while 10⁻⁷
 put 17 % (surface, 180 d) to 32 % (bottom) of
 the in-extent hexes in the under colour and drew the basin interiors as one
 block; at 10⁻⁹ that is ≤ 0.3 % surface, 6–10 % bottom. Considered 10⁻⁷–10⁻¹

@@ -32,6 +32,8 @@ band for every regime finished 2026-11-15 22:01. Production member
 7. **(c) 028 emission floor: 1e-5**, 1-2-5 classes (15). Under 1e-5
    (T30/T180, ALL): surface `M` 14/20 %, bottom `M` 9/15 %, bottom
    unweighted 10/15 %, ub49 `M` 2/10 %.
+   The agent's 1e-6 proposal was not taken: 18 classes make adjacent batlow
+   classes too close in hue to read off the colorbar.
 9. **Sliver mask `dilution_min_water_fraction`: 0.25 → 0.10** (025, 026,
    026a, 026b, 034).
 10. **Bottom where-stranded map (029) in the main text**, Results
@@ -39,6 +41,13 @@ band for every regime finished 2026-11-15 22:01. Production member
     `029/WhereStranded_bottom_r6000m_ALL_M.png`.
 8. **(d) P2 combined surface | bottom figure: dropped.** Delete the
    `FIGURE SLOT` comment (main.tex ~912–916); one figure per regime stays.
+
+11. **026a overviews keep the shared 1e-9..1e-3 scale**; their captions
+    state the over-top share (weight and hexes, release-site hexes).
+12. **034 friction pair and length plot stay unweighted**; the captions say
+    why (isolates friction's effect on transport from the stranding model).
+13. **No 3 m isobath** on any map (overlay removed from 025/026/026a/026b/034).
+14. **Sweep ranges in the paper over the 14 members at 750 m** (decision 4).
 
 ## Zero-water hex remap (figure_review_r2 G6): not needed
 
@@ -98,6 +107,21 @@ path and write time.
   up to 18 % (surface) and 61–74 % (bottom, Gdansk Basin) of an origin's
   weight sits above the 1e-3 top, in < 0.6 % of its hexes (resting
   drifters at the release site). Basin-wide maps: 0 % above.
+
+### Review round and isobath drop (2026-11-16, later)
+
+- Code: 0e12e76 (isobath overlay removed from 025/026/026a/026b/034),
+  1beb53d (026/026a/033 print the hex shares and shoreclass coverage the
+  paper cites, so no FACTS points at a tmp_ script), ba67afd (docs
+  current-state wording). Rerun: job 24940971 (025, 026, 026a, 026b, 034;
+  105 units), 033 ALL in the session (PNG byte-identical).
+- 026a over-top shares in the captions (decision 11): surface T30 18.4 %
+  of an origin's weight in 0.06 % of its hexes (Kattegat), surface T180
+  14.0 % / 0.05 % (Gulf of Riga), bottom T180 61.4 % / 0.43 %, unweighted
+  bottom T180 74.0 % / 0.58 % (both Gdansk Basin).
+- Basin-wide 026 maps with the 0.1 mask: largest dilution 5.6e-4 (surface,
+  180 d), still none above 1e-3; in-extent hexes below the floor surface
+  0.15-0.32 %, bottom 6.1-11.1 %.
 
 ## Steps (as planned)
 
