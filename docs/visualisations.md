@@ -196,6 +196,10 @@ stores the largest dilution is ~2e-4 per km² (no hex above 10⁻³; > 10⁻⁴ 
 the in-extent hexes in the under colour and drew the basin interiors as one
 block; at 10⁻⁹ that is ≤ 0.3 % surface, 6–10 % bottom. Considered 10⁻⁷–10⁻¹
 and 10⁻⁷–10⁻³; rejected, empty top classes and a crowded under colour.
+The 026a overviews normalise each origin by its own releases (~1/16 of the
+basin-wide denominator), so their few hexes at the release site exceed 10⁻³:
+≤ 0.6 % of an origin's hexes, but up to 18 % of its weight on
+`surface_stokes` and 61–74 % on `bottom` (resting drifters, Gdansk Basin).
 Override: `turbo` sampled discretely (one colour per class) instead
 of the default colormap — six decades must stay distinguishable and read as
 absolute classes. The runs print each panel's share of its weight below the
