@@ -494,10 +494,10 @@ papermill contract and this driver only decides which combinations run:
 | 029, 030 | production member × 3 regimes × 5 seasons | 30 |
 | 031 | 3 regimes × 5 seasons, `members_csv` = every 024e member of the regime on disk | 15 |
 | 034 | bottom vs bottom_ub49 in one figure × 5 seasons | 5 |
-| 035 | surface_stokes and bottom in one figure × 5 seasons, second wave | 5 |
+| 035 | surface_stokes, bottom and bottom_ub49 in one figure × 5 seasons, second wave | 5 |
 
 The units run as one flat `xargs` pool with no ordering among them, except
-035: it reads the 026 area CSVs and 029 stranding curves of both regimes, so
+035: it reads the 026 area CSVs and 029 stranding curves of every regime, so
 the 035 units form a second wave that starts once every other unit has
 finished. `LIST_ONLY=1 bash scripts/025-031_ConsumersAll_job.sh` prints the
 160 units; `STAGES` / `REGIMES` / `SEASONS` restrict the matrix (default

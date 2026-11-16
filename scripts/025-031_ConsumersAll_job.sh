@@ -32,21 +32,21 @@
 #   029, 030  production member                           2 x 3 x 5     30
 #   031  every 024e member of the regime on disk          1 x 3 x 5     15
 #   034  bottom vs bottom_ub49 in one figure                  1 x 5      5
-#   035  surface_stokes and bottom in one figure
+#   035  surface_stokes, bottom, bottom_ub49 in one figure
 #        (026's, 029's CSVs)                                  1 x 5      5
 #                                                                     ----
 #                                                                      160
 #
 # Every stage honours $REGIMES: a regime-specific stage runs only for the
-# regimes listed, 035 when surface_stokes or bottom is (it draws both), 034
+# regimes listed, 035 when any regime is (it draws all three), 034
 # when bottom_ub49 is, or bottom is and bottom_ub49 counts exist (it draws
 # both). With the default regimes (REGIMES unset) a regime's unit is listed
 # only where the store it reads is on disk, so a run before a regime's build
 # reports no FAIL for it; an explicit REGIMES (the chain sets one) is taken as
 # given, and a missing store then fails its unit.
 #
-# 035 draws the 026 area exports and the 029 stranding curves of both
-# regimes, so the 035 units run as a second wave after every other unit has
+# 035 draws the 026 area exports and the 029 stranding curves of every
+# regime, so the 035 units run as a second wave after every other unit has
 # finished; the first wave is one flat pool with no ordering between its
 # units.
 #
@@ -279,11 +279,12 @@ list_work() {
                     echo "034 bottom_ub49 ${season} -"
                 done ;;
             035)
-                # Both regimes in one figure, each at the production member's
+                # Every regime in one figure, each at the production member's
                 # 026 tag and 029 stranding curve (fixed in the job script).
-                has_regime surface_stokes || has_regime bottom || continue
+                has_regime surface_stokes || has_regime bottom \
+                    || has_regime bottom_ub49 || continue
                 for season in ${seasons}; do
-                    echo "035 both ${season} ${production_member}"
+                    echo "035 all ${season} ${production_member}"
                 done ;;
             *)  echo "${stage} ? ? -" ;;
         esac
@@ -321,7 +322,7 @@ tally=${logdir}/${SLURM_JOB_NAME}_${SLURM_JOB_ID}.tally
 # `set -e` must not kill the driver when a unit exhausts its retries (or when
 # a wave's grep selects nothing); run_one already swallows its own status and
 # reports FAIL, and the tally below is the authoritative exit code.
-# Two waves: 035 reads what 026 and 029 write for both regimes.
+# Two waves: 035 reads what 026 and 029 write for every regime.
 set +e
 list_work | grep -v "^035 " | xargs -r -P "${SLURM_NTASKS}" -L1 bash -c 'run_one "$@"' _ \
     | tee "${tally}"
