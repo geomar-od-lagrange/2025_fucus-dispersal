@@ -837,6 +837,22 @@ for h in overview_horizons_days:
         f"above the top at most "
         f"{max(g.loc[g['dilution'] > dilution_top, 'percentage'].sum() for g in gdfs.values()):.3f} %"
     )
+    # Over colour per origin: the share of its weight and of its hexes with
+    # dilution above the top (each origin normalised by its own releases, so
+    # release-site hexes can exceed a top set on the basin-wide maps).
+    over = {
+        code: (
+            gdfs[code].loc[gdfs[code]["dilution"] > dilution_top, "percentage"].sum(),
+            100 * (gdfs[code]["dilution"].dropna() > dilution_top).mean(),
+        )
+        for code in overview_codes
+    }
+    worst_over = max(over, key=lambda c: over[c][0])
+    print(
+        f"  {h} d: above the top at most {over[worst_over][0]:.1f} % of an origin's weight "
+        f"in {over[worst_over][1]:.2f} % of its hexes ({subbasin_id_to_name[worst_over]}); "
+        f"hex share above the top at most {max(v[1] for v in over.values()):.2f} %"
+    )
     worst = max(outside, key=outside.get)
     print(
         f"  {h} d: mapped weight outside the map extent at most {outside[worst]:.3f} % "

@@ -650,6 +650,22 @@ for h in time_horizons_days:
         f"{gdfs[h].loc[dilution.isna(), 'percentage'].sum():.3f} % on zero-water and sliver hexes (no dilution), "
         f"{gdfs[h].loc[dilution > dilution_top, 'percentage'].sum():.3f} % above the top"
     )
+for h in time_horizons_days:
+    # Hex counts, not weight: the share of the drawn hexes inside the extent
+    # that take the under / over colour, and the weight on zero-water hexes
+    # alone (the sliver mask's limiting case).
+    point = gdfs[h].geometry.representative_point()
+    inside = point.x.between(domain_lon_min, domain_lon_max) & point.y.between(
+        domain_lat_min, domain_lat_max
+    )
+    drawn = gdfs[h].loc[inside, "dilution"].dropna()
+    print(
+        f"{h} d: of {len(drawn):,} hexes with dilution inside the extent, "
+        f"{100 * (drawn < dilution_floor).mean():.2f} % below the floor, "
+        f"{100 * (drawn > dilution_top).mean():.2f} % above the top; "
+        f"max dilution {drawn.max():.3g}; weight on zero-water hexes "
+        f"{gdfs[h].loc[gdfs[h]['water_area_m2'] == 0, 'percentage'].sum():.2e} %"
+    )
 
 ncols = 2
 nrows = int(np.ceil(len(time_horizons_days) / ncols))

@@ -291,13 +291,13 @@ if missing:
 # and it is quoted for the coastline that survives the seam cut.
 
 # %%
-sc = pd.read_parquet(shoreclass_path)
-seam = sc["on_seam"]
+table = pd.read_parquet(shoreclass_path)
+seam = table["on_seam"]
 print(f"nest seam dropped: {int(seam.sum()):,} sub-segments, "
-      f"{sc.loc[seam, 'seg_len_m'].sum() / 1e3:,.0f} km "
-      f"({100 * sc.loc[seam, 'seg_len_m'].sum() / sc['seg_len_m'].sum():.2f} % "
+      f"{table.loc[seam, 'seg_len_m'].sum() / 1e3:,.0f} km "
+      f"({100 * table.loc[seam, 'seg_len_m'].sum() / table['seg_len_m'].sum():.2f} % "
       f"of the table's length)")
-sc = sc[~seam]
+sc = table[~seam]
 
 lon_sc, lat_sc = Transformer.from_crs(3035, 4326, always_xy=True).transform(
     sc["x_3035"].to_numpy("float64"), sc["y_3035"].to_numpy("float64")
@@ -336,6 +336,40 @@ print(f"shoreline sub-segments: {len(sc):,}; total length "
       f"{sc['seg_len_m'].sum() / 1e3:,.0f} km")
 print(f"unattributed by length: {100 * unattributed_share:.1f}% (counted as ff = 0.5)")
 print(f"hexes carrying coastline: {len(shore):,} of {len(key):,} key hexes")
+
+# %% [markdown]
+# # Table coverage and flat-fraction distribution
+#
+# The whole table (seam included), by length: which source classified each
+# sub-segment, inside and outside the Baltic, and how the attributed Baltic
+# flat fraction splits between near-pure wall, near-pure flat and mixed
+# coast. Facts for the paper's coastline section; nothing downstream reads
+# them.
+
+# %%
+length = table["seg_len_m"]
+print(f"table: {len(table):,} sub-segments, {length.sum() / 1e3:,.0f} km; mean sub-segment "
+      f"fine {table.loc[table['grid'] == 'fine', 'seg_len_m'].mean():.0f} m, "
+      f"coarse {table.loc[table['grid'] == 'coarse', 'seg_len_m'].mean():.0f} m")
+for scope, mask in [("Baltic", table["in_baltic"]), ("outside the Baltic", ~table["in_baltic"]),
+                    ("whole table", table["in_baltic"] | ~table["in_baltic"])]:
+    by_source = length[mask].groupby(table.loc[mask, "source"]).sum() / length[mask].sum()
+    print(f"  {scope}: {length[mask].sum() / 1e3:,.0f} km, by source "
+          + ", ".join(f"{k} {100 * v:.1f} %" for k, v in by_source.items()))
+attributed = table[table["in_baltic"] & table["flat_fraction"].notna()]
+w = attributed["seg_len_m"] / attributed["seg_len_m"].sum()
+ff = attributed["flat_fraction"]
+print(f"Baltic attributed flat fraction, share of length: <= 0.05 {100 * w[ff <= 0.05].sum():.1f} %, "
+      f">= 0.95 {100 * w[ff >= 0.95].sum():.1f} %, 0.35-0.65 {100 * w[ff.between(0.35, 0.65)].sum():.1f} %; "
+      f"exactly 0 / exactly 1 / between {100 * w[ff == 0].sum():.1f} / {100 * w[ff == 1].sum():.1f} / "
+      f"{100 * w[(ff > 0) & (ff < 1)].sum():.1f} %; >= 0.5 {100 * w[ff >= 0.5].sum():.1f} %; "
+      f"length-weighted mean {(w * ff).sum():.3f}")
+seamless_attr = sc[sc["flat_fraction"].notna()]
+outside_attr = seamless_attr[~seamless_attr["in_baltic"]]
+print(f"seam dropped: attributed length-weighted mean flat fraction "
+      f"{np.average(seamless_attr['flat_fraction'], weights=seamless_attr['seg_len_m']):.3f}; "
+      f"outside the Baltic {100 * outside_attr.loc[outside_attr['flat_fraction'].between(0, 1, inclusive='neither'), 'seg_len_m'].sum() / outside_attr['seg_len_m'].sum():.0f} % "
+      f"of the attributed length strictly between 0 and 1")
 
 # %% [markdown]
 # # Pool the season's beaching partitions across `release_years`
