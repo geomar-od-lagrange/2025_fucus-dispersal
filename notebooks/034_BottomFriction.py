@@ -103,15 +103,15 @@ isobath_m = 3.0
 # samples into a dilution decades above its neighbours
 # (docs/visualisations.md). Its percentage, and every non-dilution product,
 # keep it.
-dilution_min_water_fraction = 0.25
+dilution_min_water_fraction = 0.1
 # Floor and top of the dilution colour scale, fraction of the released
 # particle-time per km², whole decades. The same in every dilution figure
 # (026, 026a, 034): the authors' fixed scale, two classes per decade
 # (docs/visualisations.md). Every hex with weight is drawn: values below the
 # floor take the under colour, values above the top the over colour; white is
 # "no particles", or a hex below `dilution_min_water_fraction` water.
-dilution_floor = 1e-7
-dilution_top = 0.1
+dilution_floor = 1e-9
+dilution_top = 1e-3
 # Map extent (degrees). The 024a key tiles the whole BSH domain including the
 # North Sea, which the bottom regime does not reach; cropping to the Baltic
 # (western Baltic and Belt Sea to the Gulf of Finland and Bothnian Bay) spends
@@ -174,8 +174,9 @@ FIGURE_DPI = 300
 basin_border_lw = 0.52
 
 # Shared dilution scale: two classes per decade from `dilution_floor` up to
-# `dilution_top` (at most 1 per km², all of the released particle-time in
-# one km² of water).
+# `dilution_top`. The physical bound is 1 per km² (all of the released
+# particle-time in one km² of water); the scale stops where the data do
+# (docs/visualisations.md).
 DILUTION_CLASSES_PER_DECADE = 2
 for bound in (dilution_floor, dilution_top):
     assert np.isclose(np.log10(bound), round(np.log10(bound))), f"{bound} is not a whole decade"

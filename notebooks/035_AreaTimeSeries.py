@@ -55,8 +55,8 @@ output_root = "../output"
 hex_radius = 6000
 # Regimes to draw, in drawing order, and each one's 026 weighting tag (a 024f
 # rate-model member, or "unweighted"), position by position.
-regimes_csv = "surface_stokes,bottom"
-tags_csv = "step_wc0p1_ts3_tcinf_tf1_tw0_b750,step_wc0p1_ts3_tcinf_tf1_tw0_b750"
+regimes_csv = "surface_stokes,bottom,bottom_ub49"
+tags_csv = "step_wc0p1_ts3_tcinf_tf1_tw0_b750,step_wc0p1_ts3_tcinf_tf1_tw0_b750,step_wc0p1_ts3_tcinf_tf1_tw0_b750"
 # 024e rate-model member of the stranding panel, shared by every regime of
 # regimes_csv: the 029 runs whose stranding curves are drawn.
 stranded_member = "step_wc0p1_ts3_tcinf_tf1_tw0_b750"

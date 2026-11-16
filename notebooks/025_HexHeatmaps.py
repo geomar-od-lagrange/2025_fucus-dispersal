@@ -119,7 +119,7 @@ isobath_m = 3.0
 # samples into a dilution decades above its neighbours
 # (docs/visualisations.md). Its percentage, and every non-dilution product,
 # keep it.
-dilution_min_water_fraction = 0.25
+dilution_min_water_fraction = 0.1
 
 # Most panels a facet grid may carry before it is split across figures —
 # at 180 mm page width more panels shrink each map below readable size.

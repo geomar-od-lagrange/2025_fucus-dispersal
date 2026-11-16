@@ -40,7 +40,7 @@ Three views:
    particle-time that sits in each target, one figure per age horizon
    `T` (cumulative, half-open `age < T` days, the same convention as 026's
    horizons). Rows sum to 1, so origins are comparable. Fixed classes at
-   1–2–5 per decade over 10⁻⁴–1.
+   1–2–5 per decade over 10⁻⁵–1.
 3. **Interannual range** — the emission fraction recomputed per release
    year; mean / min / max per (origin, target, horizon).
 
@@ -643,18 +643,24 @@ emission = {h: emission_matrix(h) for h in time_horizons_days}
 targets = emission[time_horizons_days[0]].columns.tolist()
 
 # One fixed scale for every emission figure (horizons, regimes, members): a
-# fraction is bounded by 1, and four decades below it the shares stop
-# mattering (the thinnest off-diagonal ones run to 1e-7 and would otherwise
-# stretch the scale until every meaningful cell reads the same colour).
-# Classes at 1–2–5 per decade, 12 of them over 1e-4–1: a class is a readable
-# value range on the colorbar. Shares under 1e-4 take the `extend="min"`
+# fraction is bounded by 1, and five decades below it the shares stop
+# mattering. The non-zero cells sit mostly in 1e-5–1 (medians 1e-3–3e-2);
+# below it runs a sparse tail, to ~1e-8 unweighted and ~1e-17 survival-
+# weighted (exp(−A)), that would stretch the scale until every
+# meaningful cell reads the same colour (docs/visualisations.md).
+# Classes at 1–2–5 per decade, 15 of them over 1e-5–1: a class is a readable
+# value range on the colorbar. Shares under 1e-5 take the `extend="min"`
 # colour.
-EMISSION_BOUNDS = [m * 10.0**e for e in range(-4, 0) for m in (1, 2, 5)] + [1.0]
+EMISSION_DECADES = 5
+EMISSION_BOUNDS = [
+    m * 10.0**e for e in range(-EMISSION_DECADES, 0) for m in (1, 2, 5)
+] + [1.0]
 norm = BoundaryNorm(EMISSION_BOUNDS, ncolors=MATRIX_CMAP.N, extend="min")
 # Every edge labelled, log-axis style: the decades as powers of ten, the 2 and
 # 5 edges by their mantissa ("%g" decimals collide at the low end).
 emission_labels = [
-    f"$10^{{{e}}}$" if m == 1 else f"{m}" for e in range(-4, 0) for m in (1, 2, 5)
+    f"$10^{{{e}}}$" if m == 1 else f"{m}"
+    for e in range(-EMISSION_DECADES, 0) for m in (1, 2, 5)
 ] + ["1"]
 stacked = np.concatenate([e.to_numpy().ravel() for e in emission.values()])
 print(f"emission classes: edges {EMISSION_BOUNDS}; peak {np.nanmax(stacked):.3g}, "

@@ -167,8 +167,8 @@ CSVs keep the full HELCOM names in that row order. Three views:
   horizon `T`. Cumulative and half-open: ages `< T` days, i.e.
   `age_bin * age_bin_days < T`. Row-normalising is what makes origins
   comparable; raw rows differ by orders of magnitude with release count.
-  One discrete class per half decade over the four decades below the peak
-  (edges 1e-4 … 1), shared across horizons; style in
+  Discrete 1–2–5 classes per decade over 1e-5 … 1, shared across horizons,
+  regimes and members; style in
   [visualisations.md](visualisations.md#notebook-028--subbasin-connectivity-matrices-special-case).
 - **Interannual range** — the emission fraction recomputed per release year,
   reduced to mean / min / max per (origin, target, horizon).

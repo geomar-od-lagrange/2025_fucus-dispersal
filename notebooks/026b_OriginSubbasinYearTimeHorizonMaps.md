@@ -120,7 +120,7 @@ isobath_m = 3.0
 # samples into a dilution decades above its neighbours
 # (docs/visualisations.md). Its percentage, and every non-dilution product,
 # keep it.
-dilution_min_water_fraction = 0.25
+dilution_min_water_fraction = 0.1
 
 # Map extent (degrees), one for every map of the pipeline: the Baltic with
 # the Belt Sea and Kattegat, North Sea cropped (docs/visualisations.md). Set

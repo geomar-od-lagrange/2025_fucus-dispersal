@@ -18,7 +18,7 @@ set -euo pipefail
 # Submit once per (season, hex_radius), e.g.:
 #   sbatch scripts/035_AreaTimeSeries_job.sh ALL 6000 step_wc0p1_ts3_tcinf_tf1_tw0_b750
 # season is one of DJF / MAM / JJA / SON / ALL. member is the rate-model
-# member shared by both regimes: their 026 weighting tag (the 024f production
+# member shared by every regime: their 026 weighting tag (the 024f production
 # member) and the 024e member of their stranding curves. hex_radius only
 # labels the figure: the CSV names carry none.
 
@@ -34,8 +34,8 @@ pixi run papermill --cwd notebooks/ \
     notebooks_executed/Visualisations/035_AreaTimeSeries_${season}_r${hex_radius}m.ipynb \
     -p output_root ${output_root} \
     -p hex_radius ${hex_radius} \
-    -r regimes_csv "surface_stokes,bottom" \
-    -r tags_csv "${member},${member}" \
+    -r regimes_csv "surface_stokes,bottom,bottom_ub49" \
+    -r tags_csv "${member},${member},${member}" \
     -r stranded_member ${member} \
     -r season ${season} \
     -k python
