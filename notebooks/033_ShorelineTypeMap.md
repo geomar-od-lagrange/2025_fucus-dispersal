@@ -477,12 +477,12 @@ print(f"stranded weight within the {max_age_days} d reduction window")
 
 029's where-stranded rendering — hex polygons, the HELCOM subbasin borders
 and the model coastline on a plain EPSG:4326 axis, the map at the full page
-width with its colorbar as an inset axes under it at axes-fraction width
-1.0, so it is exactly the map's width. `fit_height` sizes the figure from
-what is drawn rather than from hand arithmetic: at the fixed page width the
-map is width-limited, so any height beyond its content is a blank band; one
-draw at a generous seed height measures the content (title to colorbar
-label) and the figure is cut to it.
+width with its colorbar as an inset axes in the map's empty lower right
+(`CBAR_INSET`). `fit_height` sizes the figure from what is drawn rather
+than from hand arithmetic: at the fixed page width the map is
+width-limited, so any height beyond its content is a blank band; one draw
+at a generous seed height measures the content (title to map bottom) and
+the figure is cut to it.
 
 ```python
 # Colorbar inside the map, in the empty land of the lower right (authors
@@ -497,8 +497,8 @@ def hex_map(gdf, ax, norm=None, title=None, label=None):
     lon/lat axis, colorbar as an inset in the map's empty lower right."""
     if not gdf.empty:
         cax = ax.inset_axes(CBAR_INSET)
-        # Bottom-anchored, so constrained_layout's room for the bar under the
-        # map holds; centred, the map drifts down and clips the label.
+        # Bottom-anchored: the seed height's slack sits above the map, where
+        # `fit_height` measures and cuts it, not split around it.
         ax.set_anchor("S")
         gdf.plot(
             ax=ax, column="value", norm=norm, legend=True, cax=cax,
