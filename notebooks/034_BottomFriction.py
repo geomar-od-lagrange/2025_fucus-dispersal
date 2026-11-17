@@ -463,9 +463,6 @@ for ax, q in zip(axes.flat, quantiles):
         per_year.sel(q=q).max("scope"), color=band_color, alpha=0.3,
     )
     length_ratio.sel(q=q, scope="pooled").plot.line(x="horizon_days", ax=ax)
-    # Ratio 1 = no friction effect. Drawn in the axes-frame colour so it reads
-    # as a reference, not as a second data series in the cycle's first colour.
-    ax.axhline(1.0, color=plt.rcParams["axes.edgecolor"], zorder=0)
     ax.set_title(
         f"{REGIME_LABELS.get(regime_var, regime_var)} / "
         f"{REGIME_LABELS.get(regime_ref, regime_ref)}, "

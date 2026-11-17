@@ -175,6 +175,14 @@ basin_border_lw = 0.52
 OCC_BOUNDS = [m * 10.0**e for e in range(-4, 1) for m in (1, 3)]
 FRACTION_BOUNDS = np.linspace(0.0, 1.0, 11)
 
+# Plain-language figure label: the regime in the figure itself, no run keys
+# (docs/visualisations.md "Labels in the figure").
+REGIME_LABELS = {
+    "surface": "surface",
+    "surface_stokes": "surface + Stokes drift",
+    "bottom": "bottom",
+    "bottom_ub49": "bottom, bed friction",
+}
 figure_dir = output_root / "Figures" / "030"
 figure_dir.mkdir(parents=True, exist_ok=True)
 ```
@@ -466,6 +474,7 @@ for i, (row_label, gdfs, norm, cmap, cbar_label) in enumerate(rows):
 for i in range(len(rows)):
     for j, h in enumerate(time_horizons_days):
         axes[i, j].set_title(f"age {bin_labels[h]}")
+fig.suptitle(REGIME_LABELS.get(regime, regime))
 fig_path = figure_dir / f"SurvivalHeatmaps_{regime}_r{hex_radius}m_{season}_{member}.png"
 # Print-ready: fixed page width at 300 dpi (docs/visualisations.md).
 fig.savefig(fig_path, dpi=FIGURE_DPI)

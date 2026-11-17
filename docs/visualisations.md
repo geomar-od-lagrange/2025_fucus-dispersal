@@ -221,6 +221,15 @@ viz ([wall_velocity.md](wall_velocity.md)).
 and the model coastline are the only layers. Considered the BSH H0 3 m
 contour as a viable-band marker; dropped by the authors.
 
+**Labels in the figure.** Every map and matrix figure names its regime, and
+where it varies its weighting, inside the figure as a suptitle in plain
+words — `REGIME_LABELS` ("surface + Stokes drift", "bottom", "bottom, bed
+friction") plus "with stranding" (a 024f/024g member) or "without
+stranding" (unweighted): 026 dilution and median age, 026a overviews (before
+the horizon text), 029 where-stranded and 030 survival maps (regime only:
+both always carry the stranding model), 028 / 038 / 037 as their titles
+and column labels. Run keys and member tags stay in filenames and prints.
+
 **Print-ready figures (025–031, 033–036).** Every saved figure is one full
 text-width (180 mm) figure at 300 dpi: `fig.set_size_inches(180/25.4, h)`
 + `savefig(dpi=300)` ⇒ 2125 px wide. Deliberate break from the AGENTS.md
@@ -1017,10 +1026,9 @@ plus 024f survocc when weighted), ages `[0, max_age_days)`.
 - **Length ratio vs. horizon** — one panel per `q`: the pooled ratio
   `length_km(bottom_ub49) / length_km(bottom)` as a line, the per-year ratio's
   min–max as a band in the line's colour at `alpha=0.3` (an override, as in
-  035, so the line shows through). Ratio 1 (no effect) is an `axhline` in
-  `rcParams["axes.edgecolor"]` — a colour override, so the reference does not
-  take the data line's cycle colour; read off the rcParams, not hardcoded.
-  The ratio is the answer; two absolute lines hide it in their gap.
+  035, so the line shows through). No ratio-1 reference line (authors): the
+  y axis is not forced to include 1, so the ratio's own range fills the
+  panel. The ratio is the answer; two absolute lines hide it in their gap.
 - **Map pair** at `map_horizon_days` — 026's percentage and dilution
   rendering, one figure per view, the two regimes **side by side** (reference
   left) at the full 180 mm width under **one shared norm** and one horizontal

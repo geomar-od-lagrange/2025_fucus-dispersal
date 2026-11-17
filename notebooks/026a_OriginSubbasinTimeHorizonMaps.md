@@ -185,6 +185,15 @@ for h in [*time_horizons_days, *overview_horizons_days]:
 n_age_bins = max_age_days // age_bin_days
 
 member_tag = member or "unweighted"
+# Plain-language figure label: regime and weighting in the figure itself,
+# no run keys (docs/visualisations.md "Labels in the figure").
+REGIME_LABELS = {
+    "surface": "surface",
+    "surface_stokes": "surface + Stokes drift",
+    "bottom": "bottom",
+    "bottom_ub49": "bottom, bed friction",
+}
+figure_label = f"{REGIME_LABELS.get(regime, regime)}, {'with' if member else 'without'} stranding"
 print(f"regime={regime}, season={season}, member={member_tag}, window [0, {max_age_days}) d")
 
 # Print-ready output: every saved figure is one full text-width (180 mm)
@@ -735,7 +744,7 @@ for code in origin_codes:
     }
     for column, (norm, cmap, extend, colorbar_kwargs) in views.items():
         fig, axes = map_grid(nrows, ncols)
-        fig.suptitle(f"origin: {name}")
+        fig.suptitle(f"{figure_label}; origin: {name}")
         for ax, h in zip(axes.flat, time_horizons_days):
             hex_map(gdfs[h], column, ax, norm, cmap=cmap, title=f"{h} d")
         for ax in axes.flat[len(time_horizons_days):]:
@@ -807,7 +816,7 @@ for h in overview_horizons_days:
         fig, axes, dilution_norm, dilution_cmap, COLUMN_LABEL["dilution"], "both",
         format=decade_format,
     )
-    fig.suptitle(f"by origin subbasin, ages < {h} d")
+    fig.suptitle(f"{figure_label}; by origin subbasin, ages < {h} d")
     fig_path = (
         figure_dir
         / f"OriginSubbasinOverview_{regime}_{season}_r{hex_radius}m_{member_tag}_T{h}d_dilution.png"

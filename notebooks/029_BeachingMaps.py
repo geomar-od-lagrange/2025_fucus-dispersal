@@ -203,6 +203,14 @@ STRANDED_DECOR_IN = 0.75
 # Subbasin border stroke on every map (docs/visualisations.md).
 basin_border_lw = 0.52
 
+# Plain-language figure label: the regime in the figure itself, no run keys
+# (docs/visualisations.md "Labels in the figure").
+REGIME_LABELS = {
+    "surface": "surface",
+    "surface_stokes": "surface + Stokes drift",
+    "bottom": "bottom",
+    "bottom_ub49": "bottom, bed friction",
+}
 figure_dir = output_root / "Figures" / "029"
 figure_dir.mkdir(parents=True, exist_ok=True)
 export_dir = output_root / "Exports" / "029"
@@ -584,10 +592,13 @@ print(f"release hexes: {len(frac):,}; stranded by {origin_horizon_days} d per "
 fig, axes = plt.subplots(1, 2, layout="constrained")
 # Seed height only, generous on purpose: fit_height cuts it to the content.
 fig.set_size_inches(FIGURE_WIDTH_IN, FIGURE_WIDTH_IN / 2 / domain_aspect + 2 * STRANDED_DECOR_IN)
-hex_map(gdf_stranded, axes[0], norm=strand_norm, title="where stranded",
+# The regime in the panel titles (a suptitle leaves a blank band under
+# fit_height's tight-bbox cut).
+regime_label = REGIME_LABELS.get(regime, regime)
+hex_map(gdf_stranded, axes[0], norm=strand_norm, title=f"{regime_label}: where stranded",
         label="stranded (% of released)")
 # Pinned linear 0–100: a share of the hex's own releases, full range on any run.
-hex_map(frac, axes[1], norm=Normalize(vmin=0.0, vmax=100.0), title="by release hex",
+hex_map(frac, axes[1], norm=Normalize(vmin=0.0, vmax=100.0), title=f"{regime_label}: by release hex",
         label=f"stranded by {origin_horizon_days} d (% of the hex's released)")
 fit_height(fig)
 fig_path = figure_dir / f"WhereStranded_{regime}_r{hex_radius}m_{season}_{member}.png"

@@ -176,6 +176,15 @@ n_age_bins = max_age_days // age_bin_days
 area_quantiles = [float(x) for x in area_quantiles_csv.split(",") if x]
 
 member_tag = member or "unweighted"
+# Plain-language figure label: regime and weighting in the figure itself,
+# no run keys (docs/visualisations.md "Labels in the figure").
+REGIME_LABELS = {
+    "surface": "surface",
+    "surface_stokes": "surface + Stokes drift",
+    "bottom": "bottom",
+    "bottom_ub49": "bottom, bed friction",
+}
+figure_label = f"{REGIME_LABELS.get(regime, regime)}, {'with' if member else 'without'} stranding"
 print(f"regime={regime}, season={season}, member={member_tag}, window [0, {max_age_days}) d")
 
 # Print-ready output: every saved figure is one full text-width (180 mm)
@@ -695,6 +704,7 @@ for column, view in VIEWS.items():
         figure_dir
         / f"TimeHorizonMaps_{regime}_{season}_r{hex_radius}m_{member_tag}_{column}.png"
     )
+    fig.suptitle(figure_label)
     fit_height(fig, axes)
     # Print-ready: full 180 mm page width at 300 dpi (see the parse cell).
     fig.savefig(fig_path, dpi=FIGURE_DPI)
@@ -797,6 +807,7 @@ hex_map(
 shared_colorbar(fig, axes, age_norm, age_cmap, "days", "neither", ticks=AGE_BOUNDS_DAYS)
 print(f"median age: {share_outside_extent(gdf_age):.3f} % of the mapped weight outside the map extent")
 fig_path = figure_dir / f"MedianAge_{regime}_{season}_r{hex_radius}m_{member_tag}.png"
+fig.suptitle(figure_label)
 fit_height(fig, axes)
 # Print-ready: full 180 mm page width at 300 dpi (see the parse cell).
 fig.savefig(fig_path, dpi=FIGURE_DPI)
