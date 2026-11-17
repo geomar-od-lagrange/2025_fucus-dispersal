@@ -1095,6 +1095,35 @@ no parquet; it runs after 026 (every regime it draws) and 029
 series inside 026; rejected, 026 runs one regime at a time and the
 comparison is the point.
 
+## Notebook 037 — Median-age grid
+
+[`037_MedianAgeGrid`](../notebooks/037_MedianAgeGrid.py)
+(`scripts/037_MedianAgeGrid_job.sh [season]`): median particle age per hex
+in a grid, columns "with stranding" (024f member) | "without stranding"
+(unweighted), one row per regime of `rows_csv`, at most two rows so a figure
+fits one page; the job script draws "surface_stokes,bottom" and
+"bottom_ub49". Reads only 026's `Exports/026/026_medianage_<regime>_<season>_<tag>.geojson`
+(mapped hexes only), so classes, mask and backdrop are 026's; one shared
+colorbar; `Figures/037/MedianAgeGrid_<rows>_<season>_r<radius>m.png`.
+Prints hexes mapped and the weight-weighted median of hex medians per panel.
+Considered a multi-member mode in 026; rejected, a per-run notebook would
+then read other runs' outputs. Run after 026 for both weightings.
+
+## Notebook 038 — Emission-fraction grid
+
+[`038_EmissionGrid`](../notebooks/038_EmissionGrid.py)
+(`scripts/038_EmissionGrid_job.sh <regime> [season] [member]`): one 2×2
+figure per regime, columns with | without stranding (024g member with the
+stranded column | unweighted), rows age < 30 d | < 180 d, from 028's
+`Exports/028/connectivity_<regime>_<season>_<tag>_T<h>d_emission_fraction.csv`;
+`Figures/038/EmissionGrid_<regime>_<season>.png`. 028's rendering (codes
+west→east, batlow 1–2–5 classes 1e-5–1, stranded column after a gap with
+whole-% labels), plus: width ratios 19:17 so cells stay square (~4.2 mm)
+and rows align; origin codes on the left column, target codes vertical on
+the bottom row only; "stranded (%)" as a vertical tick under the stranded
+column (above the matrix it lifted one column title out of line); one
+colorbar; default font sizes. Run after 028 for both tags.
+
 ## Notebook 036 — Seeding map (special case)
 
 [`036_SeedingMap`](../notebooks/036_SeedingMap.py) draws the release set: the
