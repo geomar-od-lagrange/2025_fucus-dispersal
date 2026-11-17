@@ -89,3 +89,6 @@ All deferred items landed: 026 `surface_stokes` unweighted (job 24946249,
 5 / 5 OK), 026a likewise (job 24946255, 5 / 5 OK), 035 seasons layout
 (dc02ee6), archive (1bc1643). The paper holds 44 figures, no placeholders
 (43 planned + the S−s 180 d overview added in review round 4).
+Review round 5: the five old-name `035_AreaTimeSeries_<season>_r6000m.ipynb`
+executed notebooks moved to the archive too (MANIFEST.txt appended); the
+025-031 driver runs a `035 seasons ALL` unit.
