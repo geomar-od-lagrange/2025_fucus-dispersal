@@ -1,6 +1,9 @@
+> Implemented 2026-11-17 — 034 weighting in [docs/visualisations.md](../../docs/visualisations.md)
+> §034; the paper diff sits uncommitted in `paper/` for review.
+
 # Paper: every bottom figure in four variants; weighted 034
 
-Authors 2026-11-17. Builds on [done/paper_refresh.md](done/paper_refresh.md)
+Authors 2026-11-17. Builds on [done/paper_refresh.md](paper_refresh.md)
 (paper c1334a0, main e31e383).
 
 ## Decisions (authors)
@@ -48,3 +51,17 @@ the 034 figures make across the gap.
    / under-floor, weighted 034 area ratios), weighting-convention bullet,
    `[AGENT DRAFT]` captions, header. Build.
 5. Move this plan to `plans/done/` with an outcome line.
+
+## Outcome (2026-11-17)
+
+- Code bca225c (034 `weighting`, job script, driver, docs). Rerun job
+  24945894: 034 × 5 seasons × {unweighted, M}, 10 / 10 OK. Stale untagged
+  034 outputs removed.
+- All 20 four-variant PNGs (026, 026a, 028) found on disk from jobs
+  24940971 / 24940130; copied byte-identically with the 034 pair and the
+  ub49 where-stranded map (36 paper PNGs, all identical to source).
+- Weighted 034 ratios equal the unweighted within 0.002 (length 0.865 /
+  0.842 / 0.833 / 0.827 at 30 / 60 / 90 / 180 d); the weighted areas
+  reproduce HEADLINE Table F.
+- Paper: 13 figures added (ub49 and unweighted variants, weighted 034 pair
+  and length, ub49 where-stranded), the appendix removed; 40 pages.
