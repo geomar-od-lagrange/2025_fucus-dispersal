@@ -57,7 +57,16 @@ seasons.
    copy byte-identically; build.
 6. Move this plan to `plans/done/`.
 
-## Archive
+## Status (2026-11-17, scope cut by the authors)
 
-To fill: patterns, counts, sizes moved to
-`<output_root>/archive_pre_b750_20261117/` (relative paths kept).
+Done with existing PNGs (paper uncommitted): friction +s pair dropped;
+026a B, F 30 d +s, 028 S−s 30 / 180 d, 030 B, F added; where-stranded S, B,
+F together in Results "Beaching"; families regrouped; fig 23 caption fixed.
+40 figures + 3 `\missingfigure` placeholders (todonotes).
+
+Open (deferred, need runs or code):
+- S−s dilution and median age: 026 `surface_stokes` unweighted × 5 seasons
+  (job 24946209 submitted, then cancelled).
+- Season figure 1s: 035 `layout = "seasons"` (designed above, code reverted).
+- Archive of stale pre-`_b750` outputs to
+  `<output_root>/archive_pre_b750_20261117/`: not started.
