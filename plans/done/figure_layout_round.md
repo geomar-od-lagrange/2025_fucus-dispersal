@@ -76,3 +76,4 @@ matrix figures, captions, FACTS. 5. F, G. 6. Move to `plans/done/`.
   subbasin assignment (edges between hexes of different subbasins) — on
   the model grid by construction, but hex-stepped. Each changes every map
   notebook (copied block); authors to pick.
+- G, follow-up 2026-11-17 (authors: "for basins, the model coastline is the reference"): fixed by plans/done/subbasin_borders.md (006 nearest-polygon partition clipped to model water).

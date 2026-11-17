@@ -1,3 +1,5 @@
+> Implemented 2026-11-17 — docs/visualisations.md "Subbasin borders" (notebooks/006_BuildSubbasinBorders.py; maps 025–037 read its geojson).
+
 # Subbasin borders on the model coastline
 
 Authors 2026-11-17 (figure_layout_round §G): "For basins, the model coastline
