@@ -1,4 +1,4 @@
-> Superseded by `plans/wrapup.md` §1 (filename simplification). Original plan retained as historical record.
+> Superseded by `plans/done/wrapup.md` §1 (filename simplification). Original plan retained as historical record.
 
 # Experiment Tracking: Notebooks and Zarr Stores
 

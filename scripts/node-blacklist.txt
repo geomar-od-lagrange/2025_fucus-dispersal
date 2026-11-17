@@ -1,0 +1,29 @@
+# NESH compute nodes to keep out of this project's allocations, one hostname
+# per line; "#" comments and blank lines are ignored. Read by
+# scripts/submit_024d.sh (for the sbatch allocation) and by
+# scripts/024d_BuildBeachingForcing_job.sh (for each srun step).
+#
+# To add a node: confirm it is the *culprit*, not collateral. A single node
+# failure makes Slurm cancel every step of the job, so the per-step
+# "CANCELLED ... DUE TO NODE FAILURE" lines in the .out name almost the whole
+# allocation. The culprit is the one `sinfo -p base -t down,drain -o "%n %T %E"`
+# reports with a fresh reason. Nodes already marked down cluster-wide (the
+# standing "HN: IB failed" set) do not belong here -- Slurm never allocates
+# them anyway; this file is for nodes that took a job down while still
+# schedulable.
+#
+# A drained node is not allocatable *now*, but drains get cleared by the
+# operators while a sweep is still running, so a node that has already eaten
+# one of our jobs stays listed here until we have seen it behave.
+nesh-clk542   # 2026-09-15: "Node unexpectedly rebooted" mid-run, killed job 23834688 at 53/292
+nesh-clk352   # 2026-09-15: Slurm "Duplicate jobid" controller fault, killed job 23836396 (surface_stokes 2021) 6 min in
+nesh-clk407   # 2026-09-15: Slurm "Duplicate jobid"
+nesh-clk423   # 2026-09-15: Slurm "Duplicate jobid"
+nesh-clk468   # 2026-09-15: Slurm "Duplicate jobid"
+nesh-clk584   # 2026-09-15: Slurm "Duplicate jobid", co-allocated with clk352 on the killed job
+nesh-srp114   # 2026-09-15: "Node unexpectedly rebooted"
+nesh-srp205   # 2026-09-15: Slurm "Duplicate jobid"
+nesh-srp243   # 2026-09-15: Slurm "Duplicate jobid"
+nesh-srp266   # 2026-09-15: Slurm "Duplicate jobid"
+nesh-clk582   # 2026-09-15: "Kill task failed" while running 010
+nesh-clk599   # 2026-09-15: "Kill task failed" while running 010

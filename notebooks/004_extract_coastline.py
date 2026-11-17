@@ -23,7 +23,23 @@ import geopandas as gpd
 import numpy as np
 import shapely
 import xarray as xr
-from shapely.geometry import box, MultiPolygon
+from shapely.geometry import MultiPolygon
+
+
+def regular_axis(coord):
+    """Step and first centre of a regular axis from its stored centres.
+
+    The BSH static coordinates are stored rounded to 1e-4 deg, so the first
+    difference is off by up to 1e-4 deg per cell (0.0834 for 1/12) and an
+    origin + i * step built from it drifts across the grid. A linear fit over
+    every centre recovers the regular grid the stored values sample; its
+    residual is the storage rounding, which the assert bounds at 1 % of a cell.
+    """
+    index = np.arange(coord.size)
+    step, first = np.polyfit(index, coord, 1)
+    residual = np.abs(coord - (first + step * index)).max()
+    assert residual < 0.01 * abs(step), f"axis not regular: residual {residual:.2e} deg"
+    return float(step), float(first)
 
 
 def coastline_from_h0(h0_path, min_h0=None, scale=6):
@@ -31,39 +47,32 @@ def coastline_from_h0(h0_path, min_h0=None, scale=6):
 
     Works in integer grid coordinates (scaled by ``scale``) to get exact
     vertex alignment when unioning cell boxes, then affine-transforms
-    back to lon/lat.
+    back to lon/lat. Cell ``(j, i)`` spans its centre -+ half a step: the
+    NE F-points the 003 c_files and 005 wall fields carry are its
+    north-east corner.
 
     If *min_h0* is given, only cells with ``H0 > min_h0`` are included.
     """
     ds_h0 = xr.open_dataset(h0_path)
-    lon = ds_h0.lon.values
-    lat = ds_h0.lat.values
     h0 = ds_h0.H0
     if min_h0 is not None:
         wet = (h0.notnull() & (h0 > min_h0)).values
     else:
         wet = h0.notnull().values  # (nlat, nlon)
 
-    dlon = float(lon[1] - lon[0])  # positive
-    dlat = float(lat[1] - lat[0])  # negative if lat is descending
+    dlon, lon0 = regular_axis(ds_h0.lon.values)  # dlon > 0
+    dlat, lat0 = regular_axis(ds_h0.lat.values)  # dlat < 0: lat descends
 
-    boxes = []
-    for j in range(len(lat)):
-        for i in range(len(lon)):
-            if wet[j, i]:
-                boxes.append(box(i * scale, j * scale, (i + 1) * scale, (j + 1) * scale))
+    jj, ii = np.nonzero(wet)
+    wet_region = shapely.union_all(
+        shapely.box(ii * scale, jj * scale, (ii + 1) * scale, (jj + 1) * scale)
+    )
 
-    wet_region = shapely.unary_union(boxes)
-
-    # Map integer grid back to lon/lat.
-    # j=0 corresponds to lat[0], i=0 corresponds to lon[0].
-    # Cell edges sit half a grid step outside the cell centre.
-    lon_origin = float(lon[0]) - abs(dlon) / 2
-    lat_origin = float(lat[0]) - dlat / 2  # signed: shifts toward lower j
-
+    # Integer grid (i, j) -> lon/lat; the cell edge sits half a step before
+    # centre 0 along each axis (signed, so it works for descending lat).
     return shapely.affinity.affine_transform(
         wet_region,
-        [abs(dlon) / scale, 0, 0, dlat / scale, lon_origin, lat_origin],
+        [dlon / scale, 0, 0, dlat / scale, lon0 - dlon / 2, lat0 - dlat / 2],
     )
 
 

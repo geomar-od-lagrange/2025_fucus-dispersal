@@ -5,6 +5,7 @@
 #SBATCH --mem-per-cpu=8G
 #SBATCH --time=01:00:00
 #SBATCH --partition=base
+#SBATCH --output=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs/logs/aggregates/%x_%j.out
 
 # Lightweight: reads the 024 counts parquet + key, no Dask cluster.
 # One (regime, release_year, hex_radius) per submit, e.g.:
@@ -12,6 +13,11 @@
 #   sbatch scripts/024c_BuildHexConnectivity_job.sh surface_stokes 2020 6000
 # 024_BuildHexAggregates_job.sh and 024a_BuildHexKey_job.sh must have run
 # first for the matching (regime, release_year, hex_radius).
+
+# Without `set -e` a papermill failure here still reaches `jobinfo` and the
+# job exits 0, so an `afterok` dependency downstream would fire on a store
+# that was never written.
+set -euo pipefail
 
 regime="${1:-surface_stokes}"
 year="${2:-2019}"
@@ -30,4 +36,5 @@ pixi run papermill --cwd notebooks/ \
     -p hex_radius ${hex_radius} \
     -k python
 
-jobinfo
+# The job status must be papermill's, not the accounting tool's.
+jobinfo || true

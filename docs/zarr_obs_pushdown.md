@@ -3,8 +3,8 @@
 Trajectory zarrs are chunked `(trajectory=10000, obs=1000)` (see
 [seeding.md](seeding.md) / `notebooks/010_FucusDispersal`). The
 post-processing notebooks need per-trajectory **release-time** quantities —
-release subbasin, release quarter, the on-land test, release position — all
-derived from `obs=0` (the land test also needs `obs=1`).
+release subbasin, release quarter, release position — all derived from
+`obs=0` (the on-land test is 010's per-trajectory `land_seed`, no obs axis).
 
 The obvious idiom reads ~1000× more than it returns and exhausts worker
 memory at the full-sweep scale (60M+ trajectories):
@@ -31,16 +31,13 @@ under concurrency many co-reside and the allocator keeps the freed ones as
 edge = xr.concat(
     [
         xr.open_zarr(z)[["lon", "lat", "time"]]
-        .isel(obs=slice(0, 2))   # 0 for release, 1 for the land test
-        .chunk(obs=2)
+        .isel(obs=slice(0, 1))   # the release step
+        .chunk(obs=1)
         for z in files
     ],
     dim="trajectory",
 )
 lon0 = edge.lon.isel(obs=0, drop=True)
-on_land = (edge.lon.diff("obs").isel(obs=0, drop=True) == 0) & (
-    edge.lat.diff("obs").isel(obs=0, drop=True) == 0
-)
 ```
 
 Slicing `isel(obs=slice(0, k)).chunk(obs=k)` **before** the concat fuses the
@@ -60,8 +57,8 @@ metadata goes through `edge`.
 | Notebook | Uses the `edge` pushdown |
 |----------|--------------------------|
 | `020_RawTrajectories` | subbasin + quarter for stratified sampling |
-| `022_DispersalDistance` | subbasin, quarter, on-land, release lon/lat (distance + DE filter) |
-| `023_Heatmaps` | subbasin, quarter, on-land (kept lazy for `hist_by` masks) |
+| `022_DispersalDistance` | subbasin, quarter, release lon/lat (distance + DE filter) |
+| `023_Heatmaps` | subbasin, quarter (kept lazy for `hist_by` masks) |
 
 `021_TimeStats` and `024_BuildHexAggregates` still use a raw `isel(obs=0)`
 edge read, but there the full `obs` extent is read *anyway* for the actual

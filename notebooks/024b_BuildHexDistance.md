@@ -47,12 +47,10 @@ from hextraj import HexProj
 ```
 
 ```python
-# Pattern: Fucus_BSH_YYYYMMDDTHHMMSS_{regime}_dt{N}min_seed{S}.
-# `surface_stokes` must precede `surface` so the alternation matches the
-# longer form first.
-_ZARR_STEM_RE = re.compile(
-    r"^Fucus_BSH_(\d{8}T\d{6})_(surface_stokes|surface|bottom)_dt\d+min_seed\d+$"
-)
+# Pattern: Fucus_BSH_YYYYMMDDTHHMMSS_{regime}_dt{N}min_seed{S}. The regime
+# is any word (`surface_stokes`, `bottom_ub49`, ...): the `_dt<N>min_seed<S>`
+# tail anchors where it ends, and the caller checks it against `regime`.
+_ZARR_STEM_RE = re.compile(r"^Fucus_BSH_(\d{8}T\d{6})_(\w+)_dt\d+min_seed\d+$")
 
 
 def parse_zarr_stem(path):
@@ -169,17 +167,13 @@ def zarr_to_distance_frame(path, release_doy):
     final displacement (equirectangular 111 km/deg metric, see
     docs/distance_calculation.md).
 
-    Two NaN paths, both handled: land-seeded particles (zero first-step
-    displacement) are masked to NaN throughout, so their release_lon → -1
+    Two NaN paths, both handled: land-seeded particles (010's `land_seed`)
+    are masked to NaN throughout, so their release_lon → -1
     hex and NaN distance, and they are dropped downstream; domain-exited
     particles (NaN tail mid-run) carry their last in-domain distance
     forward via ffill, which is the intended last-valid-position value."""
     ds = xr.open_zarr(path)
-    on_land = (
-        (ds.lon.diff("obs").isel(obs=0, drop=True) == 0)
-        & (ds.lat.diff("obs").isel(obs=0, drop=True) == 0)
-    )
-    ds = ds[["lon", "lat"]].where(~on_land)
+    ds = ds[["lon", "lat"]].where(ds.land_seed == 0)
 
     # NaN for land-seeded trajectories (masked above); release_hex_id maps
     # NaN → -1, so those rows drop out at the release_hex >= 0 filter.

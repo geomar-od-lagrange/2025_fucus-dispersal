@@ -32,7 +32,7 @@ release_doy = 1 + 5·n   for n ∈ [0, 72]   (doys {1, 6, 11, …, 361})
 
 leap-year-agnostic. Every `(year, doy, regime)` triple is one
 papermill invocation of 010 producing one zarr; the sweep loops live
-in `scripts/010_FucusDispersal_{surface,bottom}_job.sh`. 5-day spacing
+in `scripts/010_FucusDispersal_{surface_stokes,bottom}_job.sh`. 5-day spacing
 resolves seasonal circulation transitions without bloating SLURM
 wallclock.
 

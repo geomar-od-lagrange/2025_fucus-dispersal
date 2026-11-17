@@ -5,15 +5,20 @@ per input c-file per variant. The Parcels runs in
 `notebooks/010_FucusDispersal.md` consume these 2D fields directly —
 sigma-layer selection happens here, not at runtime in the kernel.
 
-| Variant          | U/V content                                | Consumer regime          |
-|------------------|--------------------------------------------|--------------------------|
-| `surface`        | sigma layer 1                              | `regime="surface"`       |
-| `bottom`         | deepest fluid layer per face               | `regime="bottom"`        |
-| `surface_stokes` | surface + interpolated CMEMS Stokes drift  | `regime="surface_stokes"`|
+| Variant          | U/V content                                | Consumer (010 `regime`)                              |
+|------------------|--------------------------------------------|------------------------------------------------------|
+| `surface`        | sigma layer 1                              | none directly; the base of `surface_stokes`          |
+| `bottom`         | deepest fluid layer per face               | `bottom`, and `bottom_ub49` (same fields, run with bed friction at `break_off_speed_mm_s`) |
+| `surface_stokes` | surface + interpolated CMEMS Stokes drift  | `surface_stokes`                                     |
+
+The production regimes are `surface_stokes`, `bottom` and `bottom_ub49`; the
+no-Stokes `surface` regime is retired. 003 still writes the `surface` file
+because the `surface_stokes` sum starts from it; nothing runs on it.
 
 Output globs as `c_file_{fine,coarse}_<YYYYMMDDHH>_<i>_<j>_<variant>.nc`
-under `output_root/2d_fields/`. 010 picks a variant by changing the
-`regime` parameter; the fieldset glob is
+under `output_root/2d_fields/`. 010 picks a field set by its `regime`
+parameter (`surface_stokes` or `bottom`; the `bottom_ub49` output regime is
+`bottom` plus `break_off_speed_mm_s`); the fieldset glob is
 `c_file_{fine,coarse}_*_{regime}.nc`.
 
 ## Why preprocess to 2D
@@ -32,7 +37,7 @@ conditions that triggered them.
 
 A naive "deepest non-NaN" picker fails on BSH because BSH stores
 `0.0` (not NaN) at C-grid U/V faces blocked by a shallower
-neighbour's bathymetry — these are no-slip walls, not fluid.
+neighbour's bathymetry — zero-flux walls, not fluid.
 `load_bottom` instead takes, for each face independently, the deepest
 layer that is **both non-NaN and non-zero**. U and V are picked
 separately because their face bathymetries —
@@ -57,6 +62,31 @@ Output coordinates shift to NE F-points
 three boundary rows/columns after hygiene (lat row 0: V-roll boundary
 zero; lat row -1 and lon col -1: edge land mask) so particles fall
 through to the coarse grid via `NestedField` rather than stalling.
+
+## Known gaps (2025)
+
+2016–2024 are complete: 8760 files per common year, 8784 per leap year
+(4 timestamps/day x 2 resolutions x 3 variants). 2025 holds 8655, i.e. 105
+missing files at 35 timestamp/resolution stems, and none of them is fixable
+from this repo:
+
+- **25 stems are unreadable in the BSH archive.** `xarray.open_dataset`
+  fails with `OSError: [Errno -101] NetCDF: HDF error`, and the files are
+  1–50 MB against the 50–96 MB of their neighbours — truncated writes, not
+  a reader problem. `c_file_coarse_2025` at `022406`, `030906`, `070318`,
+  `072212`, `072618`, `081100`, `081418`, `082418`, `082500`;
+  `c_file_fine_2025` at `011212`, `011506`, `012918`, `031106`, `042100`,
+  `052718`, `062412`, `070412`, `072800`, `080906`, `091112`, `091806`,
+  `092006`, `110306`, `120806`, `122700`.
+- **5 timestamps are absent from the archive** in both resolutions:
+  `2025072412`, `2025072418`, `2025072500`, `2025102218`, `2025123118`.
+
+Both need a re-fetch from BSH into
+`/gxfs_work/geomar/smomw400/bsh_operationalmodel_data`; re-running 003 only
+reproduces the read error. `MISSING_ONLY=1 YEARS=2025` in
+[job_scripts.md](job_scripts.md) regenerates the list at any time, and 010
+interpolates straight across a hole rather than raising, so the gaps travel
+silently into a run window that spans them.
 
 ## Cross-references
 

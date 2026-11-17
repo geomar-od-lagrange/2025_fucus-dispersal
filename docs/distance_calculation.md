@@ -9,7 +9,9 @@ deterministic function of `(lon, lat)` at obs and `(lon0, lat0)` at
 obs=0; equirectangular vs haversine deviates <0.1 % at Baltic
 latitudes.
 
-Land-seeded particles (zero first-step displacement) and NaN-padded
+Land-seeded particles (010's per-trajectory `land_seed`: release position in
+a land cell of the regime's 005 land set, see
+[wall_velocity.md](wall_velocity.md)) and NaN-padded
 obs both fall out via lazy `.where`; the four scope reductions
 (global, subbasin, German waters, quarter) are `.where`-masked
 variants of the same lazy graph, computed in one shared

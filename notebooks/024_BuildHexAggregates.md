@@ -2,7 +2,7 @@
 jupyter:
   jupytext:
     cell_metadata_filter: tags,-all
-    formats: md,ipynb
+    formats: py:percent,md,ipynb
     text_representation:
       extension: .md
       format_name: markdown
@@ -44,12 +44,10 @@ from hextraj.hex_analysis import hex_connectivity_dask
 ```
 
 ```python
-# Pattern: Fucus_BSH_YYYYMMDDTHHMMSS_{regime}_dt{N}min_seed{S}.
-# `surface_stokes` must precede `surface` so the alternation matches the
-# longer form first.
-_ZARR_STEM_RE = re.compile(
-    r"^Fucus_BSH_(\d{8}T\d{6})_(surface_stokes|surface|bottom)_dt\d+min_seed\d+$"
-)
+# Pattern: Fucus_BSH_YYYYMMDDTHHMMSS_{regime}_dt{N}min_seed{S}. The regime
+# is any word (`surface_stokes`, `bottom_ub49`, ...): the `_dt<N>min_seed<S>`
+# tail anchors where it ends, and the caller checks it against `regime`.
+_ZARR_STEM_RE = re.compile(r"^Fucus_BSH_(\d{8}T\d{6})_(\w+)_dt\d+min_seed\d+$")
 
 
 def parse_zarr_stem(path):
@@ -145,14 +143,10 @@ print(f"{len(parsed)} zarrs, release_doys "
 ```python
 def zarr_to_lazy_frame(path, release_doy):
     """Lazy (release_hex, target_hex, age_bin, release_doy) frame for one zarr.
-    Land-seeded particles (zero first-step displacement) NaN out lon/lat and
-    surface as INVALID_HEX_ID (-1); kept as a sentinel in both hex columns."""
+    Land-seeded particles (010's `land_seed`) NaN out lon/lat and surface as
+    INVALID_HEX_ID (-1); kept as a sentinel in both hex columns."""
     ds = xr.open_zarr(path)
-    seeded_on_land = (
-        (ds.lon.diff("obs").isel(obs=0, drop=True) == 0)
-        & (ds.lat.diff("obs").isel(obs=0, drop=True) == 0)
-    )
-    ds = ds[["lon", "lat"]].where(~seeded_on_land)
+    ds = ds[["lon", "lat"]].where(ds.land_seed == 0)
 
     ddf = hex_connectivity_dask(ds, hp, traj_dim="trajectory").rename(
         columns={"from_id": "release_hex", "to_id": "target_hex"}
