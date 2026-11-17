@@ -162,7 +162,7 @@ REGIME_LABELS = {
     "bottom": "bottom",
     "bottom_ub49": "bottom, bed friction",
 }
-# The weighting in words, appended to the map titles as on every other map
+# The weighting in words, in the map pair's suptitle as on every other map
 # figure: an 024f rate-model member keeps the stranding loss.
 weighting_label = f"{'without' if weighting == 'unweighted' else 'with'} stranding"
 assert max_age_days % age_bin_days == 0, (
@@ -625,9 +625,10 @@ for column, (norm, cmap, extend, colorbar_kwargs) in VIEWS.items():
     # the page width; the slack this leaves is measured and cut below.
     fig.set_size_inches(FIGURE_WIDTH_IN, FIGURE_WIDTH_IN)
     for ax, regime in zip(axes, regimes):
-        hex_map(gdfs[regime], column, ax, norm, cmap, title=(
-            f"{REGIME_LABELS.get(regime, regime)}, {map_horizon_days} d, {weighting_label}"
-        ))
+        hex_map(gdfs[regime], column, ax, norm, cmap, title=REGIME_LABELS.get(regime, regime))
+    # Horizon and weighting are shared by the pair: one suptitle, so the
+    # half-width panel titles stay short enough to fit.
+    fig.suptitle(f"{map_horizon_days} d, {weighting_label}")
     # One colourbar under both maps, spanning the pair. pad 0.01: the default
     # is a fraction of the grid height and leaves a blank band; aspect 40
     # (default 20): at full page width the default bar is ~9 mm thick.

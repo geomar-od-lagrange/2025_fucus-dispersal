@@ -229,8 +229,8 @@ words — `REGIME_LABELS` ("surface + Stokes drift", "bottom", "bottom, bed
 friction") plus "with stranding" (a 024f/024g member) or "without
 stranding" (unweighted): 026 dilution and median age, 026a overviews (before
 the horizon text), 029 where-stranded and 030 survival maps (regime only:
-both always carry the stranding model), 034 map pair (panel titles: regime,
-horizon, weighting), 028 / 038 / 037 as their titles
+both always carry the stranding model), 034 map pair (suptitle: horizon,
+weighting; panel titles: regime), 028 / 038 / 037 as their titles
 and column labels. Run keys and member tags stay in filenames and prints.
 
 **Print-ready figures (025–031, 033–038).** Every saved figure is one full
