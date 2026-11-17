@@ -152,9 +152,10 @@ from the [Step 0 analysis](../plans/done/bottom_beaching.md)):
 | strong-wave in-band hours (rel.); share of in-band | 1; 6.05 % | 0.88; 7.93 % |
 
 Sources: the 30 / 90 / 180 d row is `Exports/029/stranded_curve_surface_stokes_ALL_*`
-(the 2000 m file has no `_b750` suffix); seasons are `HEADLINE.md` table A
+(750 m; the 2000 m file, without the `_b750` suffix, is under
+`<outputs>/archive_pre_b750_20261117/Exports/029/`); seasons are `HEADLINE.md` table A
 (750 m) and table B (2000 m member `step_wc0p1_ts3_tcinf_tf1_tw0`); hexes
-count the features of `029_surface_stokes_ALL_*_T180d.geojson`.
+count the features of `029_surface_stokes_ALL_*_T180d.geojson` (2000 m: archived alongside).
 
 The band cuts in-band hours by a third but keeps 88 % of the strong-wave
 in-band hours, so surface stranding moves by −3 points at 180 d, the same

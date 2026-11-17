@@ -64,9 +64,18 @@ Done with existing PNGs (paper uncommitted): friction +s pair dropped;
 F together in Results "Beaching"; families regrouped; fig 23 caption fixed.
 40 figures + 3 `\missingfigure` placeholders (todonotes).
 
-Open (deferred, need runs or code):
-- S−s dilution and median age: 026 `surface_stokes` unweighted × 5 seasons
-  (job 24946209 submitted, then cancelled).
-- Season figure 1s: 035 `layout = "seasons"` (designed above, code reverted).
-- Archive of stale pre-`_b750` outputs to
-  `<output_root>/archive_pre_b750_20261117/`: not started.
+Deferred items, resumed 2026-11-17:
+- S−s dilution / median age: 026 `surface_stokes` unweighted × 5 seasons,
+  job 24946249; S−s 180 d overview: 026a, job 24946255 (review round 4).
+- Season figure 1s: 035 `layout = "seasons"` (dc02ee6), run in the session;
+  folded into the paper.
+- Archive: 3 930 files, 4.49 GB moved to
+  `<output_root>/archive_pre_b750_20261117/` (relative paths kept,
+  `MANIFEST.txt` lists source -> archive): Figures and Exports of 025, 026,
+  026a, 026b, 028, 029, 030, 033 whose member tag lacks `_b750` (2000 m band
+  `…_tf1_tw0`, pre-750 inert `…_ts3_tcinf`; 2 989 files), the dropped 0.8×
+  slowdown (`BottomSlowdown_*`, `034_areas_2019.csv`), and 941 superseded
+  executed notebooks (`notebooks_executed/`, stale tags, `034_BottomSlowdown`,
+  `034_prelim`, malformed `_6000_r6000m` names). Checked first: no paper
+  `% Source:` points at them; docs/beaching.md now points its 2000 m band
+  sources at the archive.
