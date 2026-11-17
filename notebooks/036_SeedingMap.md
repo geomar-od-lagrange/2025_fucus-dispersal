@@ -23,8 +23,8 @@ two panels on one figure:
 
 1. **Release cells by HELCOM subbasin** — each cell filled by the level-2
    subbasin of its hex under the production assignment (largest overlap
-   plus shoreward snap, the `024a` key's `helcom_subbasin`), the borders
-   between the subbasin polygons drawn.
+   plus shoreward snap, the `024a` key's `helcom_subbasin`), with `006`'s
+   subbasin borders drawn.
 2. **Land-seeded share per cell** — the share of the cell's seeded particles
    released in a land cell (010's `land_seed`; the sentinel
    `release_hex = -1` rows of the `024` counts store), from the trajectory
@@ -38,7 +38,6 @@ subbasin. Reads the data twin, the `024a` key and `land_seed` of one
 regime-year of trajectory zarrs; no Dask cluster.
 
 ```python
-import itertools
 import json
 from pathlib import Path
 
@@ -60,8 +59,8 @@ from hextraj import HexProj
 ```python tags=["parameters"]
 # Read root of the hex key and the trajectory zarrs; write root for the figure.
 output_root = "../output"
-# Read root of the data twin: the release cells, the HELCOM subbasins and the
-# BSH wet-cell coastline.
+# Read root of the data twin: the release cells and the BSH wet-cell
+# coastline.
 data_root = "../data"
 # Hex radius of the 024a key whose subbasin assignment colours the cells.
 hex_radius = 6000
@@ -87,9 +86,9 @@ extent_lat_max = 66.0
 
 ```python
 output_root = Path(output_root)
+borders_path = output_root / "SubbasinBorders" / "subbasin_borders.geojson"
 data_root = Path(data_root)
 release_cells_path = data_root / "helcom_fucus_redlist" / "fucus_release_points.geojson"
-subbasins_path = data_root / "helcom_subbasins_2022" / "HELCOM_subbasins_2022_level2.shp"
 coastline_path = data_root / "bsh_hbmnoku_static" / "coastline.geojson"
 h0_fine_path = data_root / "bsh_hbmnoku_static" / "static_file_fine" / "H0_file_fine.nc"
 zarr_dir = output_root / "Trajectories" / land_regime / str(land_release_year)
@@ -143,23 +142,12 @@ cells["subbasin"] = (
 )
 print(f"release cells: {len(cells):,} from {release_cells_path}")
 
-# Subbasin borders as the edges two HELCOM polygons share. The polygons'
-# full outlines also trace every island and skerry of the coast they were
-# digitised against, which in the Åland and Stockholm archipelagos is a
-# solid smear over the very cells the map shows; the shared edges are the
-# basin-to-basin borders alone. The one border this drops is the Kattegat's
-# open edge to the Skagerrak, which no other polygon shares.
-subbasin_outline = gpd.read_file(subbasins_path).to_crs(4326).boundary
-basin_borders = gpd.GeoSeries(
-    [
-        a.intersection(b)
-        for a, b in itertools.combinations(subbasin_outline, 2)
-        if a.intersects(b)
-    ],
-    crs="EPSG:4326",
-)
-print(f"subbasin borders: {len(basin_borders)} shared edges between "
-      f"{len(subbasin_outline)} HELCOM polygons")
+# Subbasin borders: `006`'s `subbasin_borders.geojson` (output_root),
+# continuous HELCOM level-2 borders ending on the model coastline.
+# The Kattegat's open edge to the Skagerrak borders no other subbasin and is
+# not drawn.
+basin_borders = gpd.read_file(borders_path).geometry
+print(f"subbasin borders: {len(basin_borders)} subbasin pairs (006)")
 ```
 
 # Land-seeded share per cell

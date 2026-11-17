@@ -68,7 +68,6 @@ Figures are print-ready (full page width, 300 dpi) and the per-hex shore-type
 table is exported as GeoJSON.
 
 ```python
-import itertools
 import json
 import re
 from pathlib import Path
@@ -93,8 +92,8 @@ from hextraj import HexProj
 # Read root of the hex-aggregate store (key + beaching partitions).
 output_root = "../output"
 # Read root of the data twin (the shoreline-class table, the BSH wet-cell
-# coastline the maps draw, the HELCOM subbasin polygons whose borders they
-# draw, and the Fucus release sites 010 seeds from).
+# coastline the maps draw, the HELCOM subbasin polygons whose codes it
+# places, and the Fucus release sites 010 seeds from).
 data_root = "../data"
 # Shoreline-class table (sub-segment midpoints in EPSG:3035 with a flat
 # fraction each). "" = the data twin's copy under `data_root`, exactly as 024d.
@@ -162,6 +161,7 @@ SEASON_MONTHS = {
 }
 
 output_root = Path(output_root)
+borders_path = output_root / "SubbasinBorders" / "subbasin_borders.geojson"
 data_root = Path(data_root)
 shoreclass_path = Path(
     shoreclass_path
@@ -575,12 +575,11 @@ domain_aspect = (
 # Subbasin borders, codes and key
 
 The HELCOM level-2 subbasins the per-subbasin readouts below (and 026a,
-028, 029) group by, drawn on every map as the edges two polygons share —
-the same borders as `029` and `036`. The polygons' full outlines also trace
-every island and skerry of the coast they were digitised against, which
-would smear over exactly the coastal hexes the maps are about; the shared
-edges are the basin-to-basin borders alone. The Kattegat's open edge to the
-Skagerrak, shared with no polygon, is therefore not drawn.
+028, 029) group by, drawn on every map from `006`'s
+`subbasin_borders.geojson`: the borders between adjacent subbasins,
+continuous and ending on the model coastline (docs/visualisations.md
+"Subbasin borders"). The Kattegat's open edge to the Skagerrak borders no
+other subbasin and is not drawn.
 
 On the shoreline-type map each subbasin carries its three-letter code — the
 key to 028's connectivity axes — at the polygon's `representative_point`
@@ -618,7 +617,6 @@ BOXED = {"SOU", "GRB", "KIE"}
 KEY_AT = (9.4, 65.7)
 
 subbasins = gpd.read_file(subbasins_path).to_crs(4326)
-subbasin_outline = subbasins.boundary
 basin_label = pd.DataFrame(
     {
         "code": subbasins["level_2"].map(SUBBASIN_CODE),
@@ -629,22 +627,15 @@ basin_label = pd.DataFrame(
 assert basin_label["code"].notna().all(), "subbasin without a code"
 for code, (lon, lat) in LABEL_AT.items():
     basin_label.loc[basin_label["code"] == code, ["lon", "lat"]] = lon, lat
-basin_borders = gpd.GeoSeries(
-    [
-        a.intersection(b)
-        for a, b in itertools.combinations(subbasin_outline, 2)
-        if a.intersects(b)
-    ],
-    crs="EPSG:4326",
-)
+basin_borders = gpd.read_file(borders_path).geometry
 # The named subbasins of the sidecar; id -1 is the "outside every polygon"
 # sentinel, not a subbasin.
 named_subbasins = [name for sid, name in subbasin_name.items() if sid >= 0]
 uncoded = set(named_subbasins) - set(SUBBASIN_CODE)
 assert not uncoded, f"key sidecar subbasin(s) without a code: {sorted(uncoded)}"
 key_names = sorted(named_subbasins, key=list(SUBBASIN_CODE).index)
-print(f"subbasin borders: {len(basin_borders)} shared edges between "
-      f"{len(subbasin_outline)} HELCOM polygons; {len(key_names)} subbasins in the key")
+print(f"subbasin borders: {len(basin_borders)} subbasin pairs (006); "
+      f"{len(key_names)} subbasins in the key")
 ```
 
 # Release sites

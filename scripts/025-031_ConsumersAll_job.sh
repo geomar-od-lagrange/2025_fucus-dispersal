@@ -78,6 +78,10 @@
 #   SEASONS="ALL SON" sbatch scripts/025-031_ConsumersAll_job.sh
 #   WORK_LIST=units.txt sbatch scripts/025-031_ConsumersAll_job.sh
 #
+# 033, 036, 037 and 038 are not in the matrix (037 / 038 read 026 / 028
+# exports, which the one-wave pool cannot order); a $WORK_LIST line runs them,
+# e.g. "037 - ALL <member>", "038 bottom ALL <member>", "036 - - -".
+#
 # $STAGES/$REGIMES/$SEASONS restrict the matrix to a rectangle of it. $WORK_LIST
 # names a file of work-list lines instead, for the arbitrary subset a rerun
 # needs -- the FAIL lines of a previous run's .tally are that subset:
@@ -167,6 +171,17 @@ run_one() {
               layout=regimes
               [ "${regime}" = seasons ] && layout=seasons
               args=("${season}" "${hex_radius}" "${member}" "${layout}") ;;
+        # Off the matrix, for $WORK_LIST reruns of the map figures: 033 and 036
+        # read finished stores, 037 / 038 the 026 / 028 exports, so a matrix
+        # wave could not order them.
+        033)  job=scripts/033_ShorelineTypeMap_job.sh
+              args=("${regime}" "${hex_radius}" "${member}" "${season}") ;;
+        036)  job=scripts/036_SeedingMap_job.sh
+              args=("${hex_radius}") ;;
+        037)  job=scripts/037_MedianAgeGrid_job.sh
+              args=("${season}" "${hex_radius}" "${member}") ;;
+        038)  job=scripts/038_EmissionGrid_job.sh
+              args=("${regime}" "${season}" "${member}") ;;
         *)    echo "FAIL ${stage} ${regime} ${season} ${member:-unweighted} (unknown stage)"
               return 0 ;;
     esac

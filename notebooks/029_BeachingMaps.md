@@ -62,7 +62,6 @@ Figures are print-ready (full page width, 300 dpi); the per-horizon
 where-stranded field is exported as GeoJSON and the stranding curve as CSV.
 
 ```python
-import itertools
 import json
 import re
 from pathlib import Path
@@ -87,9 +86,8 @@ from hextraj import HexProj
 # Read root of the hex-aggregate store.
 output_root = "../output"
 # Read root of the data twin: the Fucus release sites 010 seeds from (for the
-# substrate contrast), the HELCOM subbasin polygons whose borders every map
-# draws, the BSH wet-cell coastline every map draws and the shoreline-class
-# table the substrate contrast reads.
+# substrate contrast), the BSH wet-cell coastline every map draws and the
+# shoreline-class table the substrate contrast reads.
 data_root = "../data"
 # Which regime's beaching partitions to read; one regime per run.
 regime = "surface_stokes"
@@ -153,10 +151,10 @@ SEASON_MONTHS = {
 }
 
 output_root = Path(output_root)
+borders_path = output_root / "SubbasinBorders" / "subbasin_borders.geojson"
 data_root = Path(data_root)
 # The file 010 seeds from: the REDLIST cells baked by 000 (F_vesiculo != 0).
 release_points_path = data_root / "helcom_fucus_redlist" / "fucus_release_points.geojson"
-subbasins_path = data_root / "helcom_subbasins_2022" / "HELCOM_subbasins_2022_level2.shp"
 shoreclass_path = (
     data_root / "shoreclass_bsh_coastline" / "bsh_coastline_k2_flatfraction.parquet"
 )
@@ -512,27 +510,16 @@ print(f"  in {pd.unique(release_hex_of_cell).size:,} hexes; key hexes with "
 # Subbasin borders
 
 The HELCOM level-2 subbasins every per-subbasin readout below (and 026a,
-028) groups by, drawn on every map as the edges two polygons share — the
-same borders as `036`'s seeding map. The polygons' full outlines also trace
-every island and skerry of the coast they were digitised against, which
-would smear over exactly the coastal hexes the maps are about; the shared
-edges are the basin-to-basin borders alone. The Kattegat's open edge to the
-Skagerrak, shared with no polygon, is therefore not drawn. The subbasin
-codes and their key are on `033`'s shoreline-type map, the paper's
+028) groups by, drawn on every map from `006`'s `subbasin_borders.geojson`:
+the borders between adjacent subbasins, continuous and ending on the model
+coastline (docs/visualisations.md "Subbasin borders"). The Kattegat's open
+edge to the Skagerrak borders no other subbasin and is not drawn. The
+subbasin codes and their key are on `033`'s shoreline-type map, the paper's
 reference map.
 
 ```python
-subbasin_outline = gpd.read_file(subbasins_path).to_crs(4326).boundary
-basin_borders = gpd.GeoSeries(
-    [
-        a.intersection(b)
-        for a, b in itertools.combinations(subbasin_outline, 2)
-        if a.intersects(b)
-    ],
-    crs="EPSG:4326",
-)
-print(f"subbasin borders: {len(basin_borders)} shared edges between "
-      f"{len(subbasin_outline)} HELCOM polygons")
+basin_borders = gpd.read_file(borders_path).geometry
+print(f"subbasin borders: {len(basin_borders)} subbasin pairs (006)")
 ```
 
 # Where stranded, and by origin

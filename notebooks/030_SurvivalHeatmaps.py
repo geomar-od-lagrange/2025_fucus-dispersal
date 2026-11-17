@@ -59,7 +59,6 @@
 # width, 300 dpi).
 
 # %%
-import itertools
 import re
 from pathlib import Path
 
@@ -77,8 +76,7 @@ from shapely.geometry import box
 # # Parameters
 
 # %% tags=["parameters"]
-# Read root of the data twin (BSH wet-cell coastline and fine-grid H0, HELCOM
-# subbasins).
+# Read root of the data twin (BSH wet-cell coastline and fine-grid H0).
 data_root = "../data"
 output_root = "../output"
 regime = "surface_stokes"
@@ -130,6 +128,7 @@ SEASON_MONTHS = {
 
 data_root = Path(data_root)
 output_root = Path(output_root)
+borders_path = output_root / "SubbasinBorders" / "subbasin_borders.geojson"
 if season not in SEASON_MONTHS:
     raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
 season_months = SEASON_MONTHS[season]
@@ -396,24 +395,14 @@ domain_aspect = (
     (lon_max - lon_min) * np.cos(np.radians(0.5 * (lat_min + lat_max)))
 ) / (lat_max - lat_min)
 
-# Subbasin borders as the edges two HELCOM level-2 polygons share (029's
-# block): the polygon outlines trace every island of the coast they were
-# digitised against, which would smear over the hexes. Clipped to the extent,
-# as the hexes are. No codes; the reference map (033) carries them.
-subbasin_outline = (
-    gpd.read_file(data_root / "helcom_subbasins_2022" / "HELCOM_subbasins_2022_level2.shp")
-    .to_crs(4326).boundary
+# Subbasin borders: `006`'s `subbasin_borders.geojson` (output_root),
+# continuous HELCOM level-2 borders ending on the model coastline.
+# Clipped to the extent, as the hexes are. No codes; the reference map (033)
+# carries them.
+basin_borders = gpd.read_file(borders_path).geometry.clip(
+    box(lon_min, lat_min, lon_max, lat_max)
 )
-basin_borders = gpd.GeoSeries(
-    [
-        a.intersection(b)
-        for a, b in itertools.combinations(subbasin_outline, 2)
-        if a.intersects(b)
-    ],
-    crs="EPSG:4326",
-).clip(box(lon_min, lat_min, lon_max, lat_max))
-print(f"subbasin borders: {len(basin_borders)} shared edges between "
-      f"{len(subbasin_outline)} HELCOM polygons")
+print(f"subbasin borders: {len(basin_borders)} subbasin pairs (006)")
 
 # %% [markdown]
 # # Comparison grid: occupancy and surviving fraction

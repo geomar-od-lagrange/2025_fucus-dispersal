@@ -104,9 +104,9 @@ REGIME_LABELS = {
 COLUMNS = {"with stranding": member, "without stranding": "unweighted"}
 
 output_root = Path(output_root)
+borders_path = output_root / "SubbasinBorders" / "subbasin_borders.geojson"
 data_root = Path(data_root)
 export_dir = output_root / "Exports" / "026"
-subbasins_path = data_root / "helcom_subbasins_2022" / "HELCOM_subbasins_2022_level2.shp"
 
 # Print-ready output: one full text-width (180 mm) figure at 300 dpi, so it
 # lands in the manuscript at its final size (rationale in
@@ -150,8 +150,9 @@ for regime, (column, tag) in itertools.product(rows, COLUMNS.items()):
 # HBMnoku wet cells (`coastline.geojson`), merged fine-first as in 024a —
 # fine polygons, plus the coarse ones outside the fine-grid bbox — drawn minus
 # a 0.001° strip along that bbox, where the two grids' cells meet in open
-# water. Subbasin borders are the HELCOM level-2 polygons' shared edges only,
-# so their outer outlines do not draw a second coastline.
+# water. Subbasin borders: `006`'s `subbasin_borders.geojson` (output_root),
+# continuous HELCOM level-2 borders ending on the model coastline
+# (docs/visualisations.md "Subbasin borders").
 
 # %%
 domain_box = box(extent_lon_min, extent_lat_min, extent_lon_max, extent_lat_max)
@@ -177,17 +178,8 @@ coast = (
     .clip(domain_box)
 )
 
-subbasin_outline = gpd.read_file(subbasins_path).to_crs(4326).boundary
-basin_borders = gpd.GeoSeries(
-    [
-        a.intersection(b)
-        for a, b in itertools.combinations(subbasin_outline, 2)
-        if a.intersects(b)
-    ],
-    crs="EPSG:4326",
-).clip(domain_box)
-print(f"subbasin borders: {len(basin_borders)} shared edges between "
-      f"{len(subbasin_outline)} HELCOM polygons")
+basin_borders = gpd.read_file(borders_path).geometry.clip(domain_box)
+print(f"subbasin borders: {len(basin_borders)} subbasin pairs (006)")
 
 # Width/height of the extent in visually equal degrees — 1° lon at the
 # extent's mid-latitude against 1° lat.

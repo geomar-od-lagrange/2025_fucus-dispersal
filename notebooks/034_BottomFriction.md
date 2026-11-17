@@ -50,7 +50,6 @@ percentage of the released real drifters stranded at ages below `T`, from
 the 024e store at `member`, on the same release set.
 
 ```python
-import itertools
 import re
 from pathlib import Path
 
@@ -70,7 +69,7 @@ from shapely.ops import unary_union
 
 ```python tags=["parameters"]
 # Read root of the data twin (BSH static H0 for the fine-grid bbox, the BSH
-# wet-cell coastline, the HELCOM subbasins).
+# wet-cell coastline).
 data_root = "../data"
 # Read root of the hex-aggregate store; write root for figures and exports.
 output_root = "../output"
@@ -152,6 +151,7 @@ analysis_years = range(int(first_year), int(last_year or first_year) + 1)
 assert len(analysis_years), f"release_years {release_years!r} is an empty range"
 
 output_root = Path(output_root)
+borders_path = output_root / "SubbasinBorders" / "subbasin_borders.geojson"
 data_root = Path(data_root)
 store_root = output_root / "HexAggregates"
 time_horizons_days = [int(x) for x in time_horizons_days_csv.split(",") if x]
@@ -493,7 +493,7 @@ parameters (the key's bounds if all four are 0). Coastline is the outline
 of the BSH HBMnoku wet cells, merged fine-first as in 024a (fine polygons
 plus the coarse ones outside the fine bbox, minus a 0.001° strip along the
 bbox where the grids meet in open water). Subbasin borders are
-the edges two HELCOM level-2 polygons share, without codes.
+`006`'s, ending on the model coastline, without codes.
 
 ```python
 def to_hex_gdf(counts_df, key_df, released):
@@ -551,24 +551,13 @@ coast = (
     .clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
 )
 
-# Subbasin borders as the edges two HELCOM polygons share (029's block): the
-# polygon outlines trace every island of the coast they were digitised
-# against, which would smear over the hexes. Clipped to the extent, as the
-# hexes are.
-subbasin_outline = (
-    gpd.read_file(data_root / "helcom_subbasins_2022" / "HELCOM_subbasins_2022_level2.shp")
-    .to_crs(4326).boundary
+# Subbasin borders: `006`'s `subbasin_borders.geojson` (output_root),
+# continuous HELCOM level-2 borders ending on the model coastline.
+# Clipped to the extent, as the hexes are.
+basin_borders = gpd.read_file(borders_path).geometry.clip(
+    box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max)
 )
-basin_borders = gpd.GeoSeries(
-    [
-        a.intersection(b)
-        for a, b in itertools.combinations(subbasin_outline, 2)
-        if a.intersects(b)
-    ],
-    crs="EPSG:4326",
-).clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
-print(f"subbasin borders: {len(basin_borders)} shared edges between "
-      f"{len(subbasin_outline)} HELCOM polygons")
+print(f"subbasin borders: {len(basin_borders)} subbasin pairs (006)")
 
 
 def hex_map(gdf, column, ax, norm, cmap, title):

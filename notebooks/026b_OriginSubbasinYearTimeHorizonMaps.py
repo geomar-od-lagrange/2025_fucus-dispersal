@@ -58,7 +58,6 @@
 #   from the 024a key). Log colour scale.
 
 # %%
-import itertools
 import json
 import re
 import unicodedata
@@ -77,7 +76,7 @@ from shapely.geometry import box
 # # Parameters
 
 # %% tags=["parameters"]
-# Read root of the data twin (HELCOM polygons, BSH static H0).
+# Read root of the data twin (BSH static H0, wet-cell coastline).
 data_root = "../data"
 # Read root of the hex-aggregate store; write root for figures and exports.
 output_root = "../output"
@@ -151,8 +150,8 @@ assert len(analysis_years), f"release_years {release_years!r} is an empty range"
 print(f"release years in the analysis: {analysis_years[0]}–{analysis_years[-1]}")
 
 output_root = Path(output_root)
+borders_path = output_root / "SubbasinBorders" / "subbasin_borders.geojson"
 data_root = Path(data_root)
-subbasins_path = data_root / "helcom_subbasins_2022" / "HELCOM_subbasins_2022_level2.shp"
 store_root = output_root / "HexAggregates"
 time_horizons_days = [int(x) for x in time_horizons_days_csv.split(",") if x]
 assert max_age_days % age_bin_days == 0, (
@@ -457,9 +456,10 @@ COLUMN_LABEL = {
 # the cell edges are stored rounded to 1e-4°, and an exact union leaves a
 # sliver outline along the nest seam.
 #
-# Subbasin borders are the HELCOM level-2 polygons' shared edges only, so
-# their outer outlines do not draw a second coastline; drawn over the hexes
-# and under the coastline.
+# Subbasin borders: `006`'s `subbasin_borders.geojson` (output_root),
+# continuous HELCOM level-2 borders ending on the model coastline
+# (docs/visualisations.md "Subbasin borders"); drawn over the hexes and
+# under the coastline.
 
 # %%
 if any((extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max)):
@@ -492,17 +492,10 @@ coast = (
     .boundary.clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
 )
 
-subbasin_outline = gpd.read_file(subbasins_path).to_crs(4326).boundary
-basin_borders = gpd.GeoSeries(
-    [
-        a.intersection(b)
-        for a, b in itertools.combinations(subbasin_outline, 2)
-        if a.intersects(b)
-    ],
-    crs="EPSG:4326",
-).clip(box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max))
-print(f"subbasin borders: {len(basin_borders)} shared edges between "
-      f"{len(subbasin_outline)} HELCOM polygons")
+basin_borders = gpd.read_file(borders_path).geometry.clip(
+    box(domain_lon_min, domain_lat_min, domain_lon_max, domain_lat_max)
+)
+print(f"subbasin borders: {len(basin_borders)} subbasin pairs (006)")
 
 # Width/height of the extent in visually equal degrees — 1° lon at the
 # extent's mid-latitude against 1° lat.

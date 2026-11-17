@@ -31,7 +31,6 @@ The figure is written print-ready (full page width, 300 dpi) and the same
 per-hex quantiles are exported as GeoJSON for collaborators.
 
 ```python
-import itertools
 import re
 from pathlib import Path
 
@@ -47,8 +46,7 @@ from shapely.geometry import box
 # Parameters
 
 ```python tags=["parameters"]
-# Read root of the data twin (HELCOM polygons, BSH wet-cell coastline and
-# fine-grid H0).
+# Read root of the data twin (BSH wet-cell coastline and fine-grid H0).
 data_root = "../data"
 # Read root of the hex-aggregate store; write root for figures and exports.
 output_root = "../output"
@@ -94,8 +92,8 @@ SEASON_MONTHS = {
 }
 
 data_root = Path(data_root)
-subbasins_path = data_root / "helcom_subbasins_2022" / "HELCOM_subbasins_2022_level2.shp"
 output_root = Path(output_root)
+borders_path = output_root / "SubbasinBorders" / "subbasin_borders.geojson"
 if season not in SEASON_MONTHS:
     raise ValueError(f"season {season!r} not one of {sorted(SEASON_MONTHS)}")
 season_months = SEASON_MONTHS[season]
@@ -270,9 +268,10 @@ centres), unioned on a 1e-3° precision grid — the cell edges are stored
 rounded to 1e-4°, and an exact union leaves a sliver outline along the
 nest seam.
 
-Subbasin borders are the HELCOM level-2 polygons' shared edges only, so
-their outer outlines do not draw a second coastline; drawn over the hexes
-and under the coastline.
+Subbasin borders: `006`'s `subbasin_borders.geojson` (output_root),
+continuous HELCOM level-2 borders ending on the model coastline
+(docs/visualisations.md "Subbasin borders"); drawn over the hexes and
+under the coastline.
 
 ```python
 h0_fine = xr.open_dataset(
@@ -297,17 +296,10 @@ coast_baltic = (
     .boundary.clip(box(extent_lon_min, extent_lat_min, extent_lon_max, extent_lat_max))
 )
 
-subbasin_outline = gpd.read_file(subbasins_path).to_crs(4326).boundary
-basin_borders = gpd.GeoSeries(
-    [
-        a.intersection(b)
-        for a, b in itertools.combinations(subbasin_outline, 2)
-        if a.intersects(b)
-    ],
-    crs="EPSG:4326",
-).clip(box(extent_lon_min, extent_lat_min, extent_lon_max, extent_lat_max))
-print(f"subbasin borders: {len(basin_borders)} shared edges between "
-      f"{len(subbasin_outline)} HELCOM polygons")
+basin_borders = gpd.read_file(borders_path).geometry.clip(
+    box(extent_lon_min, extent_lat_min, extent_lon_max, extent_lat_max)
+)
+print(f"subbasin borders: {len(basin_borders)} subbasin pairs (006)")
 
 baltic_extent = [extent_lon_min, extent_lon_max, extent_lat_min, extent_lat_max]
 # Aspect ratio that keeps 1° lon at lat_mean visually equal to 1° lat.
