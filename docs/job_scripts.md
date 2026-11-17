@@ -35,8 +35,8 @@ output_root/Figures/
   029/  <view>_<regime>_r<radius>m_<season>_<member>.png
   030/  {SurvivalHeatmaps,DriftingFractionCurve}_<regime>_r<radius>m_<season>_<member>.png
   031/  BeachingSweep{Stats,Maps}_<regime>_r<radius>m_<season>.png
-  034/  BottomFriction_length_<season>_r<radius>m.png
-        BottomFriction_map_<season>_T<h>d_r<radius>m_<percentage|dilution>.png
+  034/  BottomFriction_length_<season>_r<radius>m_<weighting>.png
+        BottomFriction_map_<season>_T<h>d_r<radius>m_<weighting>_<percentage|dilution>.png
   035/  AreaTimeSeries_<season>_r<radius>m.png
   036/  {SeedingMap,LandSeededShare}_r<radius>m.png
 ```
@@ -462,7 +462,7 @@ away.
 | `028_SubbasinConnectivityMatrix_job.sh` | `[regime] [hex_radius] [season] [member]` — empty `member` reads the unweighted 024c store, a tag reads 024g plus the same member's 024e store (stranded column) |
 | `029_BeachingMaps_job.sh`, `030_SurvivalHeatmaps_job.sh` | `[regime] [hex_radius] [member] [season]` |
 | `031_BeachingSweep_job.sh` | `[regime] [hex_radius] [members_csv] [labels_csv] [baseline_member] [season]` |
-| `034_BottomFriction_job.sh` | `[season] [hex_radius] [member]` — `bottom` vs `bottom_ub49` from the 024 counts store and the production 024e stores, the releases both hold |
+| `034_BottomFriction_job.sh` | `[season] [hex_radius] [member] [weighting]` — `bottom` vs `bottom_ub49` on the releases both hold; `weighting` `unweighted` (024 counts) or a 024f tag (survocc); stranded % from the 024e `member` |
 | `035_AreaTimeSeries_job.sh` | `[season] [hex_radius] [member]` — draws `surface_stokes` and `bottom`, each at 026 tag `member` (default the production member) and with its 029 stranding curve |
 | `036_SeedingMap_job.sh` | `[hex_radius]` — no season or member; also reads `land_seed` of one regime-year of trajectory zarrs (notebook defaults `surface_stokes` 2019). Not in the consumer driver: the release set does not change between runs |
 
@@ -493,7 +493,7 @@ papermill contract and this driver only decides which combinations run:
 | 028 | unweighted + production member × 3 regimes × 5 seasons | 30 |
 | 029, 030 | production member × 3 regimes × 5 seasons | 30 |
 | 031 | 3 regimes × 5 seasons, `members_csv` = every 024e member of the regime on disk | 15 |
-| 034 | bottom vs bottom_ub49 in one figure × 5 seasons | 5 |
+| 034 | bottom vs bottom_ub49 in one figure × 5 seasons × {unweighted, production member} | 10 |
 | 035 | surface_stokes, bottom and bottom_ub49 in one figure × 5 seasons, second wave | 5 |
 
 The units run as one flat `xargs` pool with no ordering among them, except

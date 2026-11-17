@@ -987,8 +987,15 @@ titles use plain labels ("bottom", "bottom, bed friction") via
 `REGIME_LABELS`. One season of `release_years` pooled, as the other
 consumers, but **only the releases both regimes hold**: per year the common
 in-season release doys (a release lost on one side is dropped from both and
-printed). Parquet only (024 counts + 024e production `member` + 024a key),
-ages `[0, max_age_days)`.
+printed). Parquet only (024 counts + 024e production `member` + 024a key,
+plus 024f survocc when weighted), ages `[0, max_age_days)`.
+
+- **Weighting** — parameter `weighting`, as 026: `"unweighted"` maps the
+  counts store's `n_obs` (friction's effect on transport alone),
+  a 024f member tag maps its survival-weighted `surv` (transport plus the
+  stranding each regime sees), the released denominator from 024f's `occ`
+  at age bin 0. Both run per season; every area, CSV and figure name carries
+  the tag.
 
 - **Stranded share** — `100·Σw[beach_hex ≥ 0 & beach_age_bin < T/age_bin_days] / Σw`
   (029's definition) per regime at `time_horizons_days`, pooled and per
@@ -1000,9 +1007,9 @@ ages `[0, max_age_days)`.
 - **Footprint table and CSV** — the area holding `q` (default 0.9 only, as
   in 026: the 0.5 area is dominated by particles stalling in a few coastal
   hexes) of the particle-time accumulated by `T` (cumulative `[0, T)`, as in
-  026): hexes ranked by `n_obs / water_area_m2` descending, zero-water hexes
+  026): hexes ranked by `weight / water_area_m2` descending, zero-water hexes
   first at zero area, the crossing hex taken fractionally; `length_km =
-  √area_km2`. `Exports/034/034_areas_<season>_r<radius>m.csv` carries
+  √area_km2`. `Exports/034/034_areas_<season>_r<radius>m_<weighting>.csv` carries
   `regime, scope, horizon_days, q, area_km2, length_km` and the
   friction-over-reference area and length ratios, `scope` = `pooled` or a
   release year. Computed notebook-locally rather than read from 026's area
@@ -1022,7 +1029,7 @@ ages `[0, max_age_days)`.
   The height is a tall seed with the maps' vertical slack measured and cut
   once. The validation cell prints the particle-time the extent cuts off.
 
-`output_root/Figures/034/BottomFriction_{length_<season>,map_<season>_T<h>d}_r<radius>m[_<column>].png`,
+`output_root/Figures/034/BottomFriction_{length_<season>,map_<season>_T<h>d}_r<radius>m_<weighting>[_<column>].png`,
 180 mm × 300 dpi as above.
 
 ## Notebook 035 — Area time series (special case)

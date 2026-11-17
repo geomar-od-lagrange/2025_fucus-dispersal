@@ -31,11 +31,11 @@
 #   028  unweighted (024c) and production member (024g)   2 x 3 x 5     30
 #   029, 030  production member                           2 x 3 x 5     30
 #   031  every 024e member of the regime on disk          1 x 3 x 5     15
-#   034  bottom vs bottom_ub49 in one figure                  1 x 5      5
+#   034  bottom vs bottom_ub49, unweighted and weighted       2 x 5     10
 #   035  surface_stokes, bottom, bottom_ub49 in one figure
 #        (026's, 029's CSVs)                                  1 x 5      5
 #                                                                     ----
-#                                                                      160
+#                                                                      165
 #
 # Every stage honours $REGIMES: a regime-specific stage runs only for the
 # regimes listed, 035 when any regime is (it draws all three), 034
@@ -159,7 +159,8 @@ run_one() {
               args=("${regime}" "${hex_radius}" "$(beaching_members_csv "${regime}")" "" \
                     "${production_member}" "${season}") ;;
         034)  job=scripts/034_BottomFriction_job.sh
-              args=("${season}" "${hex_radius}" "${production_member}") ;;
+              # member column = the 034 weighting: "-" (unweighted) or a 024f tag.
+              args=("${season}" "${hex_radius}" "${production_member}" "${member:-unweighted}") ;;
         035)  job=scripts/035_AreaTimeSeries_job.sh
               args=("${season}" "${hex_radius}" "${member}") ;;
         *)    echo "FAIL ${stage} ${regime} ${season} ${member:-unweighted} (unknown stage)"
@@ -276,7 +277,9 @@ list_work() {
                         > /dev/null || continue
                 fi
                 for season in ${seasons}; do
+                    # Unweighted (transport only) and survival-weighted.
                     echo "034 bottom_ub49 ${season} -"
+                    echo "034 bottom_ub49 ${season} ${production_member}"
                 done ;;
             035)
                 # Every regime in one figure, each at the production member's

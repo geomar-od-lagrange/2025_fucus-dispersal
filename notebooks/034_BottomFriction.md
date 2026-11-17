@@ -24,12 +24,20 @@ docs/bottom_friction.md), pooled over one release season of the
 `release_years`, as the other consumers pool. Only the releases present in
 **both** regimes enter (per year, the common release doys), so the two
 sides always describe the same release set. Reads the 024 counts
-partitions, the 024a key and the 024e beaching partitions of one rate-model
-member; parquet only, no Dask.
+partitions (the common release set, and the occupancy when unweighted), the
+024f survocc partitions when `weighting` names a rate-model member, the
+024a key and the 024e beaching partitions of one rate-model member; parquet
+only, no Dask.
+
+**Weighting**, as 026: `"unweighted"` maps the counts store's `n_obs`, a
+024f member tag maps its survival-weighted `surv` (each sample weighted by
+its un-beached fraction `exp(−A)`, docs/survival_occupancy.md). Either is
+called `weight` below. Unweighted isolates friction's effect on transport;
+weighted adds the stranding each regime sees.
 
 **Footprint metric** (the R1 area of plans/done/horizons_and_weighting.md D6):
 for each cumulative elapsed-time horizon `T` (every `age_bin` whose window
-starts before `T`), rank target hexes by density `n_obs / water_area_m2`,
+starts before `T`), rank target hexes by density `weight / water_area_m2`,
 descending, with zero-water hexes first at zero area; take the cumulative
 share of particle-time; the area holding a share `q` is the water area
 summed up to the crossing hex, the crossing hex taken fractionally (a 6 km
@@ -75,6 +83,10 @@ regime_var = "bottom_ub49"
 # 024e rate-model member of the stranded-share table, the same for both
 # regimes (docs/beaching.md).
 member = "step_wc0p1_ts3_tcinf_tf1_tw0_b750"
+# Weighting of the areas and maps: "unweighted" reads the 024 counts store
+# (n_obs); a 024f rate-model member tag reads that member's survocc store
+# (survival-weighted surv). Opaque — never parsed; tags every output name.
+weighting = "unweighted"
 # Release season: DJF, MAM, JJA, SON or ALL (every month).
 season = "ALL"
 # Release years pooled: "first-last" (inclusive) or one year ("2019").
@@ -150,6 +162,8 @@ REGIME_LABELS = {
     "bottom": "bottom",
     "bottom_ub49": "bottom, bed friction",
 }
+# Plain-language weighting for the titles; the tag stays in filenames.
+weighting_label = "unweighted" if weighting == "unweighted" else "survival-weighted"
 assert max_age_days % age_bin_days == 0, (
     f"max_age_days {max_age_days} d is not a multiple of age_bin_days {age_bin_days} d"
 )
@@ -298,32 +312,52 @@ for regime, parts in partitions.items():
     reduced = []
     released = {}
     for year in years:
-        df = pd.read_parquet(
-            parts[year],
-            columns=["release_hex", "target_hex", "age_bin", "n_obs"],
-            filters=[
-                ("release_doy", "in", common_doys[year]),
-                ("age_bin", "<", n_age_bins),
-            ],
-        )
-        valid = (df["release_hex"] >= 0) & (df["target_hex"] >= 0)
-        released[year] = float(
-            df.loc[(df["age_bin"] == 0) & (df["release_hex"] >= 0), "n_obs"].sum()
-        )
+        filters = [("release_doy", "in", common_doys[year]), ("age_bin", "<", n_age_bins)]
+        if weighting == "unweighted":
+            df = pd.read_parquet(
+                parts[year], columns=["release_hex", "target_hex", "age_bin", "n_obs"],
+                filters=filters,
+            )
+            valid = (df["release_hex"] >= 0) & (df["target_hex"] >= 0)
+            released[year] = float(
+                df.loc[(df["age_bin"] == 0) & (df["release_hex"] >= 0), "n_obs"].sum()
+            )
+            df = df.rename(columns={"n_obs": "weight"})
+            source = parts[year].name
+        else:
+            # Monthly 024f partitions of the year; the season's months only.
+            months = sorted({d.month for d in pd.to_datetime(
+                [f"{year}-{doy:03d}" for doy in common_doys[year]], format="%Y-%j")})
+            files = [
+                store_root
+                / f"HexAgg_survocc_r{hex_radius}m_{regime}_{year}_m{m:02d}_{weighting}.parquet"
+                for m in months
+            ]
+            df = pd.concat(
+                [pd.read_parquet(f, columns=["target_hex", "age_bin", "surv", "occ"],
+                                 filters=filters) for f in files],
+                ignore_index=True,
+            )
+            # 024f holds water-seeded drifters only; age-bin-0 occupancy is the
+            # released particle-time, sentinel targets included (as 026).
+            released[year] = float(df.loc[df["age_bin"] == 0, "occ"].sum())
+            df = df.drop(columns="occ").rename(columns={"surv": "weight"})
+            valid = df["target_hex"] >= 0
+            source = f"{len(files)} survocc partitions of {regime} {year}"
         reduced.append(
-            df[valid].groupby(["age_bin", "target_hex"], as_index=False)["n_obs"].sum()
+            df[valid].groupby(["age_bin", "target_hex"], as_index=False)["weight"].sum()
             .assign(release_year=year)
         )
         print(
-            f"{parts[year].name}: {len(df):,} rows, sentinel (-1) share of n_obs "
-            f"{100 * df.loc[~valid, 'n_obs'].sum() / df['n_obs'].sum():.2f} %"
+            f"{source}: {len(df):,} rows, sentinel (-1) share of weight "
+            f"{100 * df.loc[~valid, 'weight'].sum() / df['weight'].sum():.2f} %"
         )
         del df, valid
     counts[regime] = pd.concat(reduced, ignore_index=True)
     released_per_bin[regime] = pd.Series(released)
     print(
         f"{regime}: {released_per_bin[regime].sum() / (age_bin_days * 24):,.0f} "
-        f"water-seeded drifters released over {years}"
+        f"water-seeded drifters released over {years}, weighting {weighting}"
     )
 ```
 
@@ -337,14 +371,14 @@ the density ranking is still "smallest area first". `scope` is "pooled"
 (every year) or one release year.
 
 ```python
-def area_to_share(n_obs, water_area_m2, q):
-    """Smallest water area (m²) holding a share ``q`` of ``n_obs``, hexes
-    ranked by ``n_obs / water_area_m2`` descending (zero-water hexes first)
+def area_to_share(weight, water_area_m2, q):
+    """Smallest water area (m²) holding a share ``q`` of ``weight``, hexes
+    ranked by ``weight / water_area_m2`` descending (zero-water hexes first)
     and the crossing hex counted by the fraction of it the share needs."""
-    density = np.full_like(n_obs, np.inf)
-    np.divide(n_obs, water_area_m2, out=density, where=water_area_m2 > 0)
+    density = np.full_like(weight, np.inf)
+    np.divide(weight, water_area_m2, out=density, where=water_area_m2 > 0)
     order = np.argsort(-density, kind="stable")
-    w = n_obs[order] / n_obs.sum()
+    w = weight[order] / weight.sum()
     a = water_area_m2[order]
     share_after = np.cumsum(w)
     # Clamp: at q = 1 rounding can leave the last cumulative share just short.
@@ -359,7 +393,7 @@ for regime, c in counts.items():
     for scope in ["pooled", *years]:
         cs = c if scope == "pooled" else c[c["release_year"] == scope]
         for h in time_horizons_days:
-            per_hex = cs[cs["age_bin"] * age_bin_days < h].groupby("target_hex")["n_obs"].sum()
+            per_hex = cs[cs["age_bin"] * age_bin_days < h].groupby("target_hex")["weight"].sum()
             area = water_area.reindex(per_hex.index).to_numpy(dtype=float)
             assert np.isfinite(area).all(), "target hexes missing from the key"
             for q in quantiles:
@@ -376,7 +410,7 @@ areas = areas.merge(ref, on=["scope", "horizon_days", "q"], suffixes=("", "_ref"
 areas["area_ratio_to_ref"] = areas["area_km2"] / areas.pop("area_km2_ref")
 areas["length_ratio_to_ref"] = areas["length_km"] / areas.pop("length_km_ref")
 
-csv_path = export_dir / f"034_areas_{season}_r{hex_radius}m.csv"
+csv_path = export_dir / f"034_areas_{season}_r{hex_radius}m_{weighting}.csv"
 areas.to_csv(csv_path, index=False, float_format="%.6g")
 print(f"wrote {csv_path}")
 pooled = areas[areas["scope"] == "pooled"]
@@ -436,10 +470,10 @@ for ax, q in zip(axes.flat, quantiles):
     ax.set_title(
         f"{REGIME_LABELS.get(regime_var, regime_var)} / "
         f"{REGIME_LABELS.get(regime_ref, regime_ref)}, "
-        f"area holding {100 * q:g} % of particle-time"
+        f"area holding {100 * q:g} % of particle-time ({weighting_label})"
     )
     ax.set_xticks(time_horizons_days)
-fig_path = figure_dir / f"BottomFriction_length_{season}_r{hex_radius}m.png"
+fig_path = figure_dir / f"BottomFriction_length_{season}_r{hex_radius}m_{weighting}.png"
 fig.savefig(fig_path, dpi=FIGURE_DPI)
 print(f"wrote {fig_path}")
 plt.show()
@@ -468,15 +502,15 @@ def to_hex_gdf(counts_df, key_df, released):
     """Per-target-hex relative density as a GeoDataFrame; ``released`` is
     the released particle-time (samples) over the same ages."""
     gdf = (
-        counts_df.groupby("target_hex", as_index=False)["n_obs"].sum()
+        counts_df.groupby("target_hex", as_index=False)["weight"].sum()
         .merge(
             key_df[["hex_id", "geometry", "area_m2", "water_area_m2"]],
             left_on="target_hex", right_on="hex_id",
         )
         .pipe(gpd.GeoDataFrame, geometry="geometry", crs="EPSG:4326")
     )
-    gdf["percentage"] = 100 * gdf["n_obs"] / gdf["n_obs"].sum()
-    gdf["dilution"] = gdf["n_obs"] / released / (
+    gdf["percentage"] = 100 * gdf["weight"] / gdf["weight"].sum()
+    gdf["dilution"] = gdf["weight"] / released / (
         gdf["water_area_m2"].where(
             (gdf["water_area_m2"] > 0)
             & (gdf["water_area_m2"] >= dilution_min_water_fraction * gdf["area_m2"])
@@ -579,7 +613,7 @@ gdfs = {
 for regime, g in gdfs.items():
     print(
         f"{regime}: remaining / released particle-time "
-        f"{g['n_obs'].sum() / released_map[regime]:.4f}"
+        f"{g['weight'].sum() / released_map[regime]:.4f}"
     )
 both = pd.concat(gdfs.values())
 for regime, g in gdfs.items():
@@ -604,7 +638,7 @@ for column, (norm, cmap, extend, colorbar_kwargs) in VIEWS.items():
     # the page width; the slack this leaves is measured and cut below.
     fig.set_size_inches(FIGURE_WIDTH_IN, FIGURE_WIDTH_IN)
     for ax, regime in zip(axes, regimes):
-        hex_map(gdfs[regime], column, ax, norm, cmap, title=f"{REGIME_LABELS.get(regime, regime)}, {map_horizon_days} d")
+        hex_map(gdfs[regime], column, ax, norm, cmap, title=f"{REGIME_LABELS.get(regime, regime)}, {map_horizon_days} d, {weighting_label}")
     # One colourbar under both maps, spanning the pair. pad 0.01: the default
     # is a fraction of the grid height and leaves a blank band; aspect 40
     # (default 20): at full page width the default bar is ~9 mm thick.
@@ -631,7 +665,7 @@ for column, (norm, cmap, extend, colorbar_kwargs) in VIEWS.items():
           f"{(cell.height - drawn.height) * fig.get_size_inches()[1] * 25.4:.1f} mm")
     fig_path = (
         figure_dir
-        / f"BottomFriction_map_{season}_T{map_horizon_days}d_r{hex_radius}m_{column}.png"
+        / f"BottomFriction_map_{season}_T{map_horizon_days}d_r{hex_radius}m_{weighting}_{column}.png"
     )
     fig.savefig(fig_path, dpi=FIGURE_DPI)
     print(f"wrote {fig_path}")
@@ -826,7 +860,7 @@ for regime, g in gdfs.items():
     )
     print(
         f"{regime}: {len(g):,} occupied hexes at {map_horizon_days} d, "
-        f"sum(n_obs)={int(g['n_obs'].sum()):,}, "
+        f"sum(weight)={g['weight'].sum():,.0f}, "
         f"top-10 hexes hold {g['percentage'].nlargest(10).sum():.2f} %, "
         f"outside the map extent {g.loc[outside, 'percentage'].sum():.3f} %"
     )
