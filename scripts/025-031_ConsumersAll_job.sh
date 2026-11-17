@@ -33,9 +33,9 @@
 #   031  every 024e member of the regime on disk          1 x 3 x 5     15
 #   034  bottom vs bottom_ub49, unweighted and weighted       2 x 5     10
 #   035  surface_stokes, bottom, bottom_ub49 in one figure
-#        (026's, 029's CSVs)                                  1 x 5      5
+#        (026's, 029's CSVs) + the season figure          1 x 5 + 1  6
 #                                                                     ----
-#                                                                      165
+#                                                                      166
 #
 # Every stage honours $REGIMES: a regime-specific stage runs only for the
 # regimes listed, 035 when any regime is (it draws all three), 034
@@ -162,7 +162,11 @@ run_one() {
               # member column = the 034 weighting: "-" (unweighted) or a 024f tag.
               args=("${season}" "${hex_radius}" "${production_member}" "${member:-unweighted}") ;;
         035)  job=scripts/035_AreaTimeSeries_job.sh
-              args=("${season}" "${hex_radius}" "${member}") ;;
+              # The regime column carries the 035 layout: "seasons" draws the
+              # season figure, anything else ("all") the per-season one.
+              layout=regimes
+              [ "${regime}" = seasons ] && layout=seasons
+              args=("${season}" "${hex_radius}" "${member}" "${layout}") ;;
         *)    echo "FAIL ${stage} ${regime} ${season} ${member:-unweighted} (unknown stage)"
               return 0 ;;
     esac
@@ -288,7 +292,9 @@ list_work() {
                     || has_regime bottom_ub49 || continue
                 for season in ${seasons}; do
                     echo "035 all ${season} ${production_member}"
-                done ;;
+                done
+                # The season figure reads every season's CSVs; one unit.
+                echo "035 seasons ALL ${production_member}" ;;
             *)  echo "${stage} ? ? -" ;;
         esac
     done

@@ -38,6 +38,7 @@ output_root/Figures/
   034/  BottomFriction_length_<season>_r<radius>m_<weighting>.png
         BottomFriction_map_<season>_T<h>d_r<radius>m_<weighting>_<percentage|dilution>.png
   035/  AreaTimeSeries_<season>_r<radius>m.png
+        AreaTimeSeries_seasons_r<radius>m.png
   036/  {SeedingMap,LandSeededShare}_r<radius>m.png
 ```
 
@@ -463,7 +464,7 @@ away.
 | `029_BeachingMaps_job.sh`, `030_SurvivalHeatmaps_job.sh` | `[regime] [hex_radius] [member] [season]` |
 | `031_BeachingSweep_job.sh` | `[regime] [hex_radius] [members_csv] [labels_csv] [baseline_member] [season]` |
 | `034_BottomFriction_job.sh` | `[season] [hex_radius] [member] [weighting]` — `bottom` vs `bottom_ub49` on the releases both hold; `weighting` `unweighted` (024 counts) or a 024f tag (survocc); stranded % from the 024e `member` |
-| `035_AreaTimeSeries_job.sh` | `[season] [hex_radius] [member]` — draws `surface_stokes`, `bottom` and `bottom_ub49`, each at 026 tag `member` (default the production member) and with its 029 stranding curve |
+| `035_AreaTimeSeries_job.sh` | `[season] [hex_radius] [member] [layout]` — draws `surface_stokes`, `bottom` and `bottom_ub49`, each at 026 tag `member` (default the production member) and with its 029 stranding curve; `layout` `regimes` (default, one season) or `seasons` (every season, `season` ignored); executed notebook `035_AreaTimeSeries_<layout>_<season>_r<radius>m.ipynb` |
 | `036_SeedingMap_job.sh` | `[hex_radius]` — no season or member; also reads `land_seed` of one regime-year of trajectory zarrs (notebook defaults `surface_stokes` 2019). Not in the consumer driver: the release set does not change between runs |
 
 Every default is `regime=surface_stokes`, `hex_radius=6000`. `age_bin_days`,
@@ -494,7 +495,7 @@ papermill contract and this driver only decides which combinations run:
 | 029, 030 | production member × 3 regimes × 5 seasons | 30 |
 | 031 | 3 regimes × 5 seasons, `members_csv` = every 024e member of the regime on disk | 15 |
 | 034 | bottom vs bottom_ub49 in one figure × 5 seasons × {unweighted, production member} | 10 |
-| 035 | surface_stokes, bottom and bottom_ub49 in one figure × 5 seasons, second wave | 5 |
+| 035 | surface_stokes, bottom and bottom_ub49 in one figure × 5 seasons, plus the season figure (unit `035 seasons ALL`), second wave | 6 |
 
 The units run as one flat `xargs` pool with no ordering among them, except
 035: it reads the 026 area CSVs and 029 stranding curves of every regime, so
