@@ -1046,6 +1046,7 @@ no parquet; it runs after 026 (every regime it draws) and 029
 | `regimes_csv`, `tags_csv` | `surface_stokes,bottom,bottom_ub49`, the production member for each | one 026 weighting tag per regime, position by position (D3) |
 | `stranded_member` | `<production member>` | the 029 member whose per-regime stranding curves are panel (a); a regime's missing curve is printed and left out |
 | `season` | `ALL` | one release season per figure |
+| `layout` | `regimes` | `regimes`: the figure below for `season`; `seasons`: the season figure (`season` ignored) |
 | `area_quantile` | 0.9 | must be a `q` the CSV holds, else it raises |
 | `hex_radius` | 6000 | labels the figure only; the CSV names carry no radius |
 
@@ -1065,6 +1066,16 @@ no parquet; it runs after 026 (every regime it draws) and 029
   markers (one per exported horizon), the per-release-year min–max a band in
   the same colour at `alpha=0.3`. The pooled area can sit outside the band: it
   ranks the summed weights, which spread over more hexes than any one year's.
+- **Season figure** (`layout = "seasons"`,
+  `Figures/035/AreaTimeSeries_seasons_r<radius>m.png`, 180 mm square): one
+  row per regime (`REGIME_LABELS` in the y label), (left) stranded % against
+  age and (right) √area holding `q` against horizon, one line per release
+  season (DJF, MAM, JJA, SON in default-cycle order), one legend in the empty
+  lower right of the top-right panel. Lines only: four interannual bands per
+  panel hide the lines; the range is in the regimes figure and HEADLINE
+  tables. y from zero, rows share each column's range. Considered a separate
+  notebook; rejected, it would copy the CSV reading for one regrouping of
+  the same inputs.
 - **Missing export** — a regime whose area CSV is absent is printed as
   `MISSING:` and left out (a one-regime interim still draws); no area CSV at
   all raises, and so does a missing stranding curve (panel (a) would

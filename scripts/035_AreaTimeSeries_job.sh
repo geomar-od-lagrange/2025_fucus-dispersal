@@ -25,19 +25,23 @@ set -euo pipefail
 season="${1:-ALL}"
 hex_radius="${2:-6000}"
 member="${3:-step_wc0p1_ts3_tcinf_tf1_tw0_b750}"
+# "regimes" (one season, one line per regime) or "seasons" (the four release
+# seasons as lines, one row per regime; season is then ignored).
+layout="${4:-regimes}"
 output_root=/gxfs_work/geomar/smomw122/2025_fucus_dispersal_outputs
 
 mkdir -p notebooks_executed/Visualisations/
 
 pixi run papermill --cwd notebooks/ \
     notebooks/035_AreaTimeSeries.ipynb \
-    notebooks_executed/Visualisations/035_AreaTimeSeries_${season}_r${hex_radius}m.ipynb \
+    notebooks_executed/Visualisations/035_AreaTimeSeries_${layout}_${season}_r${hex_radius}m.ipynb \
     -p output_root ${output_root} \
     -p hex_radius ${hex_radius} \
     -r regimes_csv "surface_stokes,bottom,bottom_ub49" \
     -r tags_csv "${member},${member},${member}" \
     -r stranded_member ${member} \
     -r season ${season} \
+    -r layout ${layout} \
     -k python
 
 # The job status must be papermill's, not the accounting tool's.
