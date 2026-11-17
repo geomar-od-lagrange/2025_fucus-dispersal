@@ -1,6 +1,6 @@
 # Visualisations: per-plot rationale
 
-Why each notebook in `020`–`036` shows what it shows, and where
+Why each notebook in `020`–`038` shows what it shows, and where
 styling overrides earn their deviation from
 [../AGENTS.md](../AGENTS.md)'s plotting rules. AGENTS.md states the
 **rules** (no `cmap=`, no `figsize=`, no `color=` literals); this doc
@@ -29,6 +29,8 @@ listed here should be dropped.
 | 034 | Bed-friction comparison | Two regimes (`bottom` vs `bottom_ub49`) + season + radius | Area / √area holding 90 % of particle-time at 30/60/90/180 d, `release_years` pooled and per year · √area ratio friction / no friction vs. horizon with interannual band · side-by-side map pair at 90 d · stranded % table (production 024e member) |
 | 035 | Stranding + area time series | Overlaid (one line per regime, each at its 026 weighting tag) + season | Three stacked panels vs. age / horizon, every age-bin edge: stranded % (029's CSV per regime) · area · √area holding 90 % of particle-time (026's CSVs); pooled line + per-year min–max band |
 | 036 | Seeding map | Regime-free (one radius) | The 872 release cells by HELCOM subbasin · land-seeded share per cell |
+| 037 | Median-age grid | Regimes as rows + season | Median particle age per hex, with \| without stranding, from 026's GeoJSONs |
+| 038 | Emission-fraction grid | Per-run (regime + season) | 2×2: with \| without stranding × age < 30 \| < 180 d, from 028's CSVs |
 
 ## Cross-cutting choices
 
@@ -227,10 +229,11 @@ words — `REGIME_LABELS` ("surface + Stokes drift", "bottom", "bottom, bed
 friction") plus "with stranding" (a 024f/024g member) or "without
 stranding" (unweighted): 026 dilution and median age, 026a overviews (before
 the horizon text), 029 where-stranded and 030 survival maps (regime only:
-both always carry the stranding model), 028 / 038 / 037 as their titles
+both always carry the stranding model), 034 map pair (panel titles: regime,
+horizon, weighting), 028 / 038 / 037 as their titles
 and column labels. Run keys and member tags stay in filenames and prints.
 
-**Print-ready figures (025–031, 033–036).** Every saved figure is one full
+**Print-ready figures (025–031, 033–038).** Every saved figure is one full
 text-width (180 mm) figure at 300 dpi: `fig.set_size_inches(180/25.4, h)`
 + `savefig(dpi=300)` ⇒ 2125 px wide. Deliberate break from the AGENTS.md
 "no figsize/dpi" rule: these panels are the manuscript figures.
@@ -241,7 +244,7 @@ parameters: the manuscript's text width is not a per-run knob, and the
 inline display size in an executed notebook is irrelevant to the PNG.
 Nothing mutates `mpl.rcParams`.
 
-**Map extent (025–036).** Every hex map shares one extent, 9–30.7 °E,
+**Map extent (025–037).** Every hex map shares one extent, 9–30.7 °E,
 53–66 °N (the Baltic with the Belt Sea and Kattegat, North Sea and
 Skagerrak cropped), as the four `extent_lon_min/max`, `extent_lat_min/max`
 parameters (all 0 ⇒ the 024a key's full bounds): the authors want one zoom
@@ -295,18 +298,43 @@ DPI. Placement by family:
   thicker for a half-width map), a horizontal bar under each map at the map's
   width.
 
-**Subbasin borders on every map; codes on 033 only.** Every hex map draws the
-HELCOM level-2 borders as the edges two polygons share (`itertools.combinations`
-over the polygon outlines, `intersection`, clipped to the extent), not the
-polygon outlines, which retrace every island of the coast they were digitised
-against. Override: `color="0.5"`, `linewidth=0.52` (`basin_border_lw`), so a
-border reads neither as coastline (black) nor as part of the hex field; 0.52 is
-1.3× the former hairline so it survives print. `zorder=1.5`, above the hexes and
-below the coastline (2) (025–035; 036's category map draws
-borders at 2 under its coastline at 3). The shared-edge block is copied into
-each notebook. The subbasin codes, their code → name key and the release sites
-are on the 033 reference map only, so every other map stays readable and the
-paper's reference figure stands alone.
+**Subbasin borders on every map; codes on 033 only.** Every hex map draws
+`output_root/SubbasinBorders/subbasin_borders.geojson`, built once by
+[`006_BuildSubbasinBorders`](../notebooks/006_BuildSubbasinBorders.py); see
+"Subbasin borders" below. Override: `color="0.5"`, `linewidth=0.52`
+(`basin_border_lw`), so a border reads neither as coastline (black) nor as
+part of the hex field; 0.52 is 1.3× the former hairline so it survives print.
+`zorder=1.5`, above the hexes and below the coastline (2) (025–037; 036's
+category map draws borders at 2 under its coastline at 3). The subbasin
+codes, their code → name key and the release sites are on the 033 reference
+map only, so every other map stays readable and the paper's reference figure
+stands alone.
+
+**Subbasin borders.** The model coastline is the reference (authors,
+2026-11-17): each border is continuous and ends exactly on the BSH coastline
+the maps draw. 006 builds them as the edges of the nearest-HELCOM-polygon
+partition of model water:
+
+| step | what | why |
+|---|---|---|
+| 1 | rasterise the 17 level-2 polygons, 200 m EPSG:3035 grid; label components < 25 km² refilled | archipelago slivers would draw enclave loops |
+| 2 | each unlabelled pixel takes the nearest polygon's label (`distance_transform_edt`), up to 25 km | carries a border across the strip where HELCOM and model coasts disagree; the cap keeps a Kattegat–Kiel Bay line out of the North Sea |
+| 3 | pixel edges between two labels, `linemerge` per pair, Douglas–Peucker 1.5 px | removes the raster staircase |
+| 4 | intersect with the model water polygon (fine-first merge), EPSG:4326 | every end on the model coast, nothing over model land |
+
+Inside the polygons the partition is HELCOM's own; past the HELCOM coast it is
+the line equidistant from the two polygons. The notebook asserts no dangling
+end (each end on the coast or a junction) and no length on model land; the
+same 24 subbasin pairs as HELCOM's shared edges. Polygon outlines are not
+drawn: they retrace every island of the coast HELCOM digitised against, and
+the Kattegat's open edge to the Skagerrak borders no other subbasin.
+Considered: intersecting the HELCOM outlines pairwise (ends on the HELCOM
+coast, so borders stop in model water or run over model land, and pairs
+without shared vertices leave gaps); snapping the polygons to a common
+topology (closes the gaps, not the coast mismatch); extending open ends
+along their last direction (ambiguous among islands); 024a hex edges
+(hex-stepped at 6 km). Built once rather than per notebook: ~60 lines of
+raster + vector work fail AGENTS.md's idiom test for 11 copies.
 
 Facet grids split across figures past ~12 panels rather than shrinking the
 maps; 027/029/030/031/033 set `hex_seam_lw = 1.1 * 72 / FIGURE_DPI`, and 031's
@@ -1097,6 +1125,55 @@ no parquet; it runs after 026 (every regime it draws) and 029
 series inside 026; rejected, 026 runs one regime at a time and the
 comparison is the point.
 
+## Notebook 036 — Seeding map (special case)
+
+[`036_SeedingMap`](../notebooks/036_SeedingMap.py) draws the release set: the
+872 REDLIST cells `010` seeds from
+(`data/helcom_fucus_redlist/fucus_release_points.geojson`), as filled cell
+polygons on the shared extent, in two side-by-side panels, plus the
+right-hand panel on its own at the full page width.
+
+| panel | value | source |
+|---|---|---|
+| left | HELCOM level-2 subbasin of the cell | 024a key `helcom_subbasin` of the hex at the cell's representative point (029's mapping) |
+| right | land-seeded share of the cell's particles (%) | `land_seed` of every trajectory zarr of `land_regime` / `land_release_year` (default `surface_stokes` 2019, 73 releases) |
+
+- **Land share from the zarrs.** 010 seeds cell-major, so trajectory `i`
+  belongs to cell `i // particles_per_cell`; a particle is land-seeded when
+  010 flags it (`land_seed`: release position in a land cell of the 005 land
+  set, 024's `release_hex = -1`). The 024 counts store holds the land-seeded
+  total but no cell id, so the zarrs are the only per-cell source; reading
+  `land_seed` of 73 zarrs takes seconds. One regime-year (7 300 particles per
+  cell) suffices: the land set is fixed over the forcing period and differs
+  between regimes only in a few fine-grid cells, so releases differ only by
+  the sampled positions.
+- **Subbasin borders, not outlines**: 006's borders, as on every map
+  ("Subbasin borders" above).
+- **Override: categorical palette beyond the default cycle.** 16 subbasins
+  hold cells; the default 10-colour cycle would give pairs of subbasins one
+  colour and the legend could not separate them. The palette is the default
+  cycle followed by `tab20`'s light tints of the same hues (the cycle's own
+  paired extension), with grey (index 7 of both) held back for the 3
+  `_outside` cells. Subbasins take colours in order of their cells' mean
+  latitude, so a hue and its tint go to a southern and a northern basin,
+  never to neighbours. Considered `tab20` in its native order; rejected, it
+  puts each hue next to its tint and adjacent basins would read as one.
+- **Override: subbasin borders** in mid-grey (`"0.5"`) at `linewidth=0.52`
+  (029's width), so a border reads neither as coastline (black, as 025–033)
+  nor as a category fill. No subbasin codes: the legend names the subbasins.
+- **Land-share panel**: default colormap, fixed `Normalize(0, 100)`, colorbar
+  right of the map (027/033 placement for the tall Baltic crop). The
+  single-panel copy is one map at the full page width with the
+  colorbar under it, 033's full-width layout.
+- **Legend** under both panels, three columns, entries in colour order with
+  the cell count per subbasin.
+- A table of cells, share of cells and mean land-seeded share per subbasin is
+  printed; no export.
+
+`output_root/Figures/036/SeedingMap_r<radius>m.png` (two panels) and
+`LandSeededShare_r<radius>m.png` (single panel), 180 mm × 300 dpi;
+`SeedingMap` is the first entry of 032's figure list.
+
 ## Notebook 037 — Median-age grid
 
 [`037_MedianAgeGrid`](../notebooks/037_MedianAgeGrid.py)
@@ -1122,61 +1199,11 @@ stranded column | unweighted), rows age < 30 d | < 180 d, from 028's
 west→east, batlow 1–2–5 classes 1e-5–1, stranded column after a gap with
 whole-% labels), plus: width ratios 19:17 so cells stay square (~4.2 mm)
 and rows align; origin codes on the left column, target codes vertical on
-the bottom row only; "stranded (%)" as a vertical tick under the stranded
-column (above the matrix it lifted one column title out of line); one
-colorbar; default font sizes. Run after 028 for both tags.
-
-## Notebook 036 — Seeding map (special case)
-
-[`036_SeedingMap`](../notebooks/036_SeedingMap.py) draws the release set: the
-872 REDLIST cells `010` seeds from
-(`data/helcom_fucus_redlist/fucus_release_points.geojson`), as filled cell
-polygons on the shared extent, in two side-by-side panels, plus the
-right-hand panel on its own at the full page width.
-
-| panel | value | source |
-|---|---|---|
-| left | HELCOM level-2 subbasin of the cell | 024a key `helcom_subbasin` of the hex at the cell's representative point (029's mapping) |
-| right | land-seeded share of the cell's particles (%) | `land_seed` of every trajectory zarr of `land_regime` / `land_release_year` (default `surface_stokes` 2019, 73 releases) |
-
-- **Land share from the zarrs.** 010 seeds cell-major, so trajectory `i`
-  belongs to cell `i // particles_per_cell`; a particle is land-seeded when
-  010 flags it (`land_seed`: release position in a land cell of the 005 land
-  set, 024's `release_hex = -1`). The 024 counts store holds the land-seeded
-  total but no cell id, so the zarrs are the only per-cell source; reading
-  `land_seed` of 73 zarrs takes seconds. One regime-year (7 300 particles per
-  cell) suffices: the land set is fixed over the forcing period and differs
-  between regimes only in a few fine-grid cells, so releases differ only by
-  the sampled positions.
-- **Subbasin borders, not outlines.** The HELCOM polygons trace every island
-  of the coast they were digitised against, which in the Åland and Stockholm
-  archipelagos smears over the cells being shown; 036 draws only the edges
-  two polygons share. The Kattegat's open edge to the Skagerrak, shared with
-  no polygon, is therefore not drawn.
-- **Override: categorical palette beyond the default cycle.** 16 subbasins
-  hold cells; the default 10-colour cycle would give pairs of subbasins one
-  colour and the legend could not separate them. The palette is the default
-  cycle followed by `tab20`'s light tints of the same hues (the cycle's own
-  paired extension), with grey (index 7 of both) held back for the 3
-  `_outside` cells. Subbasins take colours in order of their cells' mean
-  latitude, so a hue and its tint go to a southern and a northern basin,
-  never to neighbours. Considered `tab20` in its native order; rejected, it
-  puts each hue next to its tint and adjacent basins would read as one.
-- **Override: subbasin borders** in mid-grey (`"0.5"`) at `linewidth=0.52`
-  (029's width), so a border reads neither as coastline (black, as 025–033)
-  nor as a category fill. No subbasin codes: the legend names the subbasins.
-- **Land-share panel**: default colormap, fixed `Normalize(0, 100)`, colorbar
-  right of the map (027/033 placement for the tall Baltic crop). The
-  single-panel copy is one map at the full page width with the
-  colorbar under it, 033's full-width layout.
-- **Legend** under both panels, three columns, entries in colour order with
-  the cell count per subbasin.
-- A table of cells, share of cells and mean land-seeded share per subbasin is
-  printed; no export.
-
-`output_root/Figures/036/SeedingMap_r<radius>m.png` (two panels) and
-`LandSeededShare_r<radius>m.png` (single panel), 180 mm × 300 dpi;
-`SeedingMap` is the first entry of 032's figure list.
+the bottom row only; "str. %" as a vertical tick under the stranded column
+(above the matrix it lifted one column title out of line; the full
+"stranded (%)" pushed the bottom row's aligned axis labels down and left a
+blank band); a "0" cell label is a stranded share < 0.5 %; one colorbar;
+default font sizes. Run after 028 for both tags.
 
 ## Cross-references
 

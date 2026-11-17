@@ -111,7 +111,9 @@ filename.
 - `notebooks/00x_*.{md,py}` — inputs and preprocessing (start-location
   prep, Stokes download, 2D-field extraction, BSH coastline
   extraction, wall-velocity and land fields per nest × regime for 010
-  (`005`, after 003)), with `scripts/00x_*_job.sh` SLURM wrappers.
+  (`005`, after 003), the subbasin borders every map draws, continuous
+  and ending on the model coastline (`006`, docs/visualisations.md
+  "Subbasin borders")), with `scripts/00x_*_job.sh` SLURM wrappers.
 - `scripts/010_FucusDispersal_{surface_stokes,bottom,bottom_ub49}_job.sh` +
   `notebooks/010_FucusDispersal.py` — Parcels runs, papermill-swept
   across (year, doy, regime), RK4 with a wall velocity ε = 2 mm/s off
@@ -174,6 +176,12 @@ filename.
 - `notebooks/036_*` — seeding map: the release cells by HELCOM subbasin
   (the 024a key's assignment) and the land-seeded share per cell, read
   from `land_seed` of one regime-year of trajectory zarrs.
+- `notebooks/037_*` — median-age grid: median particle age per hex,
+  columns with | without stranding, one row per regime (at most two per
+  figure), read from 026's median-age GeoJSONs (so after 026).
+- `notebooks/038_*` — emission-fraction grid: one 2×2 per regime, columns
+  with | without stranding, rows age < 30 | < 180 d, read from 028's
+  emission-fraction CSVs (so after 028).
 
 ## Data access
 
@@ -345,7 +353,7 @@ kwargs that override defaults until a real need shows up.** Concretely:
 - Prefer xarray's built-in plotting (`.plot`, `.plot.line`, `.plot.scatter`,
   faceting via `col=` / `row=` / `hue=`) over raw matplotlib.
 
-One standing exception: the `025`–`036` figure notebooks save print-ready
+One standing exception: the `025`–`038` figure notebooks save print-ready
 figures at a fixed 180 mm page width and 300 dpi, because those PNGs *are*
 the manuscript figures — see [docs/visualisations.md](docs/visualisations.md).
 

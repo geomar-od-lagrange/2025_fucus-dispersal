@@ -40,7 +40,15 @@ output_root/Figures/
   035/  AreaTimeSeries_<season>_r<radius>m.png
         AreaTimeSeries_seasons_r<radius>m.png
   036/  {SeedingMap,LandSeededShare}_r<radius>m.png
+  037/  MedianAgeGrid_<rows>_<season>_r<radius>m.png
+  038/  EmissionGrid_<regime>_<season>.png
 ```
+
+Every map reads its subbasin borders from
+`output_root/SubbasinBorders/subbasin_borders.geojson`, written once by
+`scripts/006_BuildSubbasinBorders_job.sh` (static inputs only, ~1 min;
+[visualisations.md](visualisations.md) "Subbasin borders"); run it before
+any map notebook.
 
 `figure_dir` is derived from the `output_root` parameter inside each notebook
 (no extra job-script argument); submit once per (regime, season). Every figure
@@ -458,14 +466,17 @@ away.
 | script | positional args |
 |---|---|
 | `024c_BuildHexConnectivity_job.sh` | `[regime] [year] [hex_radius]` (reads the 024 counts store, writes connectivity) |
-| `025_HexHeatmaps_job.sh`, `026*_job.sh` | `[regime] [season] [hex_radius] [member]` — empty `member` reads the unweighted 024 counts store, a tag reads 024f (also pass `-p data_root ${repo_root}/data` for the coastline, the fine-grid bbox and the HELCOM borders) |
+| `025_HexHeatmaps_job.sh`, `026*_job.sh` | `[regime] [season] [hex_radius] [member]` — empty `member` reads the unweighted 024 counts store, a tag reads 024f (also pass `-p data_root ${repo_root}/data` for the coastline and the fine-grid bbox) |
 | `027_HexDistanceQuantiles_job.sh` | `[regime] [hex_radius] [season]` |
 | `028_SubbasinConnectivityMatrix_job.sh` | `[regime] [hex_radius] [season] [member]` — empty `member` reads the unweighted 024c store, a tag reads 024g plus the same member's 024e store (stranded column) |
 | `029_BeachingMaps_job.sh`, `030_SurvivalHeatmaps_job.sh` | `[regime] [hex_radius] [member] [season]` |
 | `031_BeachingSweep_job.sh` | `[regime] [hex_radius] [members_csv] [labels_csv] [baseline_member] [season]` |
 | `034_BottomFriction_job.sh` | `[season] [hex_radius] [member] [weighting]` — `bottom` vs `bottom_ub49` on the releases both hold; `weighting` `unweighted` (024 counts) or a 024f tag (survocc); stranded % from the 024e `member` |
 | `035_AreaTimeSeries_job.sh` | `[season] [hex_radius] [member] [layout]` — draws `surface_stokes`, `bottom` and `bottom_ub49`, each at 026 tag `member` (default the production member) and with its 029 stranding curve; `layout` `regimes` (default, one season) or `seasons` (every season, `season` ignored); executed notebook `035_AreaTimeSeries_<layout>_<season>_r<radius>m.ipynb` |
-| `036_SeedingMap_job.sh` | `[hex_radius]` — no season or member; also reads `land_seed` of one regime-year of trajectory zarrs (notebook defaults `surface_stokes` 2019). Not in the consumer driver: the release set does not change between runs |
+| `036_SeedingMap_job.sh` | `[hex_radius]` — no season or member; also reads `land_seed` of one regime-year of trajectory zarrs (notebook defaults `surface_stokes` 2019). Not in the consumer matrix: the release set does not change between runs (driver work-list line `036 - - -`) |
+| `037_MedianAgeGrid_job.sh` | `[season] [hex_radius] [member]` — both row sets (`surface_stokes,bottom`; `bottom_ub49`) from 026's median-age GeoJSONs at `member` and unweighted; after 026. Work-list line `037 - <season> <member>` |
+| `038_EmissionGrid_job.sh` | `[regime] [season] [member]` — from 028's emission-fraction CSVs at `member` and unweighted; after 028. Work-list line `038 <regime> <season> <member>` |
+| `033_ShorelineTypeMap_job.sh` | `[regime] [hex_radius] [member] [season] [contrast_member]`. Work-list line `033 <regime> <season> <member>` |
 
 Every default is `regime=surface_stokes`, `hex_radius=6000`. `age_bin_days`,
 `max_age_days`, `time_horizons_days_csv`, `disp_bin_km` and the origin/year
@@ -496,6 +507,7 @@ papermill contract and this driver only decides which combinations run:
 | 031 | 3 regimes × 5 seasons, `members_csv` = every 024e member of the regime on disk | 15 |
 | 034 | bottom vs bottom_ub49 in one figure × 5 seasons × {unweighted, production member} | 10 |
 | 035 | surface_stokes, bottom and bottom_ub49 in one figure × 5 seasons, plus the season figure (unit `035 seasons ALL`), second wave | 6 |
+| 033, 036, 037, 038 | not in the matrix; `WORK_LIST` lines only (037 / 038 read 026 / 028 exports, which the one-wave pool cannot order) | — |
 
 The units run as one flat `xargs` pool with no ordering among them, except
 035: it reads the 026 area CSVs and 029 stranding curves of every regime, so
