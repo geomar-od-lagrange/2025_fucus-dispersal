@@ -162,8 +162,6 @@ REGIME_LABELS = {
     "bottom": "bottom",
     "bottom_ub49": "bottom, bed friction",
 }
-# Plain-language weighting for the titles; the tag stays in filenames.
-weighting_label = "unweighted" if weighting == "unweighted" else "survival-weighted"
 assert max_age_days % age_bin_days == 0, (
     f"max_age_days {max_age_days} d is not a multiple of age_bin_days {age_bin_days} d"
 )
@@ -470,7 +468,7 @@ for ax, q in zip(axes.flat, quantiles):
     ax.set_title(
         f"{REGIME_LABELS.get(regime_var, regime_var)} / "
         f"{REGIME_LABELS.get(regime_ref, regime_ref)}, "
-        f"area holding {100 * q:g} % of particle-time ({weighting_label})"
+        f"area holding {100 * q:g} % of particle-time"
     )
     ax.set_xticks(time_horizons_days)
 fig_path = figure_dir / f"BottomFriction_length_{season}_r{hex_radius}m_{weighting}.png"
@@ -638,7 +636,7 @@ for column, (norm, cmap, extend, colorbar_kwargs) in VIEWS.items():
     # the page width; the slack this leaves is measured and cut below.
     fig.set_size_inches(FIGURE_WIDTH_IN, FIGURE_WIDTH_IN)
     for ax, regime in zip(axes, regimes):
-        hex_map(gdfs[regime], column, ax, norm, cmap, title=f"{REGIME_LABELS.get(regime, regime)}, {map_horizon_days} d, {weighting_label}")
+        hex_map(gdfs[regime], column, ax, norm, cmap, title=f"{REGIME_LABELS.get(regime, regime)}, {map_horizon_days} d")
     # One colourbar under both maps, spanning the pair. pad 0.01: the default
     # is a fraction of the grid height and leaves a blank band; aspect 40
     # (default 20): at full page width the default bar is ~9 mm thick.
