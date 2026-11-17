@@ -454,8 +454,9 @@ rows = [
 
 ncols = len(time_horizons_days)
 fig, axes = plt.subplots(nrows=len(rows), ncols=ncols, layout="constrained", squeeze=False)
+# Plus one text line (0.35 in) for the regime suptitle above the grid.
 fig.set_size_inches(
-    FIGURE_WIDTH_IN, grid_height_in(len(rows), ncols, domain_aspect, FIGURE_WIDTH_IN)
+    FIGURE_WIDTH_IN, grid_height_in(len(rows), ncols, domain_aspect, FIGURE_WIDTH_IN) + 0.35
 )
 for i, (row_label, gdfs, norm, cmap, cbar_label) in enumerate(rows):
     for j, h in enumerate(time_horizons_days):
