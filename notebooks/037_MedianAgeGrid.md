@@ -56,7 +56,7 @@ from shapely.ops import unary_union
 # Parameters
 
 ```python tags=["parameters"]
-# Read root of the data twin (HELCOM polygons, BSH static grids).
+# Read root of the data twin (BSH static grids, wet-cell coastline).
 data_root = "../data"
 # Read root of 026's exports; write root for the figure.
 output_root = "../output"

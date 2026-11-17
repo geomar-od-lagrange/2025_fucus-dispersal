@@ -270,7 +270,9 @@ for r, h in enumerate(horizons):
 # The "str. %" label lengthens the left column's tick labels; level the
 # target-axis labels of the bottom row.
 fig.align_xlabels()
-cb = fig.colorbar(im, ax=axes, location="bottom", label="emission fraction")
+# pad 0.01 (default 0.05 is a fraction of the grid height): the default left a
+# ~8 mm blank band between the target-axis labels and the bar (as 034).
+cb = fig.colorbar(im, ax=axes, location="bottom", label="emission fraction", pad=0.01)
 cb.set_ticks(EMISSION_BOUNDS, labels=emission_labels)
 fig.suptitle(title)
 

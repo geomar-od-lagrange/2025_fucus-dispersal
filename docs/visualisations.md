@@ -322,7 +322,13 @@ partition of model water:
 | 3 | pixel edges between two labels, `linemerge` per pair, Douglas–Peucker 1.5 px | removes the raster staircase |
 | 4 | intersect with the model water polygon (fine-first merge), EPSG:4326 | every end on the model coast, nothing over model land |
 
-Inside the polygons the partition is HELCOM's own; past the HELCOM coast it is
+This drawn partition and 024a's hex assignment (largest overlap + 1-hex
+shoreward snap) are different rules; they agree on all but 7 of 5 257 water
+hexes (5 straddle a border; Flensburg Fjord 9.38 °E 54.88 °N is KIE in the
+key, drawn GRB; the Quark's east end 22.38 °E 63.43 °N is BOB). 006 clips to
+the exact wet-cell union, while 025/026b/027/031 draw a coastline unioned at
+`grid_size=1e-3`: the ends differ by under a pixel. Inside the polygons the
+partition is HELCOM's own; past the HELCOM coast it is
 the line equidistant from the two polygons. The notebook asserts no dangling
 end (each end on the coast or a junction) and no length on model land; the
 same 24 subbasin pairs as HELCOM's shared edges. Polygon outlines are not
@@ -1202,8 +1208,9 @@ and rows align; origin codes on the left column, target codes vertical on
 the bottom row only; "str. %" as a vertical tick under the stranded column
 (above the matrix it lifted one column title out of line; the full
 "stranded (%)" pushed the bottom row's aligned axis labels down and left a
-blank band); a "0" cell label is a stranded share < 0.5 %; one colorbar;
-default font sizes. Run after 028 for both tags.
+blank band); a "0" cell label is a stranded share < 0.5 %; one colorbar
+with `pad=0.01` (the default left an ~8 mm blank band above it); default
+font sizes. Run after 028 for both tags.
 
 ## Cross-references
 

@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-# Lightweight: reads the data twin's release cells and HELCOM subbasins, the
+# Lightweight: reads the data twin's release cells, 006's subbasin borders, the
 # 024a key, and 010's per-trajectory land_seed of one regime-year of
 # trajectory zarrs (the land-seeded share per cell), no Dask cluster. One figure per
 # hex_radius, no season or member: the release set is the same for every run.
