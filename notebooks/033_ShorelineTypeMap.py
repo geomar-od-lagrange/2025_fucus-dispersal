@@ -486,11 +486,18 @@ print(f"stranded weight within the {max_age_days} d reduction window")
 # label) and the figure is cut to it.
 
 # %%
+# Colorbar inside the map, in the empty land of the lower right (authors
+# 2026-11-17): the single full-width map then needs no band under it. Axes
+# fractions of the shared extent (9–30.7 E, 53–66 N): 22–30 E, ~54 N is
+# Lithuania / Belarus, no water.
+CBAR_INSET = [0.60, 0.07, 0.36, 0.025]
+
+
 def hex_map(gdf, ax, norm=None, title=None, label=None):
     """Hex choropleth of `gdf.value` + subbasin borders + model coastline on a
-    lon/lat axis, colorbar under the map."""
+    lon/lat axis, colorbar as an inset in the map's empty lower right."""
     if not gdf.empty:
-        cax = ax.inset_axes([0.0, -0.045, 1.0, 0.022])
+        cax = ax.inset_axes(CBAR_INSET)
         # Bottom-anchored, so constrained_layout's room for the bar under the
         # map holds; centred, the map drifts down and clips the label.
         ax.set_anchor("S")

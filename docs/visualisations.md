@@ -906,7 +906,9 @@ member can show.
 - **Flat fraction per hex** (`ShorelineType_*.png`) — the headline map, the
   paper's shoreline-classification figure (Methods) and its **reference
   map**: one map at the full page width on the shared extent with its
-  colourbar under it, title on one line (share of unattributed coast; the
+  colourbar as an inset in the map's empty lower right (`CBAR_INSET`, the
+  land east of the Gdansk Basin; authors 2026-11-17: no band under a single
+  full-width map), title on one line (share of unattributed coast; the
   nest-seam cut belongs in the caption). **No colormap override**: the default
   sequential map on a pinned `Normalize(0, 1)`, so 0 (fully walled) and 1
   (fully flat) are the ends of the bar on every run. The value drawn is the
