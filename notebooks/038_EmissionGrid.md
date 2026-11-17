@@ -203,7 +203,7 @@ def draw(ax, values, columns, label_stranded):
     # index for presentation).
     labels = [code(c) for c in columns]
     if columns[-1] == STRANDED and label_stranded:
-        labels[-1] = "stranded (%)"
+        labels[-1] = "str. %"
     ax.set_xticks(xpos, labels, rotation="vertical")
     ax.set_yticks(range(len(names)), [code(n) for n in names])
     return im
@@ -228,7 +228,7 @@ PAGE_WIDTH_IN = 180 / 25.4
 # the stranded label, axis label and colorbar below. The height follows from
 # square cells.
 MARGIN_LEFT_IN, MARGIN_RIGHT_IN, COLUMN_GAP_IN = 0.95, 0.05, 0.15
-MARGIN_TOP_IN, ROW_GAP_IN, MARGIN_BOTTOM_IN = 0.9, 0.1, 1.3
+MARGIN_TOP_IN, ROW_GAP_IN, MARGIN_BOTTOM_IN = 0.9, 0.1, 1.0
 
 n_cols = [len(targets[tag]) + (tag != "unweighted") for _, tag in COLUMNS]
 cell = (PAGE_WIDTH_IN - MARGIN_LEFT_IN - MARGIN_RIGHT_IN - COLUMN_GAP_IN) / sum(n_cols)
@@ -267,7 +267,7 @@ for r, h in enumerate(horizons):
         else:
             ax.tick_params(labelleft=False)
 
-# The stranded label lengthens the left column's tick labels; level the
+# The "str. %" label lengthens the left column's tick labels; level the
 # target-axis labels of the bottom row.
 fig.align_xlabels()
 cb = fig.colorbar(im, ax=axes, location="bottom", label="emission fraction")
