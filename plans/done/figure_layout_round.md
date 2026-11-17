@@ -1,3 +1,5 @@
+> Implemented 2026-11-17 (G open) — docs/visualisations.md "Labels in the figure", §033, §034, §037, §038.
+
 # Figure layout round (author remarks on the PDF of paper 8f418d2)
 
 Authors 2026-11-17. Figure numbers refer to that PDF (1 shoreline, 2 curves,
@@ -47,3 +49,30 @@ overviews, 27–38 matrices, 39–41 where stranded, 42–44 afloat).
 1. Plan (this file). 2. A + D code, reruns (026, 026a, 029, 030 ALL and
 seasons; 034). 3. 037 / 038, run. 4. Paper: replace the median-age and
 matrix figures, captions, FACTS. 5. F, G. 6. Move to `plans/done/`.
+
+## Outcome (2026-11-17)
+
+- A: 7007fdf (labels in 026 / 026a suptitles, 029 panel titles — a 029
+  suptitle left a blank band under its tight-bbox height cut — 030
+  suptitle, e03e3a2 height allowance), ce8fb28 (035 "bottom, bed friction").
+  D: 7007fdf. B: 037 (f55e470). C: 038 (f9352e4); labels read at half width
+  with default fonts; two-digit stranded % fill a 4.2 mm cell, black "0"
+  on the darkest classes reads poorly (inherited from 028). F: 4d2c211.
+  Docs: c95e7af, 4d2c211.
+- Reruns: critical path (season ALL, paper units) job 24946478, 18 / 18 OK,
+  plus 029 bottom / ub49, 030 S/B/F, 033, 035 in the session; other seasons
+  job 24946597 (85 units) in the background.
+- Paper: 31 figures, 36 pages.
+- G (borders, not fixed): the borders are the pairwise intersections of the
+  HELCOM polygon outlines. They end where the HELCOM polygons meet the
+  HELCOM coastline, which is not the BSH model coastline, so in
+  archipelagos and coarse-grid coasts a border stops in model water or runs
+  over model land; pairs whose outlines do not share vertices exactly give
+  point / short-segment intersections (gaps). Options: (1) snap the HELCOM
+  polygons to a common topology (shapely `snap` / `set_precision`) before
+  intersecting — closes vertex gaps, not the coast mismatch; (2) clip the
+  borders to BSH water and extend their open ends to the BSH coastline
+  along their last direction; (3) derive borders from the 024a hex
+  subbasin assignment (edges between hexes of different subbasins) — on
+  the model grid by construction, but hex-stepped. Each changes every map
+  notebook (copied block); authors to pick.
