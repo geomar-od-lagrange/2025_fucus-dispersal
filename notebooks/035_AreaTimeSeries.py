@@ -211,7 +211,7 @@ REGIME_LABELS = {
     "surface": "surface",
     "surface_stokes": "surface + Stokes drift",
     "bottom": "bottom",
-    "bottom_ub49": "bottom + bed friction",
+    "bottom_ub49": "bottom, bed friction",
 }
 
 
