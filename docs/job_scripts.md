@@ -463,7 +463,7 @@ away.
 | `029_BeachingMaps_job.sh`, `030_SurvivalHeatmaps_job.sh` | `[regime] [hex_radius] [member] [season]` |
 | `031_BeachingSweep_job.sh` | `[regime] [hex_radius] [members_csv] [labels_csv] [baseline_member] [season]` |
 | `034_BottomFriction_job.sh` | `[season] [hex_radius] [member] [weighting]` — `bottom` vs `bottom_ub49` on the releases both hold; `weighting` `unweighted` (024 counts) or a 024f tag (survocc); stranded % from the 024e `member` |
-| `035_AreaTimeSeries_job.sh` | `[season] [hex_radius] [member]` — draws `surface_stokes` and `bottom`, each at 026 tag `member` (default the production member) and with its 029 stranding curve |
+| `035_AreaTimeSeries_job.sh` | `[season] [hex_radius] [member]` — draws `surface_stokes`, `bottom` and `bottom_ub49`, each at 026 tag `member` (default the production member) and with its 029 stranding curve |
 | `036_SeedingMap_job.sh` | `[hex_radius]` — no season or member; also reads `land_seed` of one regime-year of trajectory zarrs (notebook defaults `surface_stokes` 2019). Not in the consumer driver: the release set does not change between runs |
 
 Every default is `regime=surface_stokes`, `hex_radius=6000`. `age_bin_days`,
