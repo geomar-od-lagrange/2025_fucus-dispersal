@@ -1,6 +1,9 @@
+> Implemented 2026-11-17 — 035 seasons layout in [docs/visualisations.md](../../docs/visualisations.md)
+> §035; the paper diff sits uncommitted in `paper/`.
+
 # Paper: figures grouped by family, parallel across regimes
 
-Authors 2026-11-17. Builds on [done/paper_bottom_variants.md](done/paper_bottom_variants.md)
+Authors 2026-11-17. Builds on [done/paper_bottom_variants.md](paper_bottom_variants.md)
 (paper 9593dc9, main cb4feaf). All figures stay in the main text at their
 current size (180 mm; dilution 2×2, median age one map, where-stranded 1×2,
 friction pair 1×2, overview 4×4, emission one matrix, occupancy 2×4,
@@ -79,3 +82,10 @@ Deferred items, resumed 2026-11-17:
   `034_prelim`, malformed `_6000_r6000m` names). Checked first: no paper
   `% Source:` points at them; docs/beaching.md now points its 2000 m band
   sources at the archive.
+
+## Outcome
+
+All deferred items landed: 026 `surface_stokes` unweighted (job 24946249,
+5 / 5 OK), 026a likewise (job 24946255, 5 / 5 OK), 035 seasons layout
+(dc02ee6), archive (1bc1643). The paper holds 44 figures, no placeholders
+(43 planned + the S−s 180 d overview added in review round 4).
